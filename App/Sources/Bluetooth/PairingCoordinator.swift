@@ -196,7 +196,19 @@ final class PairingCoordinator: NSObject {
 extension PairingCoordinator: MusePeripheralDelegate {
     func musePeripheral(_ peripheral: MusePeripheral, didChange event: MusePeripheral.Event) {
         switch event {
-        case .bluetoothState(let value): state = .bluetooth(value)
+        case .bluetoothState(let value):
+            switch value {
+            case "unauthorized":
+                state = .failed("Bluetooth permission is denied. Enable it in Settings → Privacy & Security → Bluetooth.")
+            case "unsupported":
+                state = .failed("Bluetooth LE peripheral mode is unavailable. Pairing requires a physical iPhone or iPad, not Simulator.")
+            case "powered off":
+                state = .bluetooth("Turn Bluetooth on to continue")
+            case "powered on":
+                state = .bluetooth("publishing pairing service")
+            default:
+                state = .bluetooth(value)
+            }
         case .advertising: state = .advertising(identity.bluetoothName)
         case .subscribed(let mtu): state = .connected(mtu: mtu)
         case .disconnected:

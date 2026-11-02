@@ -2,7 +2,7 @@ import UIKit
 
 final class PermissionsViewController: UITableViewController {
     private let center: PermissionCenter
-    private let permissions = AppPermission.allCases.filter { $0 != .bluetooth }
+    private let permissions = AppPermission.allCases
 
     init(center: PermissionCenter) {
         self.center = center

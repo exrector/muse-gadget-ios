@@ -75,6 +75,15 @@ final class MainViewController: UIViewController {
         explanation.textColor = .secondaryLabel
         stack.addArrangedSubview(explanation)
 
+#if targetEnvironment(simulator)
+        let simulatorWarning = UILabel()
+        simulatorWarning.numberOfLines = 0
+        simulatorWarning.font = .preferredFont(forTextStyle: .headline)
+        simulatorWarning.textColor = .systemRed
+        simulatorWarning.text = "Simulator can preview this interface, but cannot advertise as a Bluetooth gadget. Install the app on a physical iPhone or iPad to pair."
+        stack.addArrangedSubview(card(title: "PHYSICAL DEVICE REQUIRED", content: simulatorWarning))
+#endif
+
         let steps = UILabel()
         steps.numberOfLines = 0
         steps.font = .preferredFont(forTextStyle: .body)
@@ -173,14 +182,29 @@ final class MainViewController: UIViewController {
     private func render(_ state: PairingCoordinator.State) {
         stateLabel.text = state.title
         refreshTokenUI()
+        pairButton.configuration?.showsActivityIndicator = false
         switch state {
         case .paired:
             stateLabel.textColor = .systemGreen
             pairButton.configuration?.title = "Pair again"
+        case .bluetooth:
+            stateLabel.textColor = .systemOrange
+            pairButton.configuration?.title = "Starting Bluetooth…"
+            pairButton.configuration?.showsActivityIndicator = true
+        case .advertising:
+            stateLabel.textColor = .systemGreen
+            pairButton.configuration?.title = "Pairing open — waiting for Muse"
+            pairButton.configuration?.showsActivityIndicator = true
+        case .connected, .encrypted, .provisioning:
+            stateLabel.textColor = .systemBlue
+            pairButton.configuration?.title = "Completing secure pairing…"
+            pairButton.configuration?.showsActivityIndicator = true
         case .failed:
             stateLabel.textColor = .systemRed
+            pairButton.configuration?.title = "Try pairing again"
         default:
             stateLabel.textColor = .label
+            pairButton.configuration?.title = "Start pairing"
         }
     }
 
@@ -234,6 +258,9 @@ final class MainViewController: UIViewController {
         tokenStatusLabel.textColor = hasToken ? .systemGreen : .systemOrange
         tokenButton.configuration?.title = hasToken ? "Replace token" : "Add SDK token"
         pairButton.isEnabled = hasToken
+#if targetEnvironment(simulator)
+        pairButton.isEnabled = false
+#endif
     }
 
     @objc private func showPermissions() {

@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreBluetooth
 import CoreLocation
 import CoreMotion
 import Foundation
@@ -33,6 +34,8 @@ enum PermissionState: String {
 }
 
 final class PermissionCenter: NSObject {
+    private var bluetoothManager: CBPeripheralManager?
+    private var bluetoothCompletion: ((PermissionState) -> Void)?
     private lazy var locationManager: CLLocationManager = {
         let manager = CLLocationManager()
         manager.delegate = self
@@ -43,7 +46,16 @@ final class PermissionCenter: NSObject {
     func status(for permission: AppPermission) -> PermissionState {
         switch permission {
         case .bluetooth:
-            return .notDetermined // CoreBluetooth reports the definitive state to the pairing dashboard.
+            if #available(iOS 13.1, *) {
+                switch CBManager.authorization {
+                case .allowedAlways: return .granted
+                case .denied: return .denied
+                case .restricted: return .restricted
+                case .notDetermined: return .notDetermined
+                @unknown default: return .unavailable
+                }
+            }
+            return .notDetermined
         case .camera:
             return map(AVCaptureDevice.authorizationStatus(for: .video))
         case .microphone:
@@ -81,7 +93,10 @@ final class PermissionCenter: NSObject {
     func request(_ permission: AppPermission, completion: @escaping (PermissionState) -> Void) {
         switch permission {
         case .bluetooth:
-            completion(.notDetermined)
+            let current = status(for: permission)
+            guard current == .notDetermined else { completion(current); return }
+            bluetoothCompletion = completion
+            bluetoothManager = CBPeripheralManager(delegate: self, queue: .main)
         case .camera:
             AVCaptureDevice.requestAccess(for: .video) { _ in
                 DispatchQueue.main.async { completion(self.status(for: permission)) }
@@ -123,6 +138,15 @@ final class PermissionCenter: NSObject {
         case .undetermined: return .notDetermined
         @unknown default: return .unavailable
         }
+    }
+}
+
+extension PermissionCenter: CBPeripheralManagerDelegate {
+    func peripheralManagerDidUpdateState(_ peripheral: CBPeripheralManager) {
+        guard let completion = bluetoothCompletion else { return }
+        bluetoothCompletion = nil
+        completion(status(for: .bluetooth))
+        bluetoothManager = nil
     }
 }
 
