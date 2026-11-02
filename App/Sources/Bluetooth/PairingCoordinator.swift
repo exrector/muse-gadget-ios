@@ -52,6 +52,7 @@ final class PairingCoordinator: NSObject {
         let token = rawToken.trimmingCharacters(in: .whitespacesAndNewlines)
         guard token.hasPrefix("mgst_"), token.count > 12 else { throw PairingCoordinatorError.invalidSDKToken }
         try credentials.saveSDKToken(token)
+        if state == .needsSDKToken { state = .idle }
         log("SDK token saved in Keychain")
     }
 

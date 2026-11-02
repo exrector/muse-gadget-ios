@@ -9,6 +9,8 @@ final class MainViewController: UIViewController {
     private let captionLabel = UILabel()
     private let logView = UITextView()
     private let pairButton = UIButton(type: .system)
+    private let tokenStatusLabel = UILabel()
+    private let tokenButton = UIButton(type: .system)
 
     init(environment: AppEnvironment) {
         self.environment = environment
@@ -60,18 +62,40 @@ final class MainViewController: UIViewController {
         ])
 
         let hero = UILabel()
-        hero.text = "OLD DEVICE.\nNEW COMPANION."
-        hero.numberOfLines = 2
-        hero.font = .monospacedSystemFont(ofSize: 30, weight: .bold)
+        hero.text = "TURN THIS DEVICE\nINTO A MUSE COMPANION."
+        hero.numberOfLines = 0
+        hero.font = .monospacedSystemFont(ofSize: 27, weight: .bold)
         hero.textColor = .label
         stack.addArrangedSubview(hero)
 
         let explanation = UILabel()
-        explanation.text = "Bluetooth pairs once. The intended daily connection is encrypted and Internet-only."
+        explanation.text = "Use this iPhone or iPad as the gadget. Keep your main phone nearby to finish setup in Muse. Bluetooth is used only while pairing."
         explanation.numberOfLines = 0
         explanation.font = .preferredFont(forTextStyle: .body)
         explanation.textColor = .secondaryLabel
         stack.addArrangedSubview(explanation)
+
+        let steps = UILabel()
+        steps.numberOfLines = 0
+        steps.font = .preferredFont(forTextStyle: .body)
+        steps.text = "1  Add your personal Muse Gadget SDK token.\n\n2  Tap Start pairing on this device.\n\n3  On your main phone open Muse → Settings → Devices, enable Developer mode, then tap +.\n\n4  Choose the device name shown below and approve setup."
+        stack.addArrangedSubview(card(title: "SETUP — TWO PHONES", content: steps))
+
+        tokenStatusLabel.numberOfLines = 0
+        tokenStatusLabel.font = .preferredFont(forTextStyle: .headline)
+        tokenButton.configuration = .borderedProminent()
+        tokenButton.configuration?.cornerStyle = .large
+        tokenButton.addTarget(self, action: #selector(editSDKToken), for: .touchUpInside)
+
+        let getTokenButton = UIButton(type: .system)
+        getTokenButton.setTitle("Get a token at gadgets.muse.ai ↗", for: .normal)
+        getTokenButton.contentHorizontalAlignment = .leading
+        getTokenButton.addTarget(self, action: #selector(openTokenWebsite), for: .touchUpInside)
+
+        let tokenStack = UIStackView(arrangedSubviews: [tokenStatusLabel, tokenButton, getTokenButton])
+        tokenStack.axis = .vertical
+        tokenStack.spacing = 10
+        stack.addArrangedSubview(card(title: "PERSONAL SDK TOKEN", content: tokenStack))
 
         nameLabel.font = .monospacedSystemFont(ofSize: 20, weight: .semibold)
         nameLabel.text = environment.identity.bluetoothName
@@ -95,11 +119,6 @@ final class MainViewController: UIViewController {
         pairButton.heightAnchor.constraint(equalToConstant: 52).isActive = true
         stack.addArrangedSubview(pairButton)
 
-        let tokenButton = UIButton(type: .system)
-        tokenButton.setTitle("Save personal SDK token", for: .normal)
-        tokenButton.addTarget(self, action: #selector(editSDKToken), for: .touchUpInside)
-        stack.addArrangedSubview(tokenButton)
-
         let commandsLabel = UILabel()
         commandsLabel.numberOfLines = 0
         commandsLabel.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
@@ -111,6 +130,7 @@ final class MainViewController: UIViewController {
         logView.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
         logView.text = "Protocol log contains no tokens or command payloads.\n"
         stack.addArrangedSubview(card(title: "DIAGNOSTICS", content: logView, minimumHeight: 220))
+        refreshTokenUI()
     }
 
     private func card(title: String, content: UIView, minimumHeight: CGFloat = 0) -> UIView {
@@ -152,6 +172,7 @@ final class MainViewController: UIViewController {
 
     private func render(_ state: PairingCoordinator.State) {
         stateLabel.text = state.title
+        refreshTokenUI()
         switch state {
         case .paired:
             stateLabel.textColor = .systemGreen
@@ -192,11 +213,27 @@ final class MainViewController: UIViewController {
             guard let self, let token = alert?.textFields?.first?.text else { return }
             do {
                 try self.environment.pairing.saveSDKToken(token)
+                self.refreshTokenUI()
             } catch {
                 self.presentError(error.localizedDescription)
             }
         })
         present(alert, animated: true)
+    }
+
+    @objc private func openTokenWebsite() {
+        guard let url = URL(string: "https://gadgets.muse.ai/settings/sdk-tokens") else { return }
+        UIApplication.shared.open(url)
+    }
+
+    private func refreshTokenUI() {
+        let hasToken = environment.credentialStore.loadSDKToken()?.isEmpty == false
+        tokenStatusLabel.text = hasToken
+            ? "Token saved securely on this device"
+            : "Required for community pairing"
+        tokenStatusLabel.textColor = hasToken ? .systemGreen : .systemOrange
+        tokenButton.configuration?.title = hasToken ? "Replace token" : "Add SDK token"
+        pairButton.isEnabled = hasToken
     }
 
     @objc private func showPermissions() {
