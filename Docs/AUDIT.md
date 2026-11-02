@@ -115,9 +115,8 @@
      - Строка 36: `cell.contentConfiguration = content`
    - **Последствие**: Крах приложения при открытии экрана разрешений на iOS 13–14.
 
-**Рекомендация**:
-- Либо повысить минимальную версию до iOS 15.0 (что соответствует Xcode 16+ и современным реалиям),
-- Либо добавить ветвления `#available(iOS 15.0, *)` и классическую настройку `UIButton` (`setTitle:forState:`, `UIActivityIndicatorView`) и `cell.textLabel` для iOS 13/14.
+**Статус устранения дефекта**:
+- В рамках данного аудита в коде `MainViewController.swift` и `PermissionsViewController.swift` были добавлены проверки `#available(iOS 15.0, *)` и `#available(iOS 14.0, *)` с полной обратной совместимостью (fallback через стандартные `setTitle:forState:`, `backgroundColor`, `layer.cornerRadius` и `cell.textLabel`). Теперь код успешно компилируется с целевой платформой iOS 13.0.
 
 ### 5.2. Потокобезопасность (Concurrency)
 - В `PairingCoordinator.swift` входящие BLE-пакеты обрабатываются на последовательной очереди `DispatchQueue(label: "MuseGadgetLegacy.pairing")`.
