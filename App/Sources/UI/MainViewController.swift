@@ -92,8 +92,15 @@ final class MainViewController: UIViewController {
 
         tokenStatusLabel.numberOfLines = 0
         tokenStatusLabel.font = .preferredFont(forTextStyle: .headline)
-        tokenButton.configuration = .borderedProminent()
-        tokenButton.configuration?.cornerStyle = .large
+        if #available(iOS 15.0, *) {
+            tokenButton.configuration = .borderedProminent()
+            tokenButton.configuration?.cornerStyle = .large
+        } else {
+            tokenButton.backgroundColor = .systemBlue
+            tokenButton.setTitleColor(.white, for: .normal)
+            tokenButton.layer.cornerRadius = 12
+            tokenButton.contentEdgeInsets = UIEdgeInsets(top: 8, left: 16, bottom: 8, right: 16)
+        }
         tokenButton.addTarget(self, action: #selector(editSDKToken), for: .touchUpInside)
 
         let getTokenButton = UIButton(type: .system)
@@ -121,9 +128,16 @@ final class MainViewController: UIViewController {
         captionLabel.setContentHuggingPriority(.defaultLow, for: .vertical)
         stack.addArrangedSubview(card(title: "MUSE DISPLAY", content: captionLabel, minimumHeight: 150))
 
-        pairButton.configuration = .filled()
-        pairButton.configuration?.title = "Start pairing"
-        pairButton.configuration?.cornerStyle = .large
+        if #available(iOS 15.0, *) {
+            pairButton.configuration = .filled()
+            pairButton.configuration?.title = "Start pairing"
+            pairButton.configuration?.cornerStyle = .large
+        } else {
+            pairButton.backgroundColor = .systemBlue
+            pairButton.setTitleColor(.white, for: .normal)
+            pairButton.setTitle("Start pairing", for: .normal)
+            pairButton.layer.cornerRadius = 14
+        }
         pairButton.addTarget(self, action: #selector(startPairing), for: .touchUpInside)
         pairButton.heightAnchor.constraint(equalToConstant: 52).isActive = true
         stack.addArrangedSubview(pairButton)
@@ -182,29 +196,44 @@ final class MainViewController: UIViewController {
     private func render(_ state: PairingCoordinator.State) {
         stateLabel.text = state.title
         refreshTokenUI()
-        pairButton.configuration?.showsActivityIndicator = false
+        let title: String
+        let showActivity: Bool
         switch state {
         case .paired:
             stateLabel.textColor = .systemGreen
-            pairButton.configuration?.title = "Pair again"
+            title = "Pair again"
+            showActivity = false
         case .bluetooth:
             stateLabel.textColor = .systemOrange
-            pairButton.configuration?.title = "Starting Bluetooth…"
-            pairButton.configuration?.showsActivityIndicator = true
+            title = "Starting Bluetooth…"
+            showActivity = true
         case .advertising:
             stateLabel.textColor = .systemGreen
-            pairButton.configuration?.title = "Pairing open — waiting for Muse"
-            pairButton.configuration?.showsActivityIndicator = true
+            title = "Pairing open — waiting for Muse"
+            showActivity = true
         case .connected, .encrypted, .provisioning:
             stateLabel.textColor = .systemBlue
-            pairButton.configuration?.title = "Completing secure pairing…"
-            pairButton.configuration?.showsActivityIndicator = true
+            title = "Completing secure pairing…"
+            showActivity = true
         case .failed:
             stateLabel.textColor = .systemRed
-            pairButton.configuration?.title = "Try pairing again"
+            title = "Try pairing again"
+            showActivity = false
         default:
             stateLabel.textColor = .label
-            pairButton.configuration?.title = "Start pairing"
+            title = "Start pairing"
+            showActivity = false
+        }
+        setPairButton(title: title, showActivity: showActivity)
+    }
+
+    private func setPairButton(title: String, showActivity: Bool) {
+        if #available(iOS 15.0, *) {
+            pairButton.configuration?.title = title
+            pairButton.configuration?.showsActivityIndicator = showActivity
+        } else {
+            let displayTitle = showActivity ? "\(title) …" : title
+            pairButton.setTitle(displayTitle, for: .normal)
         }
     }
 
@@ -256,7 +285,12 @@ final class MainViewController: UIViewController {
             ? "Token saved securely on this device"
             : "Required for community pairing"
         tokenStatusLabel.textColor = hasToken ? .systemGreen : .systemOrange
-        tokenButton.configuration?.title = hasToken ? "Replace token" : "Add SDK token"
+        let tokenTitle = hasToken ? "Replace token" : "Add SDK token"
+        if #available(iOS 15.0, *) {
+            tokenButton.configuration?.title = tokenTitle
+        } else {
+            tokenButton.setTitle(tokenTitle, for: .normal)
+        }
         pairButton.isEnabled = hasToken
 #if targetEnvironment(simulator)
         pairButton.isEnabled = false

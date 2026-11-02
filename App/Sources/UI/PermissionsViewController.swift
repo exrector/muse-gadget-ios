@@ -25,13 +25,16 @@ final class PermissionsViewController: UITableViewController {
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let permission = permissions[indexPath.row]
         let cell = tableView.dequeueReusableCell(withIdentifier: "Permission", for: indexPath)
+        let statusText = center.status(for: permission).rawValue
         cell.textLabel?.text = permission.title
-        cell.detailTextLabel?.text = center.status(for: permission).rawValue
+        cell.detailTextLabel?.text = statusText
         cell.accessoryType = .disclosureIndicator
-        var content = cell.defaultContentConfiguration()
-        content.text = permission.title
-        content.secondaryText = center.status(for: permission).rawValue
-        cell.contentConfiguration = content
+        if #available(iOS 14.0, *) {
+            var content = cell.defaultContentConfiguration()
+            content.text = permission.title
+            content.secondaryText = statusText
+            cell.contentConfiguration = content
+        }
         return cell
     }
 
