@@ -1,0 +1,25 @@
+name: iOS build and protocol smoke
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Protocol smoke
+        run: ./Tools/run-protocol-smoke.sh
+      - name: Build application
+        run: |
+          xcodebuild \
+            -project MuseGadgetLegacy.xcodeproj \
+            -scheme MuseGadgetLegacy \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            build-for-testing

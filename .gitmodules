@@ -1,0 +1,3 @@
+[submodule "Vendor/muse-gadget-sdk"]
+	path = Vendor/muse-gadget-sdk
+	url = https://github.com/facebookincubator/muse-gadget-sdk.git
