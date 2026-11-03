@@ -1,74 +1,64 @@
 # Muse Gadget for iOS and iPadOS
 
-An unofficial, open-source Muse community gadget that turns an older iPhone or iPad into a screen, microphone, speaker, camera and sensor companion for Muse.
-
-The project is a native SwiftUI application targeting iOS/iPadOS 15 or newer. Bluetooth LE is used only for the user-initiated Muse pairing flow. After pairing, the runtime uses the device's existing Internet connection and the same encrypted Noise and Link protocols as the official Muse Gadget SDK.
+An unofficial, open-source Muse community gadget that turns an older iPhone or iPad into a screen, microphone, speaker, camera and sensor companion for Muse, with a chat you can type or talk into.
 
 > This is an independent community project. It is not made by, endorsed by, or supported by Meta. Muse Gadget SDK tokens are governed separately by the [Muse Gadget SDK Token Terms](https://gadgets.muse.ai/sdk-terms).
 
+## What it does
+
+- **Chat with Muse** from the gadget by text, photo or voice note, with history that stays on the device.
+- **Guided setup** in five steps, so nobody needs a terminal to pair a device.
+- **Device features Muse can use:** screen captions and cards, speech, vibration, flashlight, brightness, camera, location, motion sensors and device health.
+- **Apple Shortcuts:** Muse can run shortcuts you allow, which reaches the Home app, reminders, messages and more.
+- **Your local network:** Muse can find devices on your Wi-Fi and send web requests to the ones you allow.
+- **History sync** between devices on one Apple ID through iCloud.
+
+iOS has no shell, so unlike the Linux gadget there is no `system.run`. Muse gets an explicit list of native commands, and anything new it wants to reach needs a tap on the device.
+
+## Documentation
+
+| Document | For |
+|---|---|
+| [User guide](Docs/USER-GUIDE.md) ([на русском](Docs/USER-GUIDE.ru.md)) | Setting up and using the gadget |
+| [Building and installing](Docs/BUILDING.md) | Getting the app onto your device |
+| [Command reference](Docs/COMMANDS.md) | What Muse can call, with parameters and errors |
+| [Protocol status](Docs/PROTOCOL-STATUS.md) | What has been verified, and how |
+| [Security](SECURITY.md) | Secrets, command boundaries and pairing limits |
+
+## Requirements
+
+- iPhone or iPad with iOS or iPadOS 15 or newer, as the gadget.
+- A different phone with the Muse app. A phone running Muse cannot be its own gadget, because it does not see its own Bluetooth signal.
+- An SDK Token from [gadgets.muse.ai](https://gadgets.muse.ai/settings/sdk-tokens). One token can serve several gadgets.
+- A Mac with Xcode to build the app, which is not on the App Store.
+
 ## Current status
 
-The repository contains a buildable native application skeleton and the first real protocol pieces:
+The core works on the devices below, but much of it is new and long-running stability has not been observed yet. The screens are in Russian only for now.
 
-- stable `MuseGadgetXXXXXX` identity;
-- Keychain storage for the user's SDK token and device credentials;
-- CoreBluetooth peripheral with the official setup service and RX/TX characteristics;
-- official BLE chunk framing;
-- community pairing v5 cryptography (P-256, HKDF-SHA256, AES-256-GCM);
-- `get_device_info`, encrypted confirmation, Wi-Fi-current-connection provisioning and credential persistence;
-- five-step guided setup with one-tap clipboard import for the SDK token;
-- permission center for Bluetooth, local network, camera, microphone, speech, location and motion;
-- automatic current Wi-Fi name detection with a manual SSID-only fallback (iOS does not expose saved Wi-Fi passwords to apps);
-- explicit iOS command registry with no shell or arbitrary filesystem access;
-- Noise XX (`25519_AESGCM_SHA256`) over WebSocket, the Muse protobuf envelope and `/link-control` framing;
-- VM discovery plus `link.register`, `link.invoke`, `link.result` and `link.unpaired` handling;
-- chat SwiftUI home, capabilities catalog and settings; technical diagnostics stay collapsed by default.
-- chat history stored on the device, up to the latest 200 messages and excluded from backups; it can be cleared in Settings;
-- optional chat text sync between devices on one Apple ID through iCloud key-value storage, on by default and switchable in Settings; photos stay on the device that took them;
-- optional chat text sync directly between gadgets on one Wi-Fi network, for devices on different Apple IDs: Bonjour discovery, ChaCha20-Poly1305 with a key derived from the shared SDK token, off by default until it is verified between devices;
-- a Settings choice between tap-to-record and hold-to-record for voice notes.
+**Tested on:** iPhone 6s with iOS 15.8.8, and iPad (6th generation) with iPadOS 17.7.11.
 
-BLE pairing, credential persistence, VM discovery, Noise XX and `link.register` have been verified end to end on a physical iPhone 6s running iOS 15.8.8. A real Muse VM acknowledged the registration on 2026-11-03.
+| State | Features |
+|---|---|
+| Verified on a device | Pairing, connecting to Muse, text chat, photos, voice notes, chat history, token rotation, reconnecting, vibration, a second gadget on one token |
+| Partly verified | iCloud sync (iPad to iPhone only), Apple Shortcuts (simple shortcuts, without checking a returned result) |
+| Built, not yet verified on a device | Camera, location, motion, speech and flashlight commands, brightness, screen cards, local network commands, hold-to-record |
+| Built, off by default | Encrypted chat sync directly between gadgets over Wi-Fi, for devices on different Apple IDs |
+| Not built yet | Spoken replies, realtime voice, avatar, photo sync, an SSH client, WebSocket, MQTT, UDP and SSDP for local devices, English screens |
 
-Text chat, photos, voice notes, device token rotation and automatic reconnect were also verified on the same iPhone 6s on 2026-11-03.
+**The app has to stay on screen.** iOS suspends apps in the background, so the gadget answers only while open. It keeps the screen awake by default.
 
-Implemented, not yet confirmed end to end on a device:
+The app reports Muse as connected only after the server acknowledges `link.register`.
 
-- native `camera.capture`, `location.current`, `motion.snapshot`, `voice.record`, `audio.speak`, `torch.set`, `display.set_brightness` and `display.show_card` commands, available only while the app is visible;
-- `shortcuts.run`, which opens Apple Shortcuts through `x-callback-url` and returns the result; each new shortcut name needs an on-screen approval;
-- `lan.discover` (Bonjour, service types declared in `Info.plist`) and `lan.request` (HTTP and HTTPS to private IPv4 and `.local` hosts); each new host and port needs an on-screen approval, certificates are pinned on first use and redirects are not followed.
+## Quick start
 
-Still to be done:
+1. [Build and install](Docs/BUILDING.md) the app on your gadget, using your own Apple team and bundle ID.
+2. Follow the steps in the app: add your token, allow permissions, confirm Wi-Fi and start pairing.
+3. On your main phone, open Muse, go to Settings > Devices, turn on Developer Mode, tap **+** and choose the `MuseGadgetXXXXXX` name shown on the gadget.
 
-- spoken replies, realtime voice and avatar rendering;
-- other local network protocols used by some device skills: WebSocket, MQTT, UDP and SSDP (which also needs Apple's multicast entitlement);
-- an SSH client for routers and NAS devices, postponed to a later release on purpose;
-- syncing photos between devices;
-- reliable behavior while the screen is locked; the app keeps the screen awake by default, and this can be turned off in Settings;
-- App Store release hardening and localization.
-
-The application reports the Muse VM as connected only after the server acknowledges `link.register`.
-
-## Build
-
-1. Open `MuseGadgetLegacy.xcodeproj` in Xcode.
-2. Choose your Apple development team and a physical iPhone or iPad. CoreBluetooth peripheral advertising cannot be validated in Simulator.
-3. Build and run the `MuseGadgetLegacy` scheme.
-4. In the app, save your own `mgst_…` SDK token and tap **Start pairing**.
-5. In Muse on another phone, enable Developer Mode and add the displayed `MuseGadgetXXXXXX` device. The phone that runs the Muse app cannot pair itself as a gadget: it does not see its own Bluetooth advertising.
+The [user guide](Docs/USER-GUIDE.md) covers the details.
 
 Never commit an SDK token or paired-device credentials. The app stores them in the iOS Keychain.
-
-For a simulator-only compile check:
-
-```sh
-xcodebuild \
-  -project MuseGadgetLegacy.xcodeproj \
-  -scheme MuseGadgetLegacy \
-  -sdk iphonesimulator \
-  -destination 'generic/platform=iOS Simulator' \
-  CODE_SIGNING_ALLOWED=NO build
-```
 
 ## Upstream reference
 

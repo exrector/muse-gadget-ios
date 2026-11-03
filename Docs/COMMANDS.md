@@ -1,0 +1,202 @@
+# Command reference
+
+These are the commands the gadget registers with Muse through `link.register`. Muse calls them with `link.invoke` and gets the answer in `link.result`. For which ones have been confirmed on real devices, see [PROTOCOL-STATUS.md](PROTOCOL-STATUS.md).
+
+The set is an explicit allowlist, defined in [`IOSCommandRegistry.swift`](../App/Sources/Commands/IOSCommandRegistry.swift). There is deliberately no `system.run`, `file.read` or `file.write`: iOS has no shell, and App Store rules forbid running downloaded code.
+
+## General rules
+
+- **Visible only.** Everything except `device.health`, `display.set_caption`, `shortcuts.list` and an already approved `lan.request` fails with `foreground_required` when the app is not on screen.
+- **No remote permission prompts.** A command that needs an iOS permission fails with `permission_required` until the user has granted it in the app.
+- **On-screen approval.** Each new shortcut name and each new local host and port needs a tap on the device. Waiting for it can take up to 20 seconds.
+- **Timeouts.** A command answers `command_timeout` after 30 seconds, unless noted below.
+- **Result size.** A `link.result` is limited to 256 KiB, and larger results fail with `payload_too_large`.
+
+A failed command has `ok: false` and a short code in `error`.
+
+## Device and display
+
+### `device.health`
+
+Reports `system`, `system_version`, `model`, `battery_percent`, `free_bytes` and `uptime_seconds`.
+
+### `display.set_caption`
+
+Shows a text bubble in the chat.
+
+| Parameter | Type | Notes |
+|---|---|---|
+| `text` | string, required | Up to 500 bytes |
+
+Errors: `invalid_text`.
+
+### `display.show_card`
+
+Shows a dismissible card at the top of the chat, replacing any current card.
+
+| Parameter | Type | Notes |
+|---|---|---|
+| `title` | string, required | Up to 120 characters |
+| `body` | string | Up to 1000 characters |
+
+Errors: `invalid_title`, `invalid_body`.
+
+### `display.clear_card`
+
+Removes the card. Takes no parameters.
+
+### `display.set_brightness`
+
+| Parameter | Type | Notes |
+|---|---|---|
+| `level` | number, required | 0.0 to 1.0 |
+
+Returns `level` and `previous_level`. Errors: `invalid_level`.
+
+### `torch.set`
+
+| Parameter | Type | Notes |
+|---|---|---|
+| `on` | boolean, required | |
+| `level` | number | 0.1 to 1.0, default 1.0 |
+
+Returns `on`. Errors: `invalid_arguments`, `invalid_level`, `torch_unavailable` (no flashlight, as on some iPads), `torch_failed`.
+
+### `haptics.impact`
+
+Takes no parameters. Returns `played` and `method`:
+
+- `impact_generator` on iPhone 7 and newer.
+- `system_vibration` on iPhone 6s and older, where the impact generator silently does nothing.
+
+iOS can ignore the system vibration depending on the device's vibration settings, so `played: true` means the request was made. iPads and iPods fail with `haptics_unavailable`.
+
+## Audio
+
+### `audio.speak`
+
+Speaks text with the system voice.
+
+| Parameter | Type | Notes |
+|---|---|---|
+| `text` | string, required | Up to 1000 bytes |
+
+Returns `accepted`, `speaking` and `speech_id` as soon as speech starts. It does not wait for the end. Errors: `invalid_text`, `busy`, `audio_session_failed`.
+
+### `voice.record`
+
+Records 2 seconds from the microphone, which is what fits in a `link.result`. Takes no parameters. Needs the microphone permission.
+
+Returns `mime_type` (`audio/wav`), `data_base64`, `byte_count`, `duration_ms`, `sample_rate` (24000) and `channels` (1). Errors: `busy`, `recording_failed`, `timeout`.
+
+## Camera and sensors
+
+### `camera.capture`
+
+Takes a JPEG with the rear camera, without flash. The result is at most 96 KiB and 800 px on its long side. Takes no parameters. Needs the camera permission.
+
+Returns `mime_type`, `data_base64`, `byte_count`, `width`, `height` and `captured_at`. Errors: `unavailable`, `busy`, `capture_failed`, `timeout`.
+
+### `location.current`
+
+Takes one location reading, accurate to about 100 m. Takes no parameters. Needs the location permission.
+
+Returns `latitude`, `longitude`, `horizontal_accuracy_m` and `timestamp`, plus `altitude_m` and `vertical_accuracy_m` when known. Errors: `unavailable`, `busy`, `location_failed`, `timeout`.
+
+### `motion.snapshot`
+
+Takes one motion reading. Takes no parameters. Needs the motion permission.
+
+Returns `timestamp_s`, `gravity`, `user_acceleration`, `rotation_rate` and `attitude`. Errors: `unavailable`, `busy`, `motion_failed`, `timeout`.
+
+## Apple Shortcuts
+
+### `shortcuts.run`
+
+Runs a shortcut through the documented `shortcuts://x-callback-url` link, then returns to the app. Times out after 55 seconds.
+
+| Parameter | Type | Notes |
+|---|---|---|
+| `name` | string, required | Exact name, up to 200 characters |
+| `input` | string | Text for the shortcut, up to 4 KiB |
+
+Returns:
+
+| Field | Meaning |
+|---|---|
+| `started` | Always `true` on success |
+| `finished` | `false` if the shortcut was still running after 25 seconds |
+| `result` | The shortcut's text output, up to 16 KiB, when it gives one |
+
+Errors: `invalid_name`, `input_too_large`, `busy`, `denied_by_user`, `approval_timeout`, `shortcut_cancelled`, `shortcut_failed`, `shortcuts_unavailable`.
+
+Limits to keep in mind:
+
+- The screen visibly switches to Shortcuts and back.
+- Some actions in a shortcut ask for confirmation on screen, and a gadget with nobody present will wait.
+- The message Shortcuts gives on failure is not passed on, because it can quote private data.
+
+### `shortcuts.list`
+
+Returns `approved`, the names the user has already allowed. iOS gives apps no way to list other shortcuts.
+
+## Local network
+
+### `lan.discover`
+
+Browses for Bonjour services for about 4 seconds. It never scans ports.
+
+| Parameter | Type | Notes |
+|---|---|---|
+| `service_type` | string | Browse one type, such as `_hue._tcp`. Default is all declared types |
+
+Returns `count` and `devices`, up to 40, each with `name`, `service_type` and `txt`, plus `host` and `port` when resolved. Errors: `permission_required`, `service_type_not_declared`, `busy`.
+
+iOS requires each type to be declared in `Info.plist`. The current list comes from the SDK's device skills:
+
+`_muse-gadget._tcp`, `_airplay._tcp`, `_display._tcp`, `_elg._tcp`, `_ewelink._tcp`, `_googlecast._tcp`, `_hap._tcp`, `_http._tcp`, `_hue._tcp`, `_ipp._tcp`, `_ipps._tcp`, `_mieleathome._tcp`, `_spotify-connect._tcp`.
+
+### `lan.request`
+
+Sends one HTTP or HTTPS request. Times out after 45 seconds, including the wait for approval.
+
+| Parameter | Type | Notes |
+|---|---|---|
+| `host` | string, required | Private IPv4 address or `.local` name |
+| `port` | integer | Default 80 for http, 443 for https |
+| `scheme` | string | `http` or `https`, default `http` |
+| `method` | string | `GET`, `HEAD`, `POST`, `PUT`, `PATCH` or `DELETE`, default `GET` |
+| `path` | string | Path and query starting with `/`, default `/` |
+| `headers` | object | String values, up to 32 |
+| `body` | string | Text body, up to 256 KiB |
+| `body_base64` | string | Binary body, used if `body` is absent |
+| `timeout_ms` | integer | 1000 to 15000, default 8000 |
+
+Returns `status`, `headers` and `truncated`, plus `body` when the response is text or `body_base64` otherwise. Bodies over 128 KiB are cut off with `truncated: true`.
+
+An HTTP error from the device is a successful command with that `status`. Command errors:
+
+| Group | Codes |
+|---|---|
+| Rejected request | `host_not_local`, `invalid_scheme`, `invalid_port`, `invalid_method`, `invalid_path`, `invalid_headers`, `invalid_body`, `body_too_large` |
+| Approval | `denied_by_user`, `approval_timeout`, `busy`, `foreground_required` |
+| Connection | `timeout`, `host_not_found`, `connection_failed`, `request_failed` |
+| Security | `tls_failed`, `tls_certificate_changed`, `transport_security_blocked` |
+
+Rules this command enforces:
+
+- Only private IPv4 ranges (10/8, 172.16/12, 192.168/16, 169.254/16) and `.local` names are reachable. IPv6 is not supported.
+- Grants are per host and port, and the user can withdraw them in Settings.
+- Redirects are returned, never followed, so a device cannot point the request somewhere else.
+- `Host`, `Connection`, `Content-Length`, `Transfer-Encoding`, `Upgrade` and `Proxy-Authorization` headers are rejected.
+- A device's HTTPS certificate is pinned on first use. If it later changes, requests fail with `tls_certificate_changed` until the user withdraws and grants the device again.
+- Device logins are left to Muse: it receives the `401` with its headers and answers with its own `Authorization` header.
+- WebSocket, MQTT, UDP, raw TCP and SSDP are not available.
+
+## Adding a command
+
+1. Register a `CommandDefinition` in `IOSCommandRegistry.defaultRegistry`. Names follow the SDK's rule, `word.word` in lowercase, and must not start with `system.`, `file.`, `device.` or `link.` (`device.health` is the SDK's own).
+2. Parameter types can be `string`, `integer`, `number`, `boolean`, `object` or `array`.
+3. Call the completion exactly once. The registry's watchdog handles a command that never answers.
+4. Fail closed: check the permission and that the app is visible, and never ask for a permission from a remote call.
+5. Add tests, and update this page and [PROTOCOL-STATUS.md](PROTOCOL-STATUS.md).
