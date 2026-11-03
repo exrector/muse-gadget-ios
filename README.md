@@ -1,4 +1,8 @@
-# Muse Gadget for iOS and iPadOS
+# Pal Again for iOS and iPadOS
+
+**Pal Again** is a faithful Muse AI companion that gives an older iPhone or iPad a useful second life.
+
+> **Make Old Devices Smart Again.**
 
 An unofficial, open-source Muse community gadget that turns an older iPhone or iPad into a screen, microphone, speaker, camera and sensor companion for Muse, with a chat you can type or talk into.
 

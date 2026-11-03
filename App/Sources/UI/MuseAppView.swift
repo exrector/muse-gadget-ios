@@ -642,7 +642,7 @@ struct MuseAppView: View {
             }
         }
         .preferredColorScheme(.dark)
-        .alert("Muse Gadget", isPresented: Binding(
+        .alert("Pal Again", isPresented: Binding(
             get: { model.alertMessage != nil },
             set: { if !$0 { model.alertMessage = nil } }
         )) {
@@ -737,8 +737,11 @@ private struct MuseOnboarding: View {
             HStack {
                 MuseMark(size: 38)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Muse Gadget").font(.headline)
-                    Text("настройка устройства").font(.caption).foregroundColor(MuseTheme.secondary)
+                    Text("Pal Again").font(.headline)
+                    Text("Make Old Devices Smart Again")
+                        .font(.caption)
+                        .foregroundColor(MuseTheme.secondary)
+                        .lineLimit(2)
                 }
                 Spacer()
                 Text("\(model.setupStep + 1) / 5")
