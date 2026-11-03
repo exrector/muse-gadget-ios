@@ -22,19 +22,25 @@ The repository contains a buildable native application skeleton and the first re
 - explicit iOS command registry with no shell or arbitrary filesystem access;
 - Noise XX (`25519_AESGCM_SHA256`) over WebSocket, the Muse protobuf envelope and `/link-control` framing;
 - VM discovery plus `link.register`, `link.invoke`, `link.result` and `link.unpaired` handling;
-- chat-like SwiftUI home, capabilities catalog and settings; technical diagnostics stay collapsed by default.
+- chat SwiftUI home, capabilities catalog and settings; technical diagnostics stay collapsed by default.
 
 BLE pairing, credential persistence, VM discovery, Noise XX and `link.register` have been verified end to end on a physical iPhone 6s running iOS 15.8.8. A real Muse VM acknowledged the registration on 2026-11-03.
 
-Still to be completed and verified:
+Text chat, photos, voice notes, device token rotation and automatic reconnect were also verified on the same iPhone 6s on 2026-11-03.
 
-- refresh-token rotation and long-running reconnect behavior;
-- real command invocation through `link.invoke` and `link.result`;
-- chat, voice notes, avatar rendering and camera delivery;
-- reliable behavior while the screen is locked;
+Implemented, not yet confirmed end to end on a device:
+
+- native `camera.capture`, `location.current`, `motion.snapshot`, `voice.record` and `audio.speak` commands, available only while the app is visible;
+- system vibration for `haptics.impact` on iPhone 6s and older, where the impact generator has no effect.
+
+Still to be done:
+
+- spoken replies, realtime voice and avatar rendering;
+- local network commands (only the permission exists today);
+- reliable behavior while the screen is locked; the app keeps the screen awake by default, and this can be turned off in Settings;
 - App Store release hardening and localization.
 
-The application reports the Muse VM as connected only after the server acknowledges `link.register`. It does not present the local chat shell as a live Muse conversation yet.
+The application reports the Muse VM as connected only after the server acknowledges `link.register`.
 
 ## Build
 

@@ -2,6 +2,14 @@ import Foundation
 import os
 import UIKit
 
+enum MuseAppVersion {
+    static var current: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+    }
+
+    static var userAgent: String { "muse-gadget-ios/\(current)" }
+}
+
 struct MuseVM: Decodable {
     let url: String
     let authorizationToken: String
@@ -27,6 +35,11 @@ enum MuseAPIError: Error {
     case server(Int)
 }
 
+struct MuseRotatedTokens: Equatable {
+    let accessToken: String
+    let refreshToken: String
+}
+
 final class MuseAPIClient {
     private let session: URLSession
 
@@ -43,7 +56,7 @@ final class MuseAPIClient {
         request.timeoutInterval = 15
         request.setValue("Bearer \(credentials.accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("1.0.0", forHTTPHeaderField: "X-API-Version")
-        request.setValue("muse-gadget-ios/0.1.0", forHTTPHeaderField: "User-Agent")
+        request.setValue(MuseAppVersion.userAgent, forHTTPHeaderField: "User-Agent")
 
         session.dataTask(with: request) { data, response, error in
             if let error { completion(.failure(error)); return }
@@ -59,6 +72,56 @@ final class MuseAPIClient {
             completion(.success(list.compactMap(MuseVM.init(wire:))))
         }.resume()
     }
+
+    /// Rotates the token pair with the refresh token only; the SDK never presents the access token
+    /// here because the server can answer 200 with replacements that every endpoint then rejects.
+    func refreshTokens(
+        credentials: DeviceCredentials,
+        deviceID: String,
+        sdkToken: String?,
+        completion: @escaping (Result<MuseRotatedTokens, Error>) -> Void
+    ) {
+        let root = credentials.apiURLV2.isEmpty ? "https://api.muse.ai" : credentials.apiURLV2
+        guard let url = URL(string: root.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/device_token/refresh") else {
+            completion(.failure(MuseAPIError.invalidURL)); return
+        }
+        var body = ["device_id": deviceID]
+        if let sdkToken, !sdkToken.isEmpty { body["sdk_token"] = sdkToken }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 15
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        request.setValue(Self.refreshAuthorization(credentials.refreshToken), forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(MuseAppVersion.userAgent, forHTTPHeaderField: "User-Agent")
+
+        session.dataTask(with: request) { data, response, error in
+            if let error { completion(.failure(error)); return }
+            guard let http = response as? HTTPURLResponse else {
+                completion(.failure(MuseAPIError.invalidResponse)); return
+            }
+            if http.statusCode == 401 { completion(.failure(MuseAPIError.unauthorized)); return }
+            guard (200..<300).contains(http.statusCode), let data,
+                  let tokens = Self.parseRotatedTokens(data) else {
+                completion(.failure(MuseAPIError.server(http.statusCode))); return
+            }
+            completion(.success(tokens))
+        }.resume()
+    }
+
+    /// Stored refresh tokens may already carry the `hatch_refresh:` prefix; doubling it is rejected.
+    static func refreshAuthorization(_ refreshToken: String) -> String {
+        let raw = refreshToken.split(separator: ":", omittingEmptySubsequences: false).last.map(String.init) ?? refreshToken
+        return "Bearer hatch_refresh:\(raw)"
+    }
+
+    static func parseRotatedTokens(_ data: Data) -> MuseRotatedTokens? {
+        guard var object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        if let payload = object["payload"] as? [String: Any] { object = payload }
+        guard let access = object["access_token"] as? String, !access.isEmpty,
+              let refresh = object["refresh_token"] as? String, !refresh.isEmpty else { return nil }
+        return MuseRotatedTokens(accessToken: access, refreshToken: refresh)
+    }
 }
 
 enum MuseRuntimeState: Equatable {
@@ -69,6 +132,34 @@ enum MuseRuntimeState: Equatable {
     case registering
     case registered
     case failed(String)
+}
+
+enum MuseRuntimeError: Error {
+    case notConnected
+    case requestTimedOut
+    case requestFailed(Int)
+    case connectionEnded
+    case invalidResponse
+    case payloadTooLarge
+}
+
+private struct MuseHTTPResult {
+    let status: Int
+    let body: Data
+}
+
+private struct PendingHTTPRequest {
+    var status: Int?
+    var body = Data()
+    let timeout: DispatchWorkItem
+    let completion: (Result<MuseHTTPResult, Error>) -> Void
+}
+
+private struct MuseOutboundMessage {
+    let data: Data
+    let generation: Int
+    let socket: URLSessionWebSocketTask
+    let completion: () -> Void
 }
 
 private final class MuseNoiseTransport {
@@ -96,10 +187,12 @@ final class MuseRuntime: NSObject {
     var onStateChange: ((MuseRuntimeState) -> Void)?
     var onLog: ((String) -> Void)?
     var onUnpaired: (() -> Void)?
+    var onChatRecord: (([String: Any]) -> Void)?
 
     private let identity: DeviceIdentity
     private let commands: IOSCommandRegistry
     private let api: MuseAPIClient
+    private let credentialStore: CredentialStore
     private let logger = Logger(subsystem: "com.exrector.MuseGadgetLegacy", category: "runtime")
     private let queue = DispatchQueue(label: "MuseGadgetLegacy.runtime")
     private lazy var session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
@@ -114,14 +207,38 @@ final class MuseRuntime: NSObject {
     private var generation = 0
     private var activeInvokes: Set<String> = []
     private let maxConcurrentInvokes = 4
+    private var nextStreamID: Int64 = 2
+    private var pendingRequests: [Int64: PendingHTTPRequest] = [:]
+    private var chatSubscriptionID: Int64?
+    private var chatDecoder = MuseNDJSONDecoder()
+    private var outboundMessages: [MuseOutboundMessage] = []
+    private var isSendingMessage = false
+    private var reconnectFailures = 0
+    private var registeredAt: Date?
+    private var lastRefreshAttempt: Date?
+    private var tokenRejected = false
+
+    private static let tokenRefreshAge: TimeInterval = 3 * 3600
+    private static let tokenRetryInterval: TimeInterval = 300
+    private static let authBackoffFloor: TimeInterval = 15
+    private static let healthySession: TimeInterval = 30
+    private static let maxInlineRequestBytes = 64 * 1024
+    private static let maxControlMessageBytes = 256 * 1024
+    private static let maxMediaBytes = 2 * 1024 * 1024
 
     private(set) var state: MuseRuntimeState = .idle {
         didSet { DispatchQueue.main.async { self.onStateChange?(self.state) } }
     }
 
-    init(identity: DeviceIdentity, commands: IOSCommandRegistry, api: MuseAPIClient = MuseAPIClient()) {
+    init(
+        identity: DeviceIdentity,
+        commands: IOSCommandRegistry,
+        credentialStore: CredentialStore,
+        api: MuseAPIClient = MuseAPIClient()
+    ) {
         self.identity = identity
         self.commands = commands
+        self.credentialStore = credentialStore
         self.api = api
         super.init()
     }
@@ -130,8 +247,30 @@ final class MuseRuntime: NSObject {
         queue.async {
             self.credentials = credentials
             self.generation += 1
+            self.reconnectFailures = 0
+            self.tokenRejected = false
             self.resetConnection()
             self.fetchVM(generation: self.generation)
+        }
+    }
+
+    /// Called when the app returns to the foreground: a suspended socket may be dead by now.
+    func resumeIfNeeded() {
+        queue.async {
+            guard self.credentials != nil else { return }
+            switch self.state {
+            case .failed:
+                guard self.reconnect != nil else { return }
+                self.reconnect?.cancel()
+                self.reconnect = nil
+                self.reconnectFailures = 0
+                self.fetchVM(generation: self.generation)
+            case .registered:
+                self.ping?.cancel()
+                self.sendPing()
+            default:
+                break
+            }
         }
     }
 
@@ -144,22 +283,198 @@ final class MuseRuntime: NSObject {
         }
     }
 
+    func sendChat(_ message: String, completion: @escaping (Result<[String: Any], Error>) -> Void) {
+        let clean = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else {
+            completion(.failure(MuseRuntimeError.invalidResponse))
+            return
+        }
+        postChat(["message": clean, "output_modality": "text"], completion: completion)
+    }
+
+    func sendImage(
+        jpeg: Data,
+        message: String = "",
+        completion: @escaping (Result<[String: Any], Error>) -> Void
+    ) {
+        postMedia(
+            item: [
+                "type": "image",
+                "mime_type": "image/jpeg",
+                "filename": "photo.jpg",
+                "data_base64": jpeg.base64EncodedString()
+            ],
+            byteCount: jpeg.count,
+            message: message,
+            completion: completion
+        )
+    }
+
+    func sendVoiceNote(
+        wav: Data,
+        message: String = "",
+        completion: @escaping (Result<[String: Any], Error>) -> Void
+    ) {
+        postMedia(
+            item: [
+                "type": "file",
+                "mime_type": "audio/wav",
+                "filename": "voice_note.wav",
+                "data_base64": wav.base64EncodedString()
+            ],
+            byteCount: wav.count,
+            message: message,
+            completion: completion
+        )
+    }
+
+    private func postMedia(
+        item: [String: Any],
+        byteCount: Int,
+        message: String,
+        completion: @escaping (Result<[String: Any], Error>) -> Void
+    ) {
+        guard byteCount > 0, byteCount <= Self.maxMediaBytes else {
+            completion(.failure(MuseRuntimeError.payloadTooLarge))
+            return
+        }
+        // Muse reads only the items of a request that has any, so text goes first as its own item.
+        let clean = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text: [[String: Any]] = clean.isEmpty ? [] : [["type": "text", "text": clean]]
+        postChat(
+            ["message": clean, "output_modality": "text", "items": text + [item]],
+            completion: completion
+        )
+    }
+
+    private func postChat(
+        _ fields: [String: Any],
+        completion: @escaping (Result<[String: Any], Error>) -> Void
+    ) {
+        queue.async {
+            guard self.state == .registered else {
+                DispatchQueue.main.async { completion(.failure(MuseRuntimeError.notConnected)) }
+                return
+            }
+            do {
+                var request = fields
+                request["device_id"] = self.identity.nodeID
+                let body = try JSONSerialization.data(withJSONObject: request)
+                self.performRequest(
+                    method: "POST",
+                    path: "/chat/stream",
+                    body: body,
+                    headers: [MuseHTTPHeader(name: "Content-Type", value: "application/json")]
+                ) { result in
+                    let mapped: Result<[String: Any], Error> = result.flatMap { response in
+                        guard (200..<300).contains(response.status) else {
+                            return .failure(MuseRuntimeError.requestFailed(response.status))
+                        }
+                        if response.body.isEmpty { return .success([:]) }
+                        guard let object = try? JSONSerialization.jsonObject(with: response.body) as? [String: Any] else {
+                            return .failure(MuseRuntimeError.invalidResponse)
+                        }
+                        return .success(object)
+                    }
+                    DispatchQueue.main.async { completion(mapped) }
+                }
+            } catch {
+                DispatchQueue.main.async { completion(.failure(error)) }
+            }
+        }
+    }
+
     private func fetchVM(generation: Int) {
         guard let credentials, generation == self.generation else { return }
         state = .fetchingVM
+        if Date().timeIntervalSince(credentials.savedAt) >= Self.tokenRefreshAge, refreshAllowed() {
+            refreshTokens(generation: generation) { [weak self] _ in
+                self?.lookUpVM(generation: generation)
+            }
+        } else {
+            lookUpVM(generation: generation)
+        }
+    }
+
+    private func refreshAllowed() -> Bool {
+        guard let last = lastRefreshAttempt else { return true }
+        return Date().timeIntervalSince(last) >= Self.tokenRetryInterval
+    }
+
+    private func lookUpVM(generation: Int) {
+        guard let credentials, generation == self.generation else { return }
         log("Fetching the paired account's Muse VM")
         api.fetchVMs(credentials: credentials) { [weak self] result in
             self?.queue.async {
                 guard let self, generation == self.generation else { return }
                 switch result {
                 case .success(let vms):
+                    self.tokenRejected = false
                     guard let vm = vms.first(where: { $0.isDefault }) ?? vms.first else {
                         self.fail("Muse returned no usable VM", reconnect: true)
                         return
                     }
                     self.connect(vm: vm, credentials: credentials, generation: generation)
+                case .failure(MuseAPIError.unauthorized):
+                    self.handleRejectedAccessToken(generation: generation)
                 case .failure(let error):
                     self.fail("VM lookup failed: \(self.safeError(error))", reconnect: true)
+                }
+            }
+        }
+    }
+
+    private func handleRejectedAccessToken(generation: Int) {
+        log("Device token rejected by Muse; refreshing")
+        // Allow one immediate retry with the refreshed token; repeated rejection must back off.
+        let alreadyRejected = tokenRejected
+        tokenRejected = true
+        refreshTokens(generation: generation) { [weak self] refreshed in
+            guard let self, generation == self.generation else { return }
+            if refreshed, !alreadyRejected {
+                self.lookUpVM(generation: generation)
+            } else {
+                self.fail("Muse rejected the device token", reconnect: true, floor: Self.authBackoffFloor)
+            }
+        }
+    }
+
+    /// Completes on `queue`. Credentials are kept when Muse revokes them, so nothing is lost if the
+    /// rejection was wrong; the user decides whether to remove the pairing and pair again.
+    private func refreshTokens(generation: Int, completion: @escaping (Bool) -> Void) {
+        guard let current = credentials else { completion(false); return }
+        lastRefreshAttempt = Date()
+        api.refreshTokens(
+            credentials: current,
+            deviceID: identity.nodeID,
+            sdkToken: credentialStore.loadSDKToken()
+        ) { [weak self] result in
+            self?.queue.async {
+                guard let self, generation == self.generation, self.credentials == current else { return }
+                switch result {
+                case .success(let tokens):
+                    let rotated = DeviceCredentials(
+                        accessToken: tokens.accessToken,
+                        refreshToken: tokens.refreshToken,
+                        username: current.username,
+                        apiURL: current.apiURL,
+                        apiURLV2: current.apiURLV2,
+                        noiseHost: current.noiseHost,
+                        savedAt: Date()
+                    )
+                    self.credentials = rotated
+                    do {
+                        try self.credentialStore.saveDeviceCredentials(rotated)
+                        self.log("Device token rotated")
+                    } catch {
+                        self.log("Rotated device token could not be saved: \(self.safeError(error))")
+                    }
+                    completion(true)
+                case .failure(MuseAPIError.unauthorized):
+                    self.fail("Muse revoked this pairing; pair the device again", reconnect: false)
+                case .failure(let error):
+                    self.log("Device token refresh failed: \(self.safeError(error))")
+                    completion(false)
                 }
             }
         }
@@ -187,7 +502,7 @@ final class MuseRuntime: NSObject {
         var request = URLRequest(url: url)
         request.timeoutInterval = 20
         request.setValue("Bearer \(vm.authorizationToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("muse-gadget-ios/0.3.0", forHTTPHeaderField: "User-Agent")
+        request.setValue(MuseAppVersion.userAgent, forHTTPHeaderField: "User-Agent")
         let task = session.webSocketTask(with: request)
         task.taskDescription = String(generation)
         webSocket = task
@@ -246,7 +561,7 @@ final class MuseRuntime: NSObject {
             "node_id": identity.nodeID,
             "display_name": UIDevice.current.name,
             "platform": "ios",
-            "version": "0.3.0",
+            "version": MuseAppVersion.current,
             "device_family": "homehub",
             "model_id": "iphone",
             "is_wakeup_supported": false,
@@ -284,27 +599,196 @@ final class MuseRuntime: NSObject {
     }
 
     private func handle(_ frame: MuseInboundServiceFrame) throws {
-        let streamID: Int64
-        let data: Data
-        let ended: Bool
         switch frame {
         case .response(let id, let response):
-            streamID = id
-            guard (200..<300).contains(response.status) else {
-                throw MuseWireError.malformed
+            if id == 1 {
+                guard (200..<300).contains(response.status) else { throw MuseWireError.malformed }
+                for message in try controlDecoder.feed(response.body) { handleControl(message) }
+                if response.endBody { throw MuseRuntimeError.connectionEnded }
+            } else {
+                try handleHTTPResponse(streamID: id, response: response)
             }
-            data = response.body
-            ended = response.endBody
         case .body(let id, let chunk):
-            streamID = id
-            data = chunk.data
-            ended = chunk.endBody
-        case .reset(_, let reason):
-            throw NSError(domain: "MuseLink", code: 1, userInfo: [NSLocalizedDescriptionKey: reason])
+            if id == 1 {
+                for message in try controlDecoder.feed(chunk.data) { handleControl(message) }
+                if chunk.endBody { throw MuseRuntimeError.connectionEnded }
+            } else {
+                try handleHTTPBody(streamID: id, chunk: chunk)
+            }
+        case .reset(let id, let reason):
+            if id == 1 {
+                throw NSError(domain: "MuseLink", code: 1, userInfo: [NSLocalizedDescriptionKey: reason])
+            }
+            handleHTTPReset(streamID: id)
         }
-        guard streamID == 1 else { return }
-        for message in try controlDecoder.feed(data) { handleControl(message) }
-        if ended { throw NSError(domain: "MuseLink", code: 2) }
+    }
+
+    private func performRequest(
+        method: String,
+        path: String,
+        body: Data,
+        headers: [MuseHTTPHeader],
+        completion: @escaping (Result<MuseHTTPResult, Error>) -> Void
+    ) {
+        guard transport != nil else {
+            completion(.failure(MuseRuntimeError.notConnected))
+            return
+        }
+        let streamID = allocateStreamID()
+        var requestHeaders = headers
+        requestHeaders.append(MuseHTTPHeader(name: "x-request-id", value: UUID().uuidString.lowercased()))
+        requestHeaders.append(MuseHTTPHeader(name: "x-app-id", value: "musegadget"))
+        let uploadInParts = body.count > Self.maxInlineRequestBytes
+        let timeout = DispatchWorkItem { [weak self] in
+            self?.resetStream(streamID, reason: "request ended")
+            self?.finishRequest(streamID: streamID, result: .failure(MuseRuntimeError.requestTimedOut))
+        }
+        pendingRequests[streamID] = PendingHTTPRequest(timeout: timeout, completion: completion)
+        // The SDK's 60 s starts after the upload; slow links must not lose the reply to a long send.
+        queue.asyncAfter(deadline: .now() + (uploadInParts ? 240 : 60), execute: timeout)
+        do {
+            let start = MuseNoiseWire.applicationRequest(
+                streamID: streamID,
+                method: method,
+                path: path,
+                headers: requestHeaders,
+                body: uploadInParts ? Data() : body,
+                endBody: !uploadInParts
+            )
+            try sendEncrypted(start) { [weak self] in self?.log("Sent Muse chat request") }
+            if uploadInParts {
+                for chunk in MuseNoiseWire.bodyChunks(streamID: streamID, data: body, endBody: true) {
+                    try sendEncrypted(chunk, completion: {})
+                }
+            }
+        } catch {
+            finishRequest(streamID: streamID, result: .failure(error))
+        }
+    }
+
+    private func resetStream(_ streamID: Int64, reason: String) {
+        guard transport != nil else { return }
+        try? sendEncrypted(MuseNoiseWire.reset(streamID: streamID, reason: reason), completion: {})
+    }
+
+    private func openChatSubscription() {
+        guard state == .registered, chatSubscriptionID == nil else { return }
+        let streamID = allocateStreamID()
+        chatSubscriptionID = streamID
+        chatDecoder = MuseNDJSONDecoder()
+        do {
+            let body = try JSONSerialization.data(withJSONObject: [:])
+            let frame = MuseNoiseWire.applicationRequest(
+                streamID: streamID,
+                method: "POST",
+                path: "/chat/subscribe",
+                headers: [
+                    MuseHTTPHeader(name: "Content-Type", value: "application/json"),
+                    MuseHTTPHeader(name: "Accept", value: "application/x-ndjson"),
+                    MuseHTTPHeader(name: "x-request-id", value: UUID().uuidString.lowercased()),
+                    MuseHTTPHeader(name: "x-app-id", value: "musegadget")
+                ],
+                body: body,
+                endBody: true
+            )
+            try sendEncrypted(frame) { [weak self] in self?.log("Subscribed to Muse chat") }
+        } catch {
+            chatSubscriptionID = nil
+            scheduleChatSubscriptionReconnect()
+        }
+    }
+
+    private func handleHTTPResponse(streamID: Int64, response: MuseApplicationResponse) throws {
+        if streamID == chatSubscriptionID {
+            guard (200..<300).contains(response.status) else {
+                log("Muse chat subscription returned HTTP \(response.status)")
+                closeChatSubscription(streamID: streamID, reconnect: true)
+                return
+            }
+            handleChatData(response.body, end: response.endBody, streamID: streamID)
+            if response.endBody { closeChatSubscription(streamID: streamID, reconnect: true) }
+            return
+        }
+        guard var pending = pendingRequests[streamID] else { return }
+        pending.status = response.status
+        try append(response.body, to: &pending)
+        pendingRequests[streamID] = pending
+        if response.endBody {
+            finishRequest(
+                streamID: streamID,
+                result: .success(MuseHTTPResult(status: response.status, body: pending.body))
+            )
+        }
+    }
+
+    private func handleHTTPBody(streamID: Int64, chunk: MuseBodyChunk) throws {
+        if streamID == chatSubscriptionID {
+            handleChatData(chunk.data, end: chunk.endBody, streamID: streamID)
+            if chunk.endBody { closeChatSubscription(streamID: streamID, reconnect: true) }
+            return
+        }
+        guard var pending = pendingRequests[streamID] else { return }
+        try append(chunk.data, to: &pending)
+        pendingRequests[streamID] = pending
+        if chunk.endBody {
+            finishRequest(
+                streamID: streamID,
+                result: .success(MuseHTTPResult(status: pending.status ?? 0, body: pending.body))
+            )
+        }
+    }
+
+    private func handleHTTPReset(streamID: Int64) {
+        if streamID == chatSubscriptionID {
+            closeChatSubscription(streamID: streamID, reconnect: true)
+        } else {
+            finishRequest(streamID: streamID, result: .failure(MuseRuntimeError.connectionEnded))
+        }
+    }
+
+    private func append(_ data: Data, to request: inout PendingHTTPRequest) throws {
+        guard request.body.count + data.count <= 1024 * 1024 else { throw MuseWireError.oversized }
+        request.body.append(data)
+    }
+
+    private func finishRequest(streamID: Int64, result: Result<MuseHTTPResult, Error>) {
+        guard let request = pendingRequests.removeValue(forKey: streamID) else { return }
+        request.timeout.cancel()
+        request.completion(result)
+    }
+
+    private func handleChatData(_ data: Data, end: Bool, streamID: Int64) {
+        do {
+            for record in try chatDecoder.feed(data, end: end) where record["type"] as? String == "event" {
+                DispatchQueue.main.async { self.onChatRecord?(record) }
+            }
+        } catch {
+            // An oversized chat event must not take the control stream down with it.
+            log("Dropped Muse chat stream: \(safeError(error))")
+            resetStream(streamID, reason: "consumer closed")
+            closeChatSubscription(streamID: streamID, reconnect: true)
+        }
+    }
+
+    private func closeChatSubscription(streamID: Int64, reconnect: Bool) {
+        guard chatSubscriptionID == streamID else { return }
+        chatSubscriptionID = nil
+        chatDecoder = MuseNDJSONDecoder()
+        if reconnect { scheduleChatSubscriptionReconnect() }
+    }
+
+    private func scheduleChatSubscriptionReconnect() {
+        let reconnectGeneration = generation
+        queue.asyncAfter(deadline: .now() + 5) { [weak self] in
+            guard let self, reconnectGeneration == self.generation else { return }
+            self.openChatSubscription()
+        }
+    }
+
+    private func allocateStreamID() -> Int64 {
+        let result = nextStreamID
+        nextStreamID = nextStreamID == Int64.max ? 2 : nextStreamID + 1
+        return result
     }
 
     private func handleControl(_ message: [String: Any]) {
@@ -313,8 +797,10 @@ final class MuseRuntime: NSObject {
                 fail("Muse rejected link.register", reconnect: false)
             } else {
                 state = .registered
+                registeredAt = Date()
                 log("Registered with Muse")
                 schedulePing()
+                openChatSubscription()
             }
             return
         }
@@ -344,6 +830,8 @@ final class MuseRuntime: NSObject {
                 guard let self else { return }
                 self.activeInvokes.remove(invokeID)
                 guard invokeGeneration == self.generation else { return }
+                let outcome = result.success ? "ok" : result.value["error"] as? String ?? "failed"
+                self.log("Command \(command): \(outcome)")
                 var response: [String: Any] = [
                     "method": "link.result",
                     "id": invokeID,
@@ -362,8 +850,15 @@ final class MuseRuntime: NSObject {
 
     private func sendControl(_ message: [String: Any]) {
         do {
-            let body = try MuseNoiseWire.controlMessage(message)
-            try sendEncrypted(MuseNoiseWire.bodyChunk(streamID: 1, data: body), completion: {})
+            var body = try MuseNoiseWire.controlMessage(message)
+            if body.count > Self.maxControlMessageBytes, let id = message["id"] {
+                body = try MuseNoiseWire.controlMessage([
+                    "method": "link.result", "id": id, "ok": false, "error": "payload_too_large"
+                ])
+            }
+            for chunk in MuseNoiseWire.bodyChunks(streamID: 1, data: body) {
+                try sendEncrypted(chunk, completion: {})
+            }
         } catch {
             fail("Could not send link.result", reconnect: true)
         }
@@ -376,13 +871,35 @@ final class MuseRuntime: NSObject {
 
     private func sendBinary(_ data: Data, completion: @escaping () -> Void) throws {
         guard let webSocket else { throw MuseNoiseError.invalidState }
-        let socket = webSocket
-        let sendGeneration = generation
-        webSocket.send(.data(data)) { [weak self] error in
+        outboundMessages.append(MuseOutboundMessage(
+            data: data,
+            generation: generation,
+            socket: webSocket,
+            completion: completion
+        ))
+        drainOutboundMessages()
+    }
+
+    private func drainOutboundMessages() {
+        guard !isSendingMessage, let message = outboundMessages.first else { return }
+        guard message.socket === webSocket, message.generation == generation else {
+            outboundMessages.removeFirst()
+            drainOutboundMessages()
+            return
+        }
+        isSendingMessage = true
+        message.socket.send(.data(message.data)) { [weak self] error in
             self?.queue.async {
-                guard let self, socket === self.webSocket, sendGeneration == self.generation else { return }
+                guard let self,
+                      message.socket === self.webSocket,
+                      message.generation == self.generation else { return }
+                self.isSendingMessage = false
+                if !self.outboundMessages.isEmpty { self.outboundMessages.removeFirst() }
                 if let error { self.fail("WebSocket send failed: \(self.safeError(error))", reconnect: true) }
-                else { completion() }
+                else {
+                    message.completion()
+                    self.drainOutboundMessages()
+                }
             }
         }
     }
@@ -407,30 +924,43 @@ final class MuseRuntime: NSObject {
 
     private func schedulePing() {
         ping?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            guard let self, let socket = self.webSocket else { return }
-            let pingGeneration = self.generation
-            socket.sendPing { [weak self] error in
-                self?.queue.async {
-                    guard let self, socket === self.webSocket, pingGeneration == self.generation else { return }
-                    if let error { self.fail("Muse VM ping failed: \(self.safeError(error))", reconnect: true) }
-                    else { self.schedulePing() }
-                }
-            }
-        }
+        let work = DispatchWorkItem { [weak self] in self?.sendPing() }
         ping = work
         queue.asyncAfter(deadline: .now() + 20, execute: work)
     }
 
-    private func fail(_ message: String, reconnect shouldReconnect: Bool) {
+    private func sendPing() {
+        guard let socket = webSocket else { return }
+        let pingGeneration = generation
+        socket.sendPing { [weak self] error in
+            self?.queue.async {
+                guard let self, socket === self.webSocket, pingGeneration == self.generation else { return }
+                if let error { self.fail("Muse VM ping failed: \(self.safeError(error))", reconnect: true) }
+                else { self.schedulePing() }
+            }
+        }
+    }
+
+    private func fail(_ message: String, reconnect shouldReconnect: Bool, floor: TimeInterval = 0) {
         log(message)
         state = .failed(message)
+        if let registeredAt, Date().timeIntervalSince(registeredAt) >= Self.healthySession {
+            reconnectFailures = 0
+        }
+        registeredAt = nil
         resetConnection()
         guard shouldReconnect, credentials != nil else { return }
         let generation = self.generation
         let work = DispatchWorkItem { [weak self] in self?.fetchVM(generation: generation) }
         reconnect = work
-        queue.asyncAfter(deadline: .now() + 3, execute: work)
+        let delay = Self.reconnectDelay(failures: reconnectFailures, floor: floor)
+        reconnectFailures += 1
+        queue.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    /// 2, 4, 8 ... up to 60 seconds, matching the SDK's service loop.
+    static func reconnectDelay(failures: Int, floor: TimeInterval = 0) -> TimeInterval {
+        max(min(2 * pow(2, Double(min(failures, 16))), 60), floor)
     }
 
     private func resetConnection() {
@@ -445,6 +975,17 @@ final class MuseRuntime: NSObject {
         registerID = ""
         controlDecoder = MuseControlMessageDecoder()
         activeInvokes.removeAll()
+        outboundMessages.removeAll()
+        isSendingMessage = false
+        nextStreamID = 2
+        chatSubscriptionID = nil
+        chatDecoder = MuseNDJSONDecoder()
+        let requests = pendingRequests
+        pendingRequests.removeAll()
+        for request in requests.values {
+            request.timeout.cancel()
+            request.completion(.failure(MuseRuntimeError.connectionEnded))
+        }
     }
 
     private func log(_ message: String) {

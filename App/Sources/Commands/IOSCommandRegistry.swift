@@ -1,4 +1,3 @@
-import AVFoundation
 import Foundation
 import UIKit
 
@@ -50,10 +49,25 @@ final class IOSCommandRegistry {
             completion(CommandResult(success: false, value: ["error": "unsupported_command"]))
             return
         }
-        handler(arguments, completion)
+        let lock = NSLock()
+        var completed = false
+        var timeout: DispatchWorkItem?
+        let finish: (CommandResult) -> Void = { result in
+            lock.lock()
+            guard !completed else { lock.unlock(); return }
+            completed = true
+            lock.unlock()
+            timeout?.cancel()
+            completion(result)
+        }
+        timeout = DispatchWorkItem {
+            finish(CommandResult(success: false, value: ["error": "command_timeout"]))
+        }
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 30, execute: timeout!)
+        handler(arguments, finish)
     }
 
-    static func defaultRegistry(permissions: PermissionCenter) -> IOSCommandRegistry {
+    static func defaultRegistry(nativeServices: NativeCommandServices) -> IOSCommandRegistry {
         let registry = IOSCommandRegistry()
 
         registry.register(CommandDefinition(
@@ -99,11 +113,7 @@ final class IOSCommandRegistry {
                 completion(CommandResult(success: false, value: ["error": "invalid_text"]))
                 return
             }
-            DispatchQueue.main.async {
-                let utterance = AVSpeechUtterance(string: text)
-                AVSpeechSynthesizer().speak(utterance)
-                completion(CommandResult(success: true, value: ["speaking": true]))
-            }
+            nativeServices.speak(text: text, completion: completion)
         }
 
         registry.register(CommandDefinition(
@@ -111,27 +121,42 @@ final class IOSCommandRegistry {
             summary: "Play a user-visible impact haptic.",
             parameters: [:]
         )) { _, completion in
-            DispatchQueue.main.async {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                completion(CommandResult(success: true, value: ["played": true]))
-            }
+            nativeServices.playHaptic(completion: completion)
         }
 
-        for (name, summary, permission) in [
-            ("camera.capture", "Capture a photo after user-granted camera access.", AppPermission.camera),
-            ("location.current", "Read location while the app is active and permission is granted.", AppPermission.location),
-            ("motion.snapshot", "Read a bounded motion sensor snapshot.", AppPermission.motion),
-            ("voice.record", "Record a bounded voice note after microphone permission.", AppPermission.microphone)
-        ] {
-            registry.register(CommandDefinition(name: name, summary: summary, parameters: [:])) { _, completion in
-                let state = permissions.status(for: permission)
-                completion(CommandResult(success: false, value: [
-                    "error": state == .granted ? "not_implemented" : "permission_required",
-                    "permission": permission.title,
-                    "permission_state": state.rawValue
-                ]))
-            }
+        // Results travel over link.result, which Muse bounds at 256 KiB after base64.
+        registry.register(CommandDefinition(
+            name: "camera.capture",
+            summary: "Capture a compact JPEG while the app is visible and camera access is granted.",
+            parameters: [:]
+        )) { _, completion in
+            nativeServices.capturePhoto(maxBytes: 96 * 1024, maxDimension: 800, completion: completion)
         }
+
+        registry.register(CommandDefinition(
+            name: "location.current",
+            summary: "Read one location while the app is visible and access is granted.",
+            parameters: [:]
+        )) { _, completion in
+            nativeServices.currentLocation(completion: completion)
+        }
+
+        registry.register(CommandDefinition(
+            name: "motion.snapshot",
+            summary: "Read a bounded motion sensor snapshot while the app is visible.",
+            parameters: [:]
+        )) { _, completion in
+            nativeServices.motionSnapshot(completion: completion)
+        }
+
+        registry.register(CommandDefinition(
+            name: "voice.record",
+            summary: "Record a short voice sample while the app is visible and microphone access is granted.",
+            parameters: [:]
+        )) { _, completion in
+            nativeServices.recordVoice(durationSeconds: 2, completion: completion)
+        }
+
         return registry
     }
 }

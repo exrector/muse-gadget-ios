@@ -1,6 +1,22 @@
 import SwiftUI
 import UIKit
 
+struct MuseChatItem: Identifiable {
+    enum Author: Equatable { case user, muse, system }
+
+    let id: UUID
+    let author: Author
+    var text: String
+    var image: UIImage?
+
+    init(id: UUID = UUID(), author: Author, text: String, image: UIImage? = nil) {
+        self.id = id
+        self.author = author
+        self.text = text
+        self.image = image
+    }
+}
+
 final class MuseAppModel: ObservableObject {
     @Published var setupStep: Int
     @Published var tokenDraft = ""
@@ -14,12 +30,30 @@ final class MuseAppModel: ObservableObject {
     @Published var caption = ""
     @Published var diagnostics: [String] = []
     @Published var alertMessage: String?
+    @Published var chatItems: [MuseChatItem] = []
+    @Published var isSendingChat = false
+    @Published var isAwaitingReply = false
+    @Published var museActivity: String?
+    @Published var isRecordingVoice = false
+    @Published var recordingSeconds = 0
+    @Published var keepScreenAwake: Bool {
+        didSet {
+            UserDefaults.standard.set(keepScreenAwake, forKey: Self.keepScreenAwakeKey)
+            applyIdleTimerPolicy()
+        }
+    }
 
     let environment: AppEnvironment
+    private static let keepScreenAwakeKey = "keepScreenAwake"
     private var waitingForSettingsReturn = false
+    private let chatTimeline = MuseChatTimeline()
+    private var replyItemIDs: [String: UUID] = [:]
+    private var replyTimeout: DispatchWorkItem?
+    private var recordingTimer: Timer?
 
     init(environment: AppEnvironment) {
         self.environment = environment
+        keepScreenAwake = UserDefaults.standard.object(forKey: Self.keepScreenAwakeKey) as? Bool ?? true
         let hasToken = environment.credentialStore.loadSDKToken() != nil
         let hasPairing = environment.credentialStore.loadDeviceCredentials() != nil
         tokenSaved = hasToken
@@ -51,6 +85,7 @@ final class MuseAppModel: ObservableObject {
             self.pairingState = state
             if state == .paired {
                 withAnimation(.easeInOut) { self.isPaired = true }
+                self.applyIdleTimerPolicy()
             }
         }
         environment.pairing.onLog = { [weak self] message in
@@ -66,6 +101,11 @@ final class MuseAppModel: ObservableObject {
             self.diagnostics.append(message)
             if self.diagnostics.count > 80 { self.diagnostics.removeFirst() }
         }
+        environment.runtime.onChatRecord = { [weak self] record in
+            guard let self else { return }
+            self.apply(self.chatTimeline.feed(record))
+        }
+        applyIdleTimerPolicy()
         NotificationCenter.default.addObserver(
             forName: .museCaptionChanged,
             object: nil,
@@ -78,7 +118,9 @@ final class MuseAppModel: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self, self.waitingForSettingsReturn else { return }
+            guard let self else { return }
+            self.environment.runtime.resumeIfNeeded()
+            guard self.waitingForSettingsReturn else { return }
             self.waitingForSettingsReturn = false
             self.environment.permissions.resetLocalNetworkStatusForRecheck()
             self.refreshPermissions()
@@ -166,11 +208,183 @@ final class MuseAppModel: ObservableObject {
         environment.pairing.stop()
     }
 
+    func sendChat(_ text: String) {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty, canSendToMuse else { return }
+        chatItems.append(MuseChatItem(author: .user, text: clean))
+        beginRequest()
+        environment.runtime.sendChat(clean) { [weak self] result in
+            self?.finishRequest(result)
+        }
+    }
+
+    func sendPhoto(_ image: UIImage, caption: String) {
+        guard canSendToMuse else { return }
+        let clean = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+        beginRequest()
+        DispatchQueue.global(qos: .userInitiated).async {
+            let original = image.jpegData(compressionQuality: 0.95)
+            let jpeg = original.flatMap { MuseJPEG.bounded($0, maxBytes: 1_048_576, maxDimension: 1_600) }
+            let preview = jpeg
+                .flatMap { MuseJPEG.bounded($0, maxBytes: 128 * 1024, maxDimension: 640) }
+                .flatMap(UIImage.init(data:))
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                guard let jpeg else {
+                    self.finishRequest(.failure(MuseRuntimeError.payloadTooLarge))
+                    return
+                }
+                self.chatItems.append(MuseChatItem(author: .user, text: clean, image: preview))
+                self.environment.runtime.sendImage(jpeg: jpeg, message: clean) { [weak self] result in
+                    self?.finishRequest(result)
+                }
+            }
+        }
+    }
+
+    var canSendToMuse: Bool {
+        runtimeState == .registered && !isSendingChat
+    }
+
+    var canUseCamera: Bool {
+        UIImagePickerController.isSourceTypeAvailable(.camera)
+            && environment.permissions.status(for: .camera) != .denied
+            && environment.permissions.status(for: .camera) != .restricted
+    }
+
+    func explainCameraUnavailable() {
+        alertMessage = "Камера недоступна. Разрешите доступ к камере в системных настройках."
+    }
+
+    func toggleVoiceRecording() {
+        if isRecordingVoice {
+            environment.nativeServices.stopVoiceRecording()
+            return
+        }
+        guard canSendToMuse else { return }
+        switch environment.permissions.status(for: .microphone) {
+        case .granted:
+            startVoiceRecording()
+        case .notDetermined:
+            environment.permissions.request(.microphone) { [weak self] state in
+                self?.permissionStates[.microphone] = state
+                if state == .granted { self?.startVoiceRecording() }
+            }
+        default:
+            alertMessage = "Микрофон недоступен. Разрешите доступ к микрофону в системных настройках."
+        }
+    }
+
+    private func startVoiceRecording() {
+        isRecordingVoice = true
+        recordingSeconds = 0
+        recordingTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            self?.recordingSeconds += 1
+        }
+        environment.nativeServices.recordVoiceNote { [weak self] result in
+            self?.finishVoiceRecording(result)
+        }
+    }
+
+    private func finishVoiceRecording(_ result: CommandResult) {
+        recordingTimer?.invalidate()
+        recordingTimer = nil
+        isRecordingVoice = false
+        guard result.success,
+              let encoded = result.value["data_base64"] as? String,
+              let wav = Data(base64Encoded: encoded) else {
+            chatItems.append(MuseChatItem(author: .system, text: "Не удалось записать голосовую заметку."))
+            return
+        }
+        let durationMS = result.value["duration_ms"] as? Int ?? 0
+        guard durationMS >= 500, canSendToMuse else { return }
+        chatItems.append(MuseChatItem(author: .user, text: "🎙 Голосовая заметка · \(max(durationMS / 1_000, 1)) с"))
+        beginRequest()
+        environment.runtime.sendVoiceNote(wav: wav) { [weak self] result in
+            self?.finishRequest(result)
+        }
+    }
+
+    private func beginRequest() {
+        chatTimeline.expectRequest()
+        isSendingChat = true
+        isAwaitingReply = true
+        museActivity = nil
+    }
+
+    private func finishRequest(_ result: Result<[String: Any], Error>) {
+        isSendingChat = false
+        switch result {
+        case .success(let response):
+            apply(chatTimeline.acknowledge(response))
+            if isAwaitingReply { scheduleReplyTimeout() }
+        case .failure(let error):
+            chatTimeline.abandonRequest()
+            finishWaitingForReply()
+            chatItems.append(MuseChatItem(author: .system, text: Self.describe(error)))
+        }
+    }
+
+    private func scheduleReplyTimeout() {
+        replyTimeout?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.finishWaitingForReply() }
+        replyTimeout = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 120, execute: work)
+    }
+
+    private func finishWaitingForReply() {
+        replyTimeout?.cancel()
+        replyTimeout = nil
+        isAwaitingReply = false
+        museActivity = nil
+    }
+
+    private func apply(_ updates: [MuseChatUpdate]) {
+        for update in updates {
+            switch update {
+            case .reply(let messageID, let text, let done):
+                if let itemID = replyItemIDs[messageID],
+                   let index = chatItems.firstIndex(where: { $0.id == itemID }) {
+                    chatItems[index].text = text
+                } else if !text.isEmpty {
+                    let item = MuseChatItem(author: .muse, text: text)
+                    replyItemIDs[messageID] = item.id
+                    chatItems.append(item)
+                }
+                if done { finishWaitingForReply() }
+                else if !text.isEmpty { museActivity = nil }
+            case .activity(let text):
+                museActivity = text?.isEmpty == false ? text : nil
+            case .finished:
+                finishWaitingForReply()
+            }
+        }
+    }
+
+    private func applyIdleTimerPolicy() {
+        // Native commands run only while the app is visible, so a sleeping gadget cannot serve them.
+        UIApplication.shared.isIdleTimerDisabled = keepScreenAwake && isPaired
+    }
+
+    private static func describe(_ error: Error) -> String {
+        switch error {
+        case MuseRuntimeError.payloadTooLarge:
+            return "Файл слишком большой для отправки в Muse."
+        case MuseRuntimeError.requestTimedOut:
+            return "Muse не подтвердил сообщение вовремя. Попробуйте ещё раз."
+        case MuseRuntimeError.requestFailed(let status):
+            return "Muse отклонил сообщение (HTTP \(status))."
+        default:
+            return "Не удалось отправить сообщение. Канал Muse переподключится автоматически."
+        }
+    }
+
     func forgetPairing() {
         environment.runtime.stop()
         environment.pairing.forgetPairing()
         isPaired = false
         setupStep = 3
+        applyIdleTimerPolicy()
     }
 
     func restartGuide() {
@@ -680,11 +894,20 @@ private struct MuseMainTabs: View {
 }
 
 private struct MuseChatView: View {
+    private enum MediaPicker: String, Identifiable {
+        case camera, library
+        var id: String { rawValue }
+    }
+
     @ObservedObject var model: MuseAppModel
     @State private var draft = ""
+    @State private var mediaPicker: MediaPicker?
+
+    private static let bottomAnchor = "chat-bottom"
 
     var body: some View {
         VStack(spacing: 0) {
+            ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 18) {
                     HStack {
@@ -714,33 +937,112 @@ private struct MuseChatView: View {
                         ChatBubble(text: model.caption, isMuse: true)
                     }
 
+                    ForEach(model.chatItems) { item in
+                        ChatBubble(text: item.text, isMuse: item.author != .user, image: item.image)
+                    }
+
+                    if model.isAwaitingReply {
+                        HStack(spacing: 10) {
+                            ProgressView()
+                            Text(model.museActivity ?? "Muse отвечает…")
+                                .font(.subheadline)
+                                .foregroundColor(MuseTheme.secondary)
+                            Spacer(minLength: 0)
+                        }
+                    }
+
                     Spacer(minLength: 70)
+                        .id(Self.bottomAnchor)
                 }
                 .padding(20)
             }
+            .onChange(of: model.chatItems.count) { _ in
+                withAnimation { proxy.scrollTo(Self.bottomAnchor, anchor: .bottom) }
+            }
+            .onChange(of: model.chatItems.last?.text) { _ in
+                proxy.scrollTo(Self.bottomAnchor, anchor: .bottom)
+            }
+            }
 
             HStack(spacing: 10) {
-                TextField("Сообщение для Muse", text: $draft)
+                if model.isRecordingVoice {
+                    HStack(spacing: 10) {
+                        Image(systemName: "waveform").foregroundColor(.red)
+                        Text("Запись · \(model.recordingSeconds) с из 40")
+                            .font(.subheadline.monospacedDigit())
+                        Spacer(minLength: 0)
+                    }
                     .padding(.horizontal, 15)
                     .frame(minHeight: 46)
                     .background(Color.white.opacity(0.08))
                     .clipShape(Capsule())
-                    .disabled(true)
-                Button(action: {}) {
-                    Image(systemName: "arrow.up")
-                        .font(.headline)
-                        .frame(width: 44, height: 44)
-                        .background(Color.white.opacity(0.10))
-                        .clipShape(Circle())
+                    Button(action: model.toggleVoiceRecording) {
+                        Image(systemName: "stop.fill")
+                            .font(.headline)
+                            .frame(width: 44, height: 44)
+                            .background(Color.red)
+                            .clipShape(Circle())
+                    }
+                    .accessibilityLabel("Остановить и отправить")
+                } else {
+                    Menu {
+                        Button {
+                            if model.canUseCamera { mediaPicker = .camera }
+                            else { model.explainCameraUnavailable() }
+                        } label: {
+                            Label("Сделать фото", systemImage: "camera")
+                        }
+                        Button {
+                            mediaPicker = .library
+                        } label: {
+                            Label("Выбрать из галереи", systemImage: "photo")
+                        }
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.headline)
+                            .frame(width: 40, height: 44)
+                    }
+                    .disabled(!model.canSendToMuse)
+                    .accessibilityLabel("Добавить фото")
+
+                    TextField("Сообщение для Muse", text: $draft)
+                        .padding(.horizontal, 15)
+                        .frame(minHeight: 46)
+                        .background(Color.white.opacity(0.08))
+                        .clipShape(Capsule())
+                        .disabled(model.runtimeState != .registered)
+                        .submitLabel(.send)
+                        .onSubmit(sendDraft)
+
+                    if hasDraft {
+                        Button(action: sendDraft) {
+                            Image(systemName: model.isSendingChat ? "ellipsis" : "arrow.up")
+                                .font(.headline)
+                                .frame(width: 44, height: 44)
+                                .background(canSend ? MuseTheme.violet : Color.white.opacity(0.10))
+                                .clipShape(Circle())
+                        }
+                        .disabled(!canSend)
+                        .accessibilityLabel("Отправить")
+                    } else {
+                        Button(action: model.toggleVoiceRecording) {
+                            Image(systemName: "mic.fill")
+                                .font(.headline)
+                                .frame(width: 44, height: 44)
+                                .background(Color.white.opacity(0.10))
+                                .clipShape(Circle())
+                        }
+                        .disabled(!model.canSendToMuse)
+                        .accessibilityLabel("Записать голосовую заметку")
+                    }
                 }
-                .disabled(true)
             }
             .padding(.horizontal, 16)
             .padding(.top, 10)
             .padding(.bottom, 8)
             .background(.ultraThinMaterial)
             .overlay(alignment: .top) {
-                Text(model.runtimeState == .registered ? "Отправка сообщений будет подключена следующим этапом" : "Ждём регистрации в Muse VM")
+                Text(model.runtimeState == .registered ? "Защищённый чат Muse активен" : "Ждём регистрации в Muse VM")
                     .font(.caption2)
                     .foregroundColor(MuseTheme.secondary)
                     .offset(y: -17)
@@ -748,6 +1050,37 @@ private struct MuseChatView: View {
         }
         .background(MuseTheme.background.ignoresSafeArea())
         .navigationBarHidden(true)
+        .fullScreenCover(item: $mediaPicker) { picker in
+            switch picker {
+            case .camera:
+                MuseCameraPicker(onFinish: finishPicking).ignoresSafeArea()
+            case .library:
+                MusePhotoPicker(onFinish: finishPicking).ignoresSafeArea()
+            }
+        }
+    }
+
+    private var hasDraft: Bool {
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var canSend: Bool {
+        model.canSendToMuse && hasDraft
+    }
+
+    private func finishPicking(_ image: UIImage?) {
+        mediaPicker = nil
+        guard let image else { return }
+        let caption = draft
+        draft = ""
+        model.sendPhoto(image, caption: caption)
+    }
+
+    private func sendDraft() {
+        guard canSend else { return }
+        let message = draft
+        draft = ""
+        model.sendChat(message)
     }
 }
 
@@ -772,12 +1105,23 @@ private struct StatusBanner: View {
 private struct ChatBubble: View {
     let text: String
     let isMuse: Bool
+    var image: UIImage?
 
     var body: some View {
         HStack {
             if !isMuse { Spacer(minLength: 45) }
-            Text(text)
-                .font(.body)
+            VStack(alignment: .leading, spacing: 8) {
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: 220, maxHeight: 260)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                if !text.isEmpty {
+                    Text(text).font(.body).textSelection(.enabled)
+                }
+            }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
                 .background(isMuse ? Color.white.opacity(0.10) : MuseTheme.violet)
@@ -791,12 +1135,12 @@ private struct CapabilitiesView: View {
     @ObservedObject var model: MuseAppModel
 
     private let capabilities: [(String, String, String, String)] = [
-        ("display", "Экран", "Показывает подписи и карточки Muse", "Готово локально"),
-        ("waveform", "Голос и звук", "Озвучивание и голосовые заметки", "Частично готово"),
-        ("camera.fill", "Камера", "Фото только после явного разрешения", "Каркас"),
-        ("location.fill", "Геопозиция", "Положение только во время работы", "Каркас"),
-        ("gyroscope", "Датчики движения", "Снимок движения по команде", "Каркас"),
-        ("network", "Локальная сеть", "Поиск сервисов рядом с устройством", "Разрешение добавлено")
+        ("display", "Экран", "Показывает подписи и карточки Muse", "Готово, ждёт проверки с Muse"),
+        ("waveform", "Голос и звук", "Озвучивание и голосовые заметки", "Готово, ждёт проверки с Muse"),
+        ("camera.fill", "Камера", "Фото только после явного разрешения", "Готово, ждёт проверки с Muse"),
+        ("location.fill", "Геопозиция", "Положение только во время работы", "Готово, ждёт проверки с Muse"),
+        ("gyroscope", "Датчики движения", "Снимок движения по команде", "Готово, ждёт проверки с Muse"),
+        ("network", "Локальная сеть", "Поиск сервисов рядом с устройством", "Пока только разрешение")
     ]
 
     var body: some View {
@@ -882,6 +1226,15 @@ private struct MuseSettingsView: View {
                     }
                     .font(.subheadline.weight(.semibold))
                     .padding(.top, 4)
+                }
+                .museCard()
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Toggle("Не гасить экран", isOn: $model.keepScreenAwake)
+                        .font(.subheadline)
+                    Text("Камера, микрофон и датчики отвечают Muse, только пока приложение на экране.")
+                        .font(.caption)
+                        .foregroundColor(MuseTheme.secondary)
                 }
                 .museCard()
 

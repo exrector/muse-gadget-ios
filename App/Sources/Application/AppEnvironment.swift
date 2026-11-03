@@ -4,6 +4,7 @@ final class AppEnvironment {
     let identity: DeviceIdentity
     let credentialStore: CredentialStore
     let permissions: PermissionCenter
+    let nativeServices: NativeCommandServices
     let commands: IOSCommandRegistry
     let pairing: PairingCoordinator
     let runtime: MuseRuntime
@@ -12,13 +13,15 @@ final class AppEnvironment {
         let identity = DeviceIdentityStore().loadOrCreate()
         let credentialStore = CredentialStore()
         let permissions = PermissionCenter()
-        let commands = IOSCommandRegistry.defaultRegistry(permissions: permissions)
+        let nativeServices = NativeCommandServices(permissions: permissions)
+        let commands = IOSCommandRegistry.defaultRegistry(nativeServices: nativeServices)
         let pairing = PairingCoordinator(identity: identity, credentials: credentialStore)
-        let runtime = MuseRuntime(identity: identity, commands: commands)
+        let runtime = MuseRuntime(identity: identity, commands: commands, credentialStore: credentialStore)
 
         self.identity = identity
         self.credentialStore = credentialStore
         self.permissions = permissions
+        self.nativeServices = nativeServices
         self.commands = commands
         self.pairing = pairing
         self.runtime = runtime

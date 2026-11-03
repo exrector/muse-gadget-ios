@@ -16,6 +16,11 @@ struct MuseBodyChunk {
     let endBody: Bool
 }
 
+struct MuseHTTPHeader {
+    let name: String
+    let value: String
+}
+
 enum MuseInboundServiceFrame {
     case response(streamID: Int64, MuseApplicationResponse)
     case body(streamID: Int64, MuseBodyChunk)
@@ -103,12 +108,38 @@ private struct MuseProtoReader {
 
 enum MuseNoiseWire {
     static func startControlStream(streamID: Int64) -> Data {
+        applicationRequest(streamID: streamID, method: "POST", path: "/link-control")
+    }
+
+    static func applicationRequest(
+        streamID: Int64,
+        method: String,
+        path: String,
+        headers: [MuseHTTPHeader] = [],
+        body: Data = Data(),
+        endBody: Bool = false
+    ) -> Data {
         var request = Data()
-        request += MuseProto.field(1, string: "POST")
-        request += MuseProto.field(2, string: "/link-control")
+        request += MuseProto.field(1, string: method)
+        request += MuseProto.field(2, string: path)
+        for header in headers {
+            var encoded = MuseProto.field(1, string: header.name)
+            encoded += MuseProto.field(2, string: header.value)
+            request += MuseProto.field(3, bytes: encoded)
+        }
+        if !body.isEmpty { request += MuseProto.field(4, bytes: body) }
+        if endBody { request += MuseProto.field(5, varint: 1) }
 
         var frame = MuseProto.field(1, varint: UInt64(bitPattern: streamID))
         frame += MuseProto.field(2, bytes: request)
+        return MuseProto.field(2, bytes: frame)
+    }
+
+    static func reset(streamID: Int64, reason: String) -> Data {
+        var reset = MuseProto.field(1, varint: 1)
+        if !reason.isEmpty { reset += MuseProto.field(2, string: reason) }
+        var frame = MuseProto.field(1, varint: UInt64(bitPattern: streamID))
+        frame += MuseProto.field(5, bytes: reset)
         return MuseProto.field(2, bytes: frame)
     }
 
@@ -120,6 +151,19 @@ enum MuseNoiseWire {
         var frame = MuseProto.field(1, varint: UInt64(bitPattern: streamID))
         frame += MuseProto.field(4, bytes: chunk)
         return MuseProto.field(2, bytes: frame)
+    }
+
+    /// Splits a body so no single Noise frame comes near the 65,489-byte transport limit.
+    static func bodyChunks(streamID: Int64, data: Data, endBody: Bool = false, chunkSize: Int = 16 * 1024) -> [Data] {
+        guard !data.isEmpty else { return [bodyChunk(streamID: streamID, data: data, endBody: endBody)] }
+        return stride(from: 0, to: data.count, by: chunkSize).map { offset in
+            let end = min(offset + chunkSize, data.count)
+            return bodyChunk(
+                streamID: streamID,
+                data: data.subdata(in: data.startIndex + offset..<data.startIndex + end),
+                endBody: endBody && end == data.count
+            )
+        }
     }
 
     static func noiseFrame(payload: Data, chunkID: Int64 = Int64.random(in: Int64.min...Int64.max)) -> Data {
@@ -311,5 +355,39 @@ final class MuseControlMessageDecoder {
             }
         }
         return messages
+    }
+}
+
+final class MuseNDJSONDecoder {
+    private var buffer = Data()
+    private let maximumRecordBytes: Int
+
+    init(maximumRecordBytes: Int = 256 * 1024) {
+        self.maximumRecordBytes = maximumRecordBytes
+    }
+
+    func feed(_ data: Data, end: Bool = false) throws -> [[String: Any]] {
+        buffer.append(data)
+        guard buffer.count <= maximumRecordBytes else { throw MuseWireError.oversized }
+        var records: [[String: Any]] = []
+        while let newline = buffer.firstIndex(of: 0x0a) {
+            let raw = buffer.subdata(in: 0..<newline)
+            buffer.removeSubrange(0...newline)
+            if let value = decode(raw) { records.append(value) }
+        }
+        if end, !buffer.isEmpty {
+            let raw = buffer
+            buffer.removeAll(keepingCapacity: false)
+            if let value = decode(raw) { records.append(value) }
+        }
+        return records
+    }
+
+    private func decode(_ raw: Data) -> [String: Any]? {
+        guard !raw.isEmpty,
+              let object = try? JSONSerialization.jsonObject(with: raw) as? [String: Any] else {
+            return nil
+        }
+        return object
     }
 }

@@ -73,7 +73,11 @@ final class PairingCoordinator: NSObject {
             return
         }
         stop(clearSessionOnly: true)
-        let session = PairingSession(identity: identity, firmwareVersion: "ios-0.1.0", sdkToken: sdkToken)
+        let session = PairingSession(
+            identity: identity,
+            firmwareVersion: "ios-\(MuseAppVersion.current)",
+            sdkToken: sdkToken
+        )
         let peripheral = MusePeripheral(localName: identity.bluetoothName)
         peripheral.delegate = self
         self.session = session
