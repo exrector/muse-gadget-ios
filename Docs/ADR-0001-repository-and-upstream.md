@@ -18,5 +18,4 @@ Maintain the application in the independent public repository `exrector/muse-gad
 - Upstream protocol changes are explicit submodule updates, not silent copies.
 - A later upstream contribution can be proposed after live pairing and runtime verification.
 - The app must retain Apache 2.0 notices for adapted upstream code.
-- Commercial distribution remains blocked pending clarification or written permission under the Muse Gadget SDK Token Terms.
 
