@@ -315,6 +315,399 @@ final class MuseGadgetLegacyTests: XCTestCase {
         XCTAssertTrue(MuseChatStore(directory: directory).load().isEmpty)
     }
 
+    func testLANPolicyAllowsOnlyPrivateAddressesAndLocalNames() {
+        for host in ["192.168.1.20", "10.0.0.5", "172.16.0.1", "172.31.255.1", "169.254.3.4", "hue-bridge.local"] {
+            XCTAssertTrue(MuseLANPolicy.isAllowedHost(host), host)
+        }
+        for host in ["8.8.8.8", "172.32.0.1", "127.0.0.1", "0.0.0.0", "example.com", "192.168.1", "192.168.1.256",
+                     "192.168.001.1", ".local", "evil.com#.local", "a b.local", "::1", ""] {
+            XCTAssertFalse(MuseLANPolicy.isAllowedHost(host), host)
+        }
+    }
+
+    func testLANRequestDefaultsAndValidation() throws {
+        let request = try MuseLANPolicy.request(from: ["host": "192.168.1.20"]).get()
+        XCTAssertEqual(request.url.absoluteString, "http://192.168.1.20:80/")
+        XCTAssertEqual(request.method, "GET")
+        XCTAssertEqual(request.port, 80)
+        XCTAssertEqual(request.timeout, 8)
+
+        let secure = try MuseLANPolicy.request(from: [
+            "host": "Bridge.local", "scheme": "https", "method": "put",
+            "path": "/clip/v2/resource/light/1?x=1", "headers": ["hue-application-key": "k"],
+            "body": "{}", "timeout_ms": 90_000
+        ]).get()
+        XCTAssertEqual(secure.url.absoluteString, "https://bridge.local:443/clip/v2/resource/light/1?x=1")
+        XCTAssertEqual(secure.method, "PUT")
+        XCTAssertEqual(secure.body, Data("{}".utf8))
+        XCTAssertEqual(secure.timeout, 15)
+
+        let rejected: [([String: Any], String)] = [
+            (["host": "8.8.8.8"], "host_not_local"),
+            ([:], "host_not_local"),
+            (["host": "10.0.0.1", "scheme": "ftp"], "invalid_scheme"),
+            (["host": "10.0.0.1", "port": 70_000], "invalid_port"),
+            (["host": "10.0.0.1", "method": "TRACE"], "invalid_method"),
+            (["host": "10.0.0.1", "path": "no-slash"], "invalid_path"),
+            (["host": "10.0.0.1", "path": "/a b"], "invalid_path"),
+            (["host": "10.0.0.1", "path": "/a\r\nX: y"], "invalid_path"),
+            (["host": "10.0.0.1", "headers": ["Host": "evil"]], "invalid_headers"),
+            (["host": "10.0.0.1", "headers": ["X": "a\r\nB: c"]], "invalid_headers"),
+            (["host": "10.0.0.1", "body_base64": "%%%"], "invalid_body"),
+            (["host": "10.0.0.1", "body": String(repeating: "x", count: 256 * 1024 + 1)], "body_too_large")
+        ]
+        for (arguments, code) in rejected {
+            XCTAssertEqual(MuseLANPolicy.request(from: arguments), .failure(MuseLANRequestError(code)), code)
+        }
+    }
+
+    func testLANResponseKeepsTextAndEncodesBinary() {
+        let text = MuseLANPolicy.responseValue(status: 200, headers: ["A": "b"], body: Data("ок".utf8), truncated: false)
+        XCTAssertEqual(text["status"] as? Int, 200)
+        XCTAssertEqual(text["body"] as? String, "ок")
+        XCTAssertEqual(text["headers"] as? [String: String], ["A": "b"])
+
+        let binary = MuseLANPolicy.responseValue(status: 200, headers: [:], body: Data([0xff, 0xfe]), truncated: false)
+        XCTAssertNil(binary["body"])
+        XCTAssertEqual(binary["body_base64"] as? String, "//4=")
+
+        // A body cut in the middle of a character is still text.
+        let cut = Data("ок".utf8).dropLast()
+        let truncated = MuseLANPolicy.responseValue(status: 200, headers: [:], body: Data(cut), truncated: true)
+        XCTAssertEqual(truncated["body"] as? String, "о")
+    }
+
+    func testGrantsPersistAndPinTheFirstCertificate() throws {
+        let suite = "MuseGrantTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let store = MuseGrantStore(defaults: defaults)
+        XCTAssertFalse(store.trustCertificate(host: "10.0.0.1", port: 443, sha256: "aa"), "not approved yet")
+        store.allowLANDevice(host: "10.0.0.1", port: 443)
+        store.allowShortcut("Кино")
+        XCTAssertTrue(store.trustCertificate(host: "10.0.0.1", port: 443, sha256: "aa"))
+        XCTAssertTrue(store.trustCertificate(host: "10.0.0.1", port: 443, sha256: "aa"))
+        XCTAssertFalse(store.trustCertificate(host: "10.0.0.1", port: 443, sha256: "bb"))
+
+        let reopened = MuseGrantStore(defaults: defaults)
+        XCTAssertTrue(reopened.allowsShortcut("Кино"))
+        XCTAssertEqual(reopened.lanGrant(host: "10.0.0.1", port: 443)?.certificateSHA256, "aa")
+        XCTAssertNil(reopened.lanGrant(host: "10.0.0.1", port: 80))
+        reopened.revokeShortcut("Кино")
+        reopened.revokeLANDevice(try XCTUnwrap(reopened.lanGrant(host: "10.0.0.1", port: 443)))
+        XCTAssertTrue(reopened.shortcuts.isEmpty)
+        XCTAssertTrue(reopened.lanDevices.isEmpty)
+    }
+
+    func testShortcutLinkEncodesEverythingAndParsesCallbacks() throws {
+        let url = try XCTUnwrap(MuseShortcutLink.runURL(name: "Кино & свет", input: "a=1&b", token: "T"))
+        let items = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
+        let value = { (name: String) in items.first(where: { $0.name == name })?.value }
+        XCTAssertEqual(url.scheme, "shortcuts")
+        XCTAssertEqual(url.host, "x-callback-url")
+        XCTAssertEqual(url.path, "/run-shortcut")
+        XCTAssertEqual(value("name"), "Кино & свет")
+        XCTAssertEqual(value("input"), "text")
+        XCTAssertEqual(value("text"), "a=1&b")
+        XCTAssertEqual(value("x-success"), "musegadget://shortcut/success?token=T")
+
+        let noInput = try XCTUnwrap(MuseShortcutLink.runURL(name: "A", input: nil, token: "T"))
+        XCTAssertFalse(noInput.absoluteString.contains("input="))
+
+        func parsed(_ text: String) -> (String, MuseShortcutCallback)? {
+            URL(string: text).flatMap(MuseShortcutLink.parse).map { ($0.token, $0.callback) }
+        }
+        XCTAssertEqual(parsed("musegadget://shortcut/success?token=T&result=ok")?.1, .success(result: "ok"))
+        XCTAssertEqual(parsed("musegadget://shortcut/success?token=T")?.1, .success(result: nil))
+        XCTAssertEqual(parsed("musegadget://shortcut/cancel?token=T")?.1, .cancelled)
+        XCTAssertEqual(parsed("musegadget://shortcut/error?token=T&errorMessage=x")?.1, .failed(message: "x"))
+        XCTAssertNil(parsed("musegadget://shortcut/success"))
+        XCTAssertNil(parsed("musegadget://other/success?token=T"))
+        XCTAssertNil(parsed("https://shortcut/success?token=T"))
+    }
+
+    func testDisplayTextRemovesControlsAndDirectionTricks() {
+        XCTAssertEqual(MuseDisplayText.sanitized("a\nb\u{202e}c"), "abc")
+        XCTAssertEqual(MuseDisplayText.sanitized(String(repeating: "x", count: 5), maxLength: 3), "xxx…")
+    }
+
+    func testCommandSpecsDeclareOptionalParametersAndCustomTimeouts() throws {
+        let registry = IOSCommandRegistry()
+        registry.register(CommandDefinition(
+            name: "x.y",
+            summary: "s",
+            parameters: ["a": ["type": "string", "description": "d"]],
+            optional: ["b": ["type": "integer", "description": "e"]],
+            timeoutMS: 45_000
+        )) { _, _ in }
+        let spec = try XCTUnwrap(registry.commandSpecs["x.y"] as? [String: Any])
+        XCTAssertEqual(spec["required"] as? [String: [String: String]], ["a": ["type": "string", "description": "d"]])
+        XCTAssertEqual(spec["optional"] as? [String: [String: String]], ["b": ["type": "integer", "description": "e"]])
+        XCTAssertEqual(spec["timeout_ms"] as? Int, 45_000)
+    }
+
+    func testChatStoreKeepsDatesAndRemotePhotoMark() throws {
+        let directory = temporaryChatDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let created = Date(timeIntervalSince1970: 1_000)
+        let item = MuseChatItem(author: .user, text: "фото", createdAt: created, hasRemoteImage: true)
+        let store = MuseChatStore(directory: directory)
+        store.scheduleSave([item])
+        store.flush()
+        let loaded = try XCTUnwrap(MuseChatStore(directory: directory).load().first)
+        XCTAssertEqual(loaded.createdAt, created)
+        XCTAssertTrue(loaded.hasRemoteImage)
+    }
+
+    func testChatStoreReadsHistoryWrittenBeforeDatesExisted() throws {
+        let directory = temporaryChatDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let first = UUID(), second = UUID()
+        let old = #"{"version":1,"items":[{"id":"\#(first)","author":"user","text":"а"},{"id":"\#(second)","author":"muse","text":"б"}]}"#
+        try Data(old.utf8).write(to: directory.appendingPathComponent("history.json"))
+        let loaded = MuseChatStore(directory: directory).load()
+        XCTAssertEqual(loaded.map(\.id), [first, second])
+        XCTAssertLessThan(loaded[0].createdAt, loaded[1].createdAt)
+    }
+
+    func testMergeCombinesDevicesInTimeOrderAndMarksRemotePhotos() {
+        let mine = syncItem("мой", at: 10)
+        let theirs = syncedMessage("чужой", at: 5, hasImage: true)
+        let merged = MuseChatMerge.merge(
+            local: [mine],
+            remote: MuseSyncedHistory(messages: [theirs]),
+            clearedBefore: nil
+        ).items
+        XCTAssertEqual(merged.map(\.text), ["чужой", "мой"])
+        XCTAssertTrue(merged[0].hasRemoteImage)
+        XCTAssertNil(merged[0].image)
+        XCTAssertFalse(merged[1].hasRemoteImage)
+    }
+
+    func testMergeKeepsTheNewestTextOfOneMessage() {
+        let local = syncItem("старый", at: 1, updated: 2)
+        let newer = MuseSyncedMessage(
+            id: local.id, author: "muse", text: "новый", museMessageID: nil,
+            createdAt: local.createdAt, updatedAt: Date(timeIntervalSince1970: 3), hasImage: false
+        )
+        let older = MuseSyncedMessage(
+            id: local.id, author: "muse", text: "древний", museMessageID: nil,
+            createdAt: local.createdAt, updatedAt: Date(timeIntervalSince1970: 1), hasImage: false
+        )
+        let history = { (message: MuseSyncedMessage) in MuseSyncedHistory(messages: [message]) }
+        XCTAssertEqual(
+            MuseChatMerge.merge(local: [local], remote: history(newer), clearedBefore: nil).items.map(\.text),
+            ["новый"]
+        )
+        XCTAssertEqual(
+            MuseChatMerge.merge(local: [local], remote: history(older), clearedBefore: nil).items.map(\.text),
+            ["старый"]
+        )
+    }
+
+    func testMergeShowsOneMuseReplySeenByTwoDevices() {
+        let local = syncItem("ответ", at: 5, museMessageID: "reply-1")
+        let same = syncedMessage("ответ", at: 6, museMessageID: "reply-1")
+        let merged = MuseChatMerge.merge(
+            local: [local],
+            remote: MuseSyncedHistory(messages: [same]),
+            clearedBefore: nil
+        ).items
+        XCTAssertEqual(merged.count, 1)
+        XCTAssertEqual(merged[0].id, local.id)
+    }
+
+    func testClearingOnOneDeviceReachesTheOthersButKeepsNewerMessages() {
+        let older = syncItem("старое", at: 1)
+        let newer = syncItem("новое", at: 100)
+        let cleared = Date(timeIntervalSince1970: 50)
+        let merged = MuseChatMerge.merge(
+            local: [older, newer],
+            remote: MuseSyncedHistory(clearedBefore: cleared, messages: []),
+            clearedBefore: nil
+        )
+        XCTAssertEqual(merged.items.map(\.text), ["новое"])
+        XCTAssertEqual(merged.clearedBefore, cleared)
+        // A device that has not cleared must not bring the old message back.
+        let revived = MuseChatMerge.merge(
+            local: [newer],
+            remote: MuseSyncedHistory(messages: [syncedMessage("старое", at: 1)]),
+            clearedBefore: cleared
+        )
+        XCTAssertEqual(revived.items.map(\.text), ["новое"])
+    }
+
+    func testMergeIsStableSoDevicesConverge() throws {
+        let a = syncItem("а", at: 1)
+        let b = syncItem("б", at: 2)
+        let data = try XCTUnwrap(MuseChatMerge.encoded(items: [a, b], clearedBefore: nil, maxBytes: 100_000))
+        let history = try XCTUnwrap(MuseChatMerge.decoded(data))
+        let merged = MuseChatMerge.merge(local: [b, a], remote: history, clearedBefore: nil).items
+        XCTAssertEqual(
+            MuseChatMerge.encoded(items: merged, clearedBefore: nil, maxBytes: 100_000),
+            data
+        )
+    }
+
+    func testEncodingDropsOldestMessagesToFitAndSkipsNotices() throws {
+        var random = SystemRandomNumberGenerator()
+        let noise = { String((0..<2_000).map { _ in Character(UnicodeScalar(UInt8.random(in: 33...126, using: &random))) }) }
+        let items = (0..<50).map { syncItem("\($0) \(noise())", at: TimeInterval($0)) }
+            + [MuseChatItem(author: .system, text: "сбой")]
+        let data = try XCTUnwrap(MuseChatMerge.encoded(items: items, clearedBefore: nil, maxBytes: 30_000))
+        XCTAssertLessThanOrEqual(data.count, 30_000)
+        let history = try XCTUnwrap(MuseChatMerge.decoded(data))
+        XCTAssertLessThan(history.messages.count, 50)
+        XCTAssertTrue(history.messages.last?.text.hasPrefix("49 ") ?? false)
+        XCTAssertFalse(history.messages.contains { $0.text == "сбой" })
+    }
+
+    func testCloudSyncPublishesOnlyChangesAndRespectsTheSwitch() throws {
+        let suite = "MuseCloudTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let cloud = FakeCloudKeyValues()
+        let sync = MuseChatCloudSync(cloud: cloud, defaults: defaults, publishDelay: 60)
+        let item = syncItem("а", at: 1)
+
+        sync.publish([item])
+        XCTAssertEqual(cloud.writes, 0, "writes wait for the delay")
+        sync.flush()
+        XCTAssertEqual(cloud.writes, 1)
+        XCTAssertEqual(sync.remoteHistory()?.messages.map(\.text), ["а"])
+
+        sync.publish([item])
+        sync.flush()
+        XCTAssertEqual(cloud.writes, 1, "unchanged history is not written again")
+
+        sync.isEnabled = false
+        sync.publish([syncItem("б", at: 2)])
+        sync.flush()
+        XCTAssertEqual(cloud.writes, 1)
+        XCTAssertNil(sync.remoteHistory())
+    }
+
+    func testFailureNoticesStayOutOfMerge() {
+        let notice = MuseChatItem(author: .system, text: "сбой", createdAt: Date(timeIntervalSince1970: 3))
+        let merged = MuseChatMerge.merge(local: [notice], remote: MuseSyncedHistory(messages: []), clearedBefore: nil)
+        XCTAssertEqual(merged.items.map(\.text), ["сбой"])
+    }
+
+    func testPeerKeysMatchOnlyForTheSameToken() {
+        let first = MusePeerKeys(token: "token-a")
+        let second = MusePeerKeys(token: "token-a")
+        let other = MusePeerKeys(token: "token-b")
+        XCTAssertEqual(first.groupID, second.groupID)
+        XCTAssertEqual(first.groupID.count, 16)
+        XCTAssertNotEqual(first.groupID, other.groupID)
+        XCTAssertFalse(first.groupID.contains("token"))
+    }
+
+    func testPeerFramesSurviveFragmentationAndRejectOtherKeysAndOversize() throws {
+        let key = MusePeerKeys(token: "token-a").symmetric
+        var writer = MusePeerFrameCodec(key: key)
+        let one = try writer.seal(Data("один".utf8))
+        let two = try writer.seal(Data("два".utf8))
+        let stream = one + two
+
+        var reader = MusePeerFrameCodec(key: key)
+        var received: [Data] = []
+        for byte in stream { received += try reader.open(Data([byte])) }
+        XCTAssertEqual(received, [Data("один".utf8), Data("два".utf8)])
+
+        var stranger = MusePeerFrameCodec(key: MusePeerKeys(token: "token-b").symmetric)
+        XCTAssertThrowsError(try stranger.open(one))
+
+        var flooded = MusePeerFrameCodec(key: key)
+        XCTAssertThrowsError(try flooded.open(Data([0xff, 0xff, 0xff, 0xff])))
+        var empty = MusePeerFrameCodec(key: key)
+        XCTAssertThrowsError(try empty.open(Data([0, 0, 0, 0])))
+        writer = MusePeerFrameCodec(key: key)
+    }
+
+    func testExactlyOneGadgetDials() {
+        XCTAssertTrue(MuseChatPeerSync.shouldDial(local: "homelink-aaaaaa", remote: "homelink-bbbbbb"))
+        XCTAssertFalse(MuseChatPeerSync.shouldDial(local: "homelink-bbbbbb", remote: "homelink-aaaaaa"))
+    }
+
+    func testMergeKeepsOnlyTheNewestItems() {
+        let local = (0..<MuseChatStore.maxStoredItems).map { syncItem("\($0)", at: TimeInterval($0 + 10)) }
+        let merged = MuseChatMerge.merge(
+            local: local,
+            remote: MuseSyncedHistory(messages: [syncedMessage("старое", at: 1)]),
+            clearedBefore: nil
+        ).items
+        XCTAssertEqual(merged.count, MuseChatStore.maxStoredItems)
+        XCTAssertFalse(merged.contains { $0.text == "старое" })
+    }
+
+    /// Real sockets and Bonjour on this machine: two gadgets find each other and swap history.
+    func testTwoGadgetsExchangeHistoryOverTheNetwork() throws {
+        let suffix = UUID().uuidString.prefix(8).lowercased()
+        let token = "peer-test-\(UUID().uuidString)"
+        let left = MuseChatPeerSync(serviceName: "gadget-a-\(suffix)", publishDelay: 0.05)
+        let right = MuseChatPeerSync(serviceName: "gadget-b-\(suffix)", publishDelay: 0.05)
+        let stranger = MuseChatPeerSync(serviceName: "gadget-c-\(suffix)", publishDelay: 0.05)
+        defer {
+            for gadget in [left, right, stranger] {
+                gadget.onHistory = nil
+                gadget.stop()
+            }
+        }
+
+        let leftReceived = expectation(description: "left received right's history")
+        let rightReceived = expectation(description: "right received left's history")
+        // A reconnect sends the history again, and that is allowed.
+        leftReceived.assertForOverFulfill = false
+        rightReceived.assertForOverFulfill = false
+        left.onHistory = { history in
+            if history.messages.contains(where: { $0.text == "от правого" }) { leftReceived.fulfill() }
+        }
+        right.onHistory = { history in
+            if history.messages.contains(where: { $0.text == "от левого" }) { rightReceived.fulfill() }
+        }
+        stranger.onHistory = { _ in XCTFail("a gadget with another token must not read the history") }
+
+        left.publish([syncItem("от левого", at: 1)], clearedBefore: nil)
+        right.publish([syncItem("от правого", at: 2)], clearedBefore: nil)
+        stranger.publish([syncItem("чужое", at: 3)], clearedBefore: nil)
+        left.start(token: token)
+        right.start(token: token)
+        stranger.start(token: "another-token")
+
+        wait(for: [leftReceived, rightReceived], timeout: 60)
+    }
+
+    private func syncItem(
+        _ text: String,
+        at seconds: TimeInterval,
+        updated: TimeInterval? = nil,
+        museMessageID: String? = nil
+    ) -> MuseChatItem {
+        MuseChatItem(
+            author: .muse,
+            text: text,
+            museMessageID: museMessageID,
+            createdAt: Date(timeIntervalSince1970: seconds),
+            updatedAt: updated.map(Date.init(timeIntervalSince1970:))
+        )
+    }
+
+    private func syncedMessage(
+        _ text: String,
+        at seconds: TimeInterval,
+        hasImage: Bool = false,
+        museMessageID: String? = nil
+    ) -> MuseSyncedMessage {
+        let date = Date(timeIntervalSince1970: seconds)
+        return MuseSyncedMessage(
+            id: UUID(), author: "muse", text: text, museMessageID: museMessageID,
+            createdAt: date, updatedAt: date, hasImage: hasImage
+        )
+    }
+
     private func temporaryChatDirectory() -> URL {
         FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
     }
@@ -333,6 +726,20 @@ final class MuseGadgetLegacyTests: XCTestCase {
     private func chatEvent(_ name: String, _ payload: [String: Any]) -> [String: Any] {
         ["type": "event", "event": name, "payload": payload]
     }
+}
+
+private final class FakeCloudKeyValues: MuseCloudKeyValues {
+    private var values: [String: Data] = [:]
+    private(set) var writes = 0
+
+    func data(forKey key: String) -> Data? { values[key] }
+
+    func set(_ value: Data?, forKey key: String) {
+        values[key] = value
+        writes += 1
+    }
+
+    @discardableResult func synchronize() -> Bool { true }
 }
 
 private extension Data {

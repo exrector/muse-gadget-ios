@@ -16,6 +16,7 @@ This is the canonical checkout. Keep the project in `/Users/exrector/Documents/P
 - Do not claim pairing, VM registration, command delivery, chat or voice works without live end-to-end evidence.
 - BLE is a temporary pairing transport. Daily runtime must not depend on proximity to the phone that runs Muse.
 - iOS commands are an explicit allowlist. Do not emulate Linux `system.run`, arbitrary `file.read` or `file.write`.
+- A remote command never gains reach on its own: each new Shortcut name and each new local host and port needs a tap on the device, and `lan.request` stays limited to private IPv4 and `.local` hosts.
 - Protected iOS capabilities require user-granted permissions and must fail closed.
 - Preserve Apache 2.0 headers and notices when adapting upstream code.
 

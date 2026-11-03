@@ -23,7 +23,10 @@ The repository contains a buildable native application skeleton and the first re
 - Noise XX (`25519_AESGCM_SHA256`) over WebSocket, the Muse protobuf envelope and `/link-control` framing;
 - VM discovery plus `link.register`, `link.invoke`, `link.result` and `link.unpaired` handling;
 - chat SwiftUI home, capabilities catalog and settings; technical diagnostics stay collapsed by default.
-- chat history stored on the device, up to the latest 200 messages and excluded from backups; it can be cleared in Settings.
+- chat history stored on the device, up to the latest 200 messages and excluded from backups; it can be cleared in Settings;
+- optional chat text sync between devices on one Apple ID through iCloud key-value storage, on by default and switchable in Settings; photos stay on the device that took them;
+- optional chat text sync directly between gadgets on one Wi-Fi network, for devices on different Apple IDs: Bonjour discovery, ChaCha20-Poly1305 with a key derived from the shared SDK token, off by default until it is verified between devices;
+- a Settings choice between tap-to-record and hold-to-record for voice notes.
 
 BLE pairing, credential persistence, VM discovery, Noise XX and `link.register` have been verified end to end on a physical iPhone 6s running iOS 15.8.8. A real Muse VM acknowledged the registration on 2026-11-03.
 
@@ -31,13 +34,16 @@ Text chat, photos, voice notes, device token rotation and automatic reconnect we
 
 Implemented, not yet confirmed end to end on a device:
 
-- native `camera.capture`, `location.current`, `motion.snapshot`, `voice.record` and `audio.speak` commands, available only while the app is visible;
-- system vibration for `haptics.impact` on iPhone 6s and older, where the impact generator has no effect.
+- native `camera.capture`, `location.current`, `motion.snapshot`, `voice.record`, `audio.speak`, `torch.set`, `display.set_brightness` and `display.show_card` commands, available only while the app is visible;
+- `shortcuts.run`, which opens Apple Shortcuts through `x-callback-url` and returns the result; each new shortcut name needs an on-screen approval;
+- `lan.discover` (Bonjour, service types declared in `Info.plist`) and `lan.request` (HTTP and HTTPS to private IPv4 and `.local` hosts); each new host and port needs an on-screen approval, certificates are pinned on first use and redirects are not followed.
 
 Still to be done:
 
 - spoken replies, realtime voice and avatar rendering;
-- local network commands (only the permission exists today);
+- other local network protocols used by some device skills: WebSocket, MQTT, UDP and SSDP (which also needs Apple's multicast entitlement);
+- an SSH client for routers and NAS devices, postponed to a later release on purpose;
+- syncing photos between devices;
 - reliable behavior while the screen is locked; the app keeps the screen awake by default, and this can be turned off in Settings;
 - App Store release hardening and localization.
 
@@ -49,7 +55,7 @@ The application reports the Muse VM as connected only after the server acknowled
 2. Choose your Apple development team and a physical iPhone or iPad. CoreBluetooth peripheral advertising cannot be validated in Simulator.
 3. Build and run the `MuseGadgetLegacy` scheme.
 4. In the app, save your own `mgst_…` SDK token and tap **Start pairing**.
-5. In Muse on another phone, enable Developer Mode and add the displayed `MuseGadgetXXXXXX` device.
+5. In Muse on another phone, enable Developer Mode and add the displayed `MuseGadgetXXXXXX` device. The phone that runs the Muse app cannot pair itself as a gadget: it does not see its own Bluetooth advertising.
 
 Never commit an SDK token or paired-device credentials. The app stores them in the iOS Keychain.
 

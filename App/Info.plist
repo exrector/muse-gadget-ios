@@ -18,10 +18,58 @@
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.exrector.MuseGadgetLegacy</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>musegadget</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Bluetooth is used only while pairing this device as a Muse community gadget.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>Bluetooth is used only while pairing this device as a Muse community gadget.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_muse-gadget._tcp</string>
+		<string>_airplay._tcp</string>
+		<string>_display._tcp</string>
+		<string>_elg._tcp</string>
+		<string>_ewelink._tcp</string>
+		<string>_googlecast._tcp</string>
+		<string>_hap._tcp</string>
+		<string>_http._tcp</string>
+		<string>_hue._tcp</string>
+		<string>_ipp._tcp</string>
+		<string>_ipps._tcp</string>
+		<string>_mieleathome._tcp</string>
+		<string>_spotify-connect._tcp</string>
+	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Camera access lets you explicitly send a photo to your paired Muse.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Local network access lets this iPhone discover and communicate with Muse gadgets and companion services nearby.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Location is used while pairing to identify the current Wi-Fi network, and shared only after an explicit command.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Microphone access lets you record a voice message for your paired Muse.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>Motion access lets Muse use a bounded snapshot of this device's motion sensors after you grant permission.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Speech recognition can create a local draft before you send it.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -39,6 +87,13 @@
 			</array>
 		</dict>
 	</dict>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>bluetooth-peripheral</string>
+		<string>audio</string>
+	</array>
+	<key>UIFileSharingEnabled</key>
+	<true/>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>
@@ -62,33 +117,5 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>Bluetooth is used only while pairing this device as a Muse community gadget.</string>
-	<key>NSBluetoothPeripheralUsageDescription</key>
-	<string>Bluetooth is used only while pairing this device as a Muse community gadget.</string>
-	<key>NSCameraUsageDescription</key>
-	<string>Camera access lets you explicitly send a photo to your paired Muse.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Microphone access lets you record a voice message for your paired Muse.</string>
-	<key>NSMotionUsageDescription</key>
-	<string>Motion access lets Muse use a bounded snapshot of this device's motion sensors after you grant permission.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Speech recognition can create a local draft before you send it.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Location is used while pairing to identify the current Wi-Fi network, and shared only after an explicit command.</string>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>Local network access lets this iPhone discover and communicate with Muse gadgets and companion services nearby.</string>
-	<key>NSBonjourServices</key>
-	<array>
-		<string>_muse-gadget._tcp</string>
-	</array>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>bluetooth-peripheral</string>
-		<string>audio</string>
-	</array>
-	<key>UIFileSharingEnabled</key>
-	<true/>
 </dict>
 </plist>
-

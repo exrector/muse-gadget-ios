@@ -5,24 +5,42 @@ final class AppEnvironment {
     let credentialStore: CredentialStore
     let permissions: PermissionCenter
     let nativeServices: NativeCommandServices
+    let grants: MuseGrantStore
+    let approvals: MuseApprovalCenter
+    let shortcuts: MuseShortcutsBridge
     let commands: IOSCommandRegistry
     let pairing: PairingCoordinator
     let runtime: MuseRuntime
     let chatStore = MuseChatStore()
+    let chatCloud = MuseChatCloudSync()
+    let chatPeers: MuseChatPeerSync
 
     init() {
         let identity = DeviceIdentityStore().loadOrCreate()
         let credentialStore = CredentialStore()
         let permissions = PermissionCenter()
         let nativeServices = NativeCommandServices(permissions: permissions)
-        let commands = IOSCommandRegistry.defaultRegistry(nativeServices: nativeServices)
+        let grants = MuseGrantStore()
+        let approvals = MuseApprovalCenter()
+        let shortcuts = MuseShortcutsBridge(grants: grants, approvals: approvals)
+        let lan = MuseLANServices(permissions: permissions, grants: grants, approvals: approvals)
+        let commands = IOSCommandRegistry.defaultRegistry(
+            nativeServices: nativeServices,
+            shortcuts: shortcuts,
+            grants: grants,
+            lan: lan
+        )
         let pairing = PairingCoordinator(identity: identity, credentials: credentialStore)
         let runtime = MuseRuntime(identity: identity, commands: commands, credentialStore: credentialStore)
 
         self.identity = identity
+        chatPeers = MuseChatPeerSync(serviceName: identity.nodeID)
         self.credentialStore = credentialStore
         self.permissions = permissions
         self.nativeServices = nativeServices
+        self.grants = grants
+        self.approvals = approvals
+        self.shortcuts = shortcuts
         self.commands = commands
         self.pairing = pairing
         self.runtime = runtime

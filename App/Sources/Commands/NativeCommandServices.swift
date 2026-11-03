@@ -30,6 +30,45 @@ final class NativeCommandServices {
         }
     }
 
+    func setBrightness(_ level: Double, completion: @escaping (CommandResult) -> Void) {
+        onMain {
+            guard Self.requireForeground(completion) else { return }
+            let previous = Double(UIScreen.main.brightness)
+            UIScreen.main.brightness = CGFloat(level)
+            completion(CommandResult(success: true, value: ["level": level, "previous_level": previous]))
+        }
+    }
+
+    func showCard(_ card: MuseCard?, completion: @escaping (CommandResult) -> Void) {
+        onMain {
+            guard Self.requireForeground(completion) else { return }
+            NotificationCenter.default.post(name: .museCardChanged, object: card)
+            completion(CommandResult(success: true, value: ["displayed": card != nil]))
+        }
+    }
+
+    func setTorch(on: Bool, level: Double, completion: @escaping (CommandResult) -> Void) {
+        onMain {
+            guard Self.requireForeground(completion) else { return }
+            guard let device = AVCaptureDevice.default(for: .video), device.hasTorch, device.isTorchAvailable else {
+                completion(.failure("torch_unavailable"))
+                return
+            }
+            do {
+                try device.lockForConfiguration()
+                defer { device.unlockForConfiguration() }
+                if on {
+                    try device.setTorchModeOn(level: Float(level))
+                } else {
+                    device.torchMode = .off
+                }
+                completion(CommandResult(success: true, value: ["on": on]))
+            } catch {
+                completion(.failure("torch_failed"))
+            }
+        }
+    }
+
     func playHaptic(completion: @escaping (CommandResult) -> Void) {
         onMain {
             guard Self.requireForeground(completion) else { return }
@@ -150,6 +189,20 @@ final class NativeCommandServices {
         if Thread.isMainThread { completion(result) }
         else { DispatchQueue.main.async { completion(result) } }
     }
+}
+
+struct MuseCard: Equatable, Identifiable {
+    let id = UUID()
+    let title: String
+    let body: String
+
+    static func == (lhs: MuseCard, rhs: MuseCard) -> Bool {
+        lhs.title == rhs.title && lhs.body == rhs.body
+    }
+}
+
+extension Notification.Name {
+    static let museCardChanged = Notification.Name("MuseGadgetLegacy.cardChanged")
 }
 
 /// `UIImpactFeedbackGenerator` silently does nothing before iPhone 7 while still looking successful,

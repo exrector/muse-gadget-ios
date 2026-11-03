@@ -6,22 +6,48 @@ struct MuseChatItem: Identifiable {
 
     let id: UUID
     let author: Author
-    var text: String
+    var text: String {
+        didSet { updatedAt = Date() }
+    }
     var image: UIImage?
     var museMessageID: String?
+    let createdAt: Date
+    var updatedAt: Date
+    /// The photo was sent from another device; only its text syncs through iCloud.
+    var hasRemoteImage: Bool
 
     init(
         id: UUID = UUID(),
         author: Author,
         text: String,
         image: UIImage? = nil,
-        museMessageID: String? = nil
+        museMessageID: String? = nil,
+        createdAt: Date = Date(),
+        updatedAt: Date? = nil,
+        hasRemoteImage: Bool = false
     ) {
         self.id = id
         self.author = author
         self.text = text
         self.image = image
         self.museMessageID = museMessageID
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt ?? createdAt
+        self.hasRemoteImage = hasRemoteImage
+    }
+}
+
+enum MuseVoiceRecordMode: String, CaseIterable, Identifiable {
+    case tap
+    case hold
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .tap: return "Нажатие"
+        case .hold: return "Удержание"
+        }
     }
 }
 
@@ -39,11 +65,39 @@ final class MuseAppModel: ObservableObject {
     @Published var diagnostics: [String] = []
     @Published var alertMessage: String?
     @Published var chatItems: [MuseChatItem] {
-        didSet { environment.chatStore.scheduleSave(chatItems) }
+        didSet {
+            environment.chatStore.scheduleSave(chatItems)
+            environment.chatCloud.publish(chatItems)
+            environment.chatPeers.publish(chatItems, clearedBefore: environment.chatCloud.clearedBefore)
+        }
+    }
+    @Published var nearbyGadgetCount = 0
+    @Published var isPeerSyncEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(isPeerSyncEnabled, forKey: Self.peerSyncKey)
+            startPeerSyncIfAllowed()
+        }
+    }
+    @Published var voiceRecordMode: MuseVoiceRecordMode {
+        didSet { UserDefaults.standard.set(voiceRecordMode.rawValue, forKey: Self.voiceRecordModeKey) }
+    }
+    @Published var voiceHint: String?
+    @Published var isCloudSyncEnabled: Bool {
+        didSet {
+            environment.chatCloud.isEnabled = isCloudSyncEnabled
+            guard isCloudSyncEnabled else { return }
+            environment.chatCloud.synchronize()
+            applyCloudHistory()
+            environment.chatCloud.publish(chatItems)
+        }
     }
     @Published var isSendingChat = false
     @Published var isAwaitingReply = false
     @Published var museActivity: String?
+    @Published var approvalPrompt: MuseApprovalPrompt?
+    @Published var card: MuseCard?
+    @Published var approvedShortcuts: [String] = []
+    @Published var approvedDevices: [MuseLANGrant] = []
     @Published var isRecordingVoice = false
     @Published var recordingSeconds = 0
     @Published var keepScreenAwake: Bool {
@@ -55,6 +109,9 @@ final class MuseAppModel: ObservableObject {
 
     let environment: AppEnvironment
     private static let keepScreenAwakeKey = "keepScreenAwake"
+    private static let voiceRecordModeKey = "voiceRecordMode"
+    private static let peerSyncKey = "peerSyncEnabled"
+    private var voiceHintReset: DispatchWorkItem?
     private var waitingForSettingsReturn = false
     private let chatTimeline = MuseChatTimeline()
     private var replyItemIDs: [String: UUID] = [:]
@@ -68,11 +125,22 @@ final class MuseAppModel: ObservableObject {
         for item in history {
             if let messageID = item.museMessageID { replyItemIDs[messageID] = item.id }
         }
+        voiceRecordMode = UserDefaults.standard.string(forKey: Self.voiceRecordModeKey)
+            .flatMap(MuseVoiceRecordMode.init(rawValue:)) ?? .tap
+        isCloudSyncEnabled = environment.chatCloud.isEnabled
+        isPeerSyncEnabled = UserDefaults.standard.object(forKey: Self.peerSyncKey) as? Bool ?? false
         keepScreenAwake = UserDefaults.standard.object(forKey: Self.keepScreenAwakeKey) as? Bool ?? true
         let hasToken = environment.credentialStore.loadSDKToken() != nil
         let hasPairing = environment.credentialStore.loadDeviceCredentials() != nil
         tokenSaved = hasToken
         isPaired = hasPairing
+        #if DEBUG
+        // Lets a device that cannot be paired right now show the chat, to check iCloud history.
+        if ProcessInfo.processInfo.arguments.contains("--history-only") {
+            UserDefaults.standard.set(true, forKey: "debugHistoryOnly")
+        }
+        if UserDefaults.standard.bool(forKey: "debugHistoryOnly") { isPaired = true }
+        #endif
         pairingState = environment.pairing.state
         runtimeState = environment.runtime.state
         networkName = CurrentWiFi.preferredSSID() ?? ""
@@ -116,6 +184,18 @@ final class MuseAppModel: ObservableObject {
             self.diagnostics.append(message)
             if self.diagnostics.count > 80 { self.diagnostics.removeFirst() }
         }
+        environment.approvals.onPromptChange = { [weak self] prompt in
+            self?.approvalPrompt = prompt
+        }
+        environment.grants.onChange = { [weak self] in self?.refreshGrants() }
+        refreshGrants()
+        NotificationCenter.default.addObserver(
+            forName: .museCardChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            self?.card = note.object as? MuseCard
+        }
         environment.runtime.onChatRecord = { [weak self] record in
             guard let self else { return }
             self.apply(self.chatTimeline.feed(record))
@@ -124,8 +204,23 @@ final class MuseAppModel: ObservableObject {
         for name in [UIApplication.didEnterBackgroundNotification, UIApplication.willTerminateNotification] {
             NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 self?.environment.chatStore.flush()
+                self?.environment.chatCloud.flush()
+                self?.environment.chatPeers.stop()
             }
         }
+        environment.chatPeers.onHistory = { [weak self] history in self?.applyRemoteHistory(history) }
+        environment.chatPeers.onPeerCountChange = { [weak self] count in self?.nearbyGadgetCount = count }
+        environment.chatPeers.onLog = { [weak self] message in
+            guard let self else { return }
+            self.diagnostics.append(message)
+            if self.diagnostics.count > 80 { self.diagnostics.removeFirst() }
+        }
+        environment.chatPeers.publish(chatItems, clearedBefore: environment.chatCloud.clearedBefore)
+        startPeerSyncIfAllowed()
+        environment.chatCloud.onRemoteChange = { [weak self] in self?.applyCloudHistory() }
+        environment.chatCloud.start()
+        applyCloudHistory()
+        environment.chatCloud.publish(chatItems)
         NotificationCenter.default.addObserver(
             forName: .museCaptionChanged,
             object: nil,
@@ -140,6 +235,9 @@ final class MuseAppModel: ObservableObject {
         ) { [weak self] _ in
             guard let self else { return }
             self.environment.runtime.resumeIfNeeded()
+            self.environment.chatCloud.synchronize()
+            self.applyCloudHistory()
+            self.startPeerSyncIfAllowed()
             guard self.waitingForSettingsReturn else { return }
             self.waitingForSettingsReturn = false
             self.environment.permissions.resetLocalNetworkStatusForRecheck()
@@ -196,6 +294,7 @@ final class MuseAppModel: ObservableObject {
         let candidate = tokenDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
             try environment.pairing.saveSDKToken(candidate)
+            startPeerSyncIfAllowed()
             if UIPasteboard.general.string?.trimmingCharacters(in: .whitespacesAndNewlines) == candidate {
                 UIPasteboard.general.string = ""
             }
@@ -276,6 +375,26 @@ final class MuseAppModel: ObservableObject {
         alertMessage = "Камера недоступна. Разрешите доступ к камере в системных настройках."
     }
 
+    func beginHeldVoiceRecording() {
+        guard canSendToMuse, !isRecordingVoice else { return }
+        switch environment.permissions.status(for: .microphone) {
+        case .granted:
+            startVoiceRecording()
+        case .notDetermined:
+            // The prompt takes the finger off the button, so recording starts on the next press.
+            environment.permissions.request(.microphone) { [weak self] state in
+                self?.permissionStates[.microphone] = state
+            }
+        default:
+            alertMessage = "Микрофон недоступен. Разрешите доступ к микрофону в системных настройках."
+        }
+    }
+
+    func endHeldVoiceRecording() {
+        guard isRecordingVoice else { return }
+        environment.nativeServices.stopVoiceRecording()
+    }
+
     func toggleVoiceRecording() {
         if isRecordingVoice {
             environment.nativeServices.stopVoiceRecording()
@@ -317,12 +436,65 @@ final class MuseAppModel: ObservableObject {
             return
         }
         let durationMS = result.value["duration_ms"] as? Int ?? 0
-        guard durationMS >= 500, canSendToMuse else { return }
+        guard durationMS >= 500, canSendToMuse else {
+            if voiceRecordMode == .hold { showVoiceHint("Удерживайте кнопку, чтобы говорить") }
+            return
+        }
         chatItems.append(MuseChatItem(author: .user, text: "🎙 Голосовая заметка · \(max(durationMS / 1_000, 1)) с"))
         beginRequest()
         environment.runtime.sendVoiceNote(wav: wav) { [weak self] result in
             self?.finishRequest(result)
         }
+    }
+
+    private func showVoiceHint(_ text: String) {
+        voiceHint = text
+        voiceHintReset?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.voiceHint = nil }
+        voiceHintReset = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: work)
+    }
+
+    private func startPeerSyncIfAllowed() {
+        if isPeerSyncEnabled, let token = environment.credentialStore.loadSDKToken() {
+            environment.chatPeers.start(token: token)
+        } else {
+            environment.chatPeers.stop()
+        }
+    }
+
+    private func applyCloudHistory() {
+        if let remote = environment.chatCloud.remoteHistory() { applyRemoteHistory(remote) }
+    }
+
+    private func applyRemoteHistory(_ remote: MuseSyncedHistory) {
+        let cloud = environment.chatCloud
+        let merged = MuseChatMerge.merge(local: chatItems, remote: remote, clearedBefore: cloud.clearedBefore)
+        cloud.clearedBefore = merged.clearedBefore
+        let fingerprint = { (items: [MuseChatItem]) in items.map { "\($0.id)|\($0.updatedAt.timeIntervalSince1970)" } }
+        guard fingerprint(merged.items) != fingerprint(chatItems) else { return }
+        chatItems = merged.items
+        replyItemIDs.removeAll()
+        for item in merged.items {
+            if let messageID = item.museMessageID { replyItemIDs[messageID] = item.id }
+        }
+    }
+
+    var peerSyncStatus: String {
+        guard isPeerSyncEnabled else { return "Гаджеты в вашей сети не обмениваются историей." }
+        guard environment.credentialStore.loadSDKToken() != nil else {
+            return "Сначала сохраните SDK Token: по нему гаджеты узнают друг друга."
+        }
+        let state = nearbyGadgetCount > 0 ? "Гаджетов на связи: \(nearbyGadgetCount)." : "Других гаджетов рядом пока нет."
+        return state + " Текст чата передаётся в зашифрованном виде напрямую гаджетам с тем же SDK Token, пока приложение открыто на обоих. Apple ID может быть разным."
+    }
+
+    var cloudSyncStatus: String {
+        guard isCloudSyncEnabled else { return "Текст чата хранится только на этом устройстве." }
+        guard environment.chatCloud.isAccountAvailable else {
+            return "На устройстве не выполнен вход в iCloud, поэтому синхронизация не работает."
+        }
+        return "Текст чата появится на устройствах с тем же Apple ID, обычно в течение нескольких минут. Фото остаются там, где их сделали."
     }
 
     private func beginRequest() {
@@ -399,10 +571,29 @@ final class MuseAppModel: ObservableObject {
         }
     }
 
+    func answerApproval(granted: Bool) {
+        environment.approvals.answer(granted: granted)
+    }
+
+    func revokeShortcut(_ name: String) {
+        environment.grants.revokeShortcut(name)
+    }
+
+    func revokeDevice(_ device: MuseLANGrant) {
+        environment.grants.revokeLANDevice(device)
+    }
+
+    private func refreshGrants() {
+        approvedShortcuts = environment.grants.shortcuts
+        approvedDevices = environment.grants.lanDevices
+    }
+
     func clearChatHistory() {
+        environment.chatCloud.clearedBefore = Date()
         chatItems.removeAll()
         replyItemIDs.removeAll()
         environment.chatStore.clear()
+        environment.chatCloud.flush()
     }
 
     func forgetPairing() {
@@ -432,6 +623,19 @@ struct MuseAppView: View {
             if model.isPaired {
                 MuseMainTabs(model: model)
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                    .alert(
+                        model.approvalPrompt?.title ?? "",
+                        isPresented: Binding(
+                            get: { model.approvalPrompt != nil },
+                            set: { _ in }
+                        ),
+                        presenting: model.approvalPrompt
+                    ) { _ in
+                        Button("Запретить", role: .cancel) { model.answerApproval(granted: false) }
+                        Button("Разрешить") { model.answerApproval(granted: true) }
+                    } message: { prompt in
+                        Text(prompt.message)
+                    }
             } else {
                 MuseOnboarding(model: model)
                     .transition(.opacity)
@@ -959,12 +1163,37 @@ private struct MuseChatView: View {
                         isMuse: true
                     )
 
+                    if let card = model.card {
+                        HStack(alignment: .top, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(card.title).font(.headline)
+                                if !card.body.isEmpty {
+                                    Text(card.body)
+                                        .font(.subheadline)
+                                        .foregroundColor(MuseTheme.secondary)
+                                }
+                            }
+                            Spacer(minLength: 0)
+                            Button { model.card = nil } label: {
+                                Image(systemName: "xmark").font(.caption.weight(.bold))
+                            }
+                            .accessibilityLabel("Закрыть карточку")
+                        }
+                        .museCard()
+                    }
+
                     if !model.caption.isEmpty {
                         ChatBubble(text: model.caption, isMuse: true)
                     }
 
                     ForEach(model.chatItems) { item in
-                        ChatBubble(text: item.text, isMuse: item.author != .user, image: item.image)
+                        ChatBubble(
+                            text: item.hasRemoteImage && item.image == nil
+                                ? ["📷 Фото с другого устройства", item.text].filter { !$0.isEmpty }.joined(separator: "\n")
+                                : item.text,
+                            isMuse: item.author != .user,
+                            image: item.image
+                        )
                     }
 
                     if model.isAwaitingReply {
@@ -997,22 +1226,18 @@ private struct MuseChatView: View {
                 if model.isRecordingVoice {
                     HStack(spacing: 10) {
                         Image(systemName: "waveform").foregroundColor(.red)
-                        Text("Запись · \(model.recordingSeconds) с из 40")
+                        Text(model.voiceRecordMode == .hold
+                             ? "\(model.recordingSeconds) с · отпустите, чтобы отправить"
+                             : "Запись · \(model.recordingSeconds) с из 40")
                             .font(.subheadline.monospacedDigit())
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 15)
                     .frame(minHeight: 46)
                     .background(Color.white.opacity(0.08))
                     .clipShape(Capsule())
-                    Button(action: model.toggleVoiceRecording) {
-                        Image(systemName: "stop.fill")
-                            .font(.headline)
-                            .frame(width: 44, height: 44)
-                            .background(Color.red)
-                            .clipShape(Circle())
-                    }
-                    .accessibilityLabel("Остановить и отправить")
                 } else {
                     Menu {
                         Button {
@@ -1042,28 +1267,21 @@ private struct MuseChatView: View {
                         .disabled(model.runtimeState != .registered)
                         .submitLabel(.send)
                         .onSubmit(sendDraft)
+                }
 
-                    if hasDraft {
-                        Button(action: sendDraft) {
-                            Image(systemName: model.isSendingChat ? "ellipsis" : "arrow.up")
-                                .font(.headline)
-                                .frame(width: 44, height: 44)
-                                .background(canSend ? MuseTheme.violet : Color.white.opacity(0.10))
-                                .clipShape(Circle())
-                        }
-                        .disabled(!canSend)
-                        .accessibilityLabel("Отправить")
-                    } else {
-                        Button(action: model.toggleVoiceRecording) {
-                            Image(systemName: "mic.fill")
-                                .font(.headline)
-                                .frame(width: 44, height: 44)
-                                .background(Color.white.opacity(0.10))
-                                .clipShape(Circle())
-                        }
-                        .disabled(!model.canSendToMuse)
-                        .accessibilityLabel("Записать голосовую заметку")
+                // Stays the same view across recording, or a held press would be cancelled.
+                if hasDraft && !model.isRecordingVoice {
+                    Button(action: sendDraft) {
+                        Image(systemName: model.isSendingChat ? "ellipsis" : "arrow.up")
+                            .font(.headline)
+                            .frame(width: 44, height: 44)
+                            .background(canSend ? MuseTheme.violet : Color.white.opacity(0.10))
+                            .clipShape(Circle())
                     }
+                    .disabled(!canSend)
+                    .accessibilityLabel("Отправить")
+                } else {
+                    VoiceRecordButton(model: model)
                 }
             }
             .padding(.horizontal, 16)
@@ -1071,7 +1289,7 @@ private struct MuseChatView: View {
             .padding(.bottom, 8)
             .background(.ultraThinMaterial)
             .overlay(alignment: .top) {
-                Text(model.runtimeState == .registered ? "Защищённый чат Muse активен" : "Ждём регистрации в Muse VM")
+                Text(model.voiceHint ?? (model.runtimeState == .registered ? "Защищённый чат Muse активен" : "Ждём регистрации в Muse VM"))
                     .font(.caption2)
                     .foregroundColor(MuseTheme.secondary)
                     .offset(y: -17)
@@ -1110,6 +1328,51 @@ private struct MuseChatView: View {
         let message = draft
         draft = ""
         model.sendChat(message)
+    }
+}
+
+private struct VoiceRecordButton: View {
+    @ObservedObject var model: MuseAppModel
+    @State private var isHeld = false
+
+    private var face: some View {
+        Image(systemName: model.isRecordingVoice && model.voiceRecordMode == .tap ? "stop.fill" : "mic.fill")
+            .font(.headline)
+            .frame(width: 44, height: 44)
+            .background(model.isRecordingVoice ? Color.red : Color.white.opacity(0.10))
+            .clipShape(Circle())
+            .opacity(model.canSendToMuse || model.isRecordingVoice ? 1 : 0.4)
+    }
+
+    var body: some View {
+        switch model.voiceRecordMode {
+        case .tap:
+            Button(action: model.toggleVoiceRecording) { face }
+                .disabled(!model.canSendToMuse && !model.isRecordingVoice)
+                .accessibilityLabel(model.isRecordingVoice ? "Остановить и отправить" : "Записать голосовую заметку")
+        case .hold:
+            face
+                .contentShape(Circle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { _ in
+                            guard !isHeld else { return }
+                            isHeld = true
+                            model.beginHeldVoiceRecording()
+                        }
+                        .onEnded { _ in
+                            isHeld = false
+                            model.endHeldVoiceRecording()
+                        }
+                )
+                .onDisappear {
+                    isHeld = false
+                    model.endHeldVoiceRecording()
+                }
+                .accessibilityLabel("Удерживайте, чтобы записать голосовую заметку")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction { model.toggleVoiceRecording() }
+        }
     }
 }
 
@@ -1169,7 +1432,10 @@ private struct CapabilitiesView: View {
         ("camera.fill", "Камера", "Фото только после явного разрешения", "Готово, ждёт проверки с Muse"),
         ("location.fill", "Геопозиция", "Положение только во время работы", "Готово, ждёт проверки с Muse"),
         ("gyroscope", "Датчики движения", "Снимок движения по команде", "Готово, ждёт проверки с Muse"),
-        ("network", "Локальная сеть", "Поиск сервисов рядом с устройством", "Пока только разрешение")
+        ("flashlight.on.fill", "Фонарик и яркость", "Фонарик и яркость экрана по команде", "Готово, ждёт проверки с Muse"),
+        ("square.text.square", "Карточка на экране", "Заголовок и текст поверх чата", "Готово, ждёт проверки с Muse"),
+        ("square.stack.3d.up.fill", "Быстрые команды", "Запуск только тех, что вы разрешили", "Готово, ждёт проверки с Muse"),
+        ("network", "Локальная сеть", "Поиск устройств и HTTP только к разрешённым", "Готово, ждёт проверки с Muse")
     ]
 
     var body: some View {
@@ -1259,6 +1525,57 @@ private struct MuseSettingsView: View {
                 }
                 .museCard()
 
+                VStack(alignment: .leading, spacing: 13) {
+                    Text("РАЗРЕШЕНО ДЛЯ MUSE").font(.caption.weight(.bold)).tracking(1).foregroundColor(MuseTheme.secondary)
+                    if model.approvedShortcuts.isEmpty && model.approvedDevices.isEmpty {
+                        Text("Пока ничего. Когда Muse попросит запустить Быструю команду или обратиться к устройству в сети, приложение спросит вас.")
+                            .font(.caption)
+                            .foregroundColor(MuseTheme.secondary)
+                    }
+                    ForEach(model.approvedShortcuts, id: \.self) { name in
+                        GrantRow(icon: "square.stack.3d.up.fill", title: name) { model.revokeShortcut(name) }
+                    }
+                    ForEach(model.approvedDevices) { device in
+                        GrantRow(icon: "network", title: device.id) { model.revokeDevice(device) }
+                    }
+                }
+                .museCard()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("ЗАПИСЬ ГОЛОСА").font(.caption.weight(.bold)).tracking(1).foregroundColor(MuseTheme.secondary)
+                    Picker("Запись голоса", selection: $model.voiceRecordMode) {
+                        ForEach(MuseVoiceRecordMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .disabled(model.isRecordingVoice)
+                    Text(model.voiceRecordMode == .hold
+                         ? "Удерживайте кнопку микрофона и говорите. Отпустите, чтобы отправить."
+                         : "Нажмите на микрофон, чтобы начать запись. Нажмите ещё раз, чтобы отправить.")
+                        .font(.caption)
+                        .foregroundColor(MuseTheme.secondary)
+                }
+                .museCard()
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Toggle("История чата по Wi-Fi", isOn: $model.isPeerSyncEnabled)
+                        .font(.subheadline)
+                    Text(model.peerSyncStatus)
+                        .font(.caption)
+                        .foregroundColor(MuseTheme.secondary)
+                }
+                .museCard()
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Toggle("История чата в iCloud", isOn: $model.isCloudSyncEnabled)
+                        .font(.subheadline)
+                    Text(model.cloudSyncStatus)
+                        .font(.caption)
+                        .foregroundColor(MuseTheme.secondary)
+                }
+                .museCard()
+
                 VStack(alignment: .leading, spacing: 6) {
                     Toggle("Не гасить экран", isOn: $model.keepScreenAwake)
                         .font(.subheadline)
@@ -1311,7 +1628,9 @@ private struct MuseSettingsView: View {
             Button("Очистить", role: .destructive) { model.clearChatHistory() }
             Button("Отмена", role: .cancel) {}
         } message: {
-            Text("Сообщения и фото удалятся с этого устройства. Переписка в самом Muse останется.")
+            Text(model.isCloudSyncEnabled || model.isPeerSyncEnabled
+                 ? "Сообщения удалятся с этого устройства и с других ваших гаджетов, с которыми включена синхронизация. Переписка в самом Muse останется."
+                 : "Сообщения и фото удалятся с этого устройства. Переписка в самом Muse останется.")
         }
         .confirmationDialog(
             "Удалить сохранённую пару?",
@@ -1322,6 +1641,22 @@ private struct MuseSettingsView: View {
             Button("Отмена", role: .cancel) {}
         } message: {
             Text("Потребуется снова добавить устройство в приложении Muse. SDK Token останется в Связке ключей.")
+        }
+    }
+}
+
+private struct GrantRow: View {
+    let icon: String
+    let title: String
+    let revoke: () -> Void
+
+    var body: some View {
+        HStack {
+            Image(systemName: icon).frame(width: 24).foregroundColor(MuseTheme.blue)
+            Text(title).font(.subheadline).lineLimit(2)
+            Spacer()
+            Button("Убрать", role: .destructive, action: revoke)
+                .font(.caption.weight(.semibold))
         }
     }
 }

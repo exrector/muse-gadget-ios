@@ -10,6 +10,9 @@ final class MuseChatStore {
         let text: String
         let museMessageID: String?
         let imageFile: String?
+        var createdAt: Date?
+        var updatedAt: Date?
+        var hasRemoteImage: Bool?
     }
 
     private struct StoredHistory: Codable {
@@ -44,17 +47,22 @@ final class MuseChatStore {
                 try? FileManager.default.moveItem(at: historyFile, to: aside)
                 return []
             }
-            return history.items.compactMap { stored in
+            return history.items.enumerated().compactMap { index, stored in
                 guard let author = MuseChatItem.Author(storedName: stored.author) else { return nil }
                 let image = stored.imageFile
                     .flatMap { try? Data(contentsOf: directory.appendingPathComponent($0)) }
                     .flatMap(UIImage.init(data:))
+                // Items saved before dates existed keep their order and sort before anything newer.
+                let createdAt = stored.createdAt ?? Date(timeIntervalSince1970: TimeInterval(index))
                 return MuseChatItem(
                     id: stored.id,
                     author: author,
                     text: stored.text,
                     image: image,
-                    museMessageID: stored.museMessageID
+                    museMessageID: stored.museMessageID,
+                    createdAt: createdAt,
+                    updatedAt: stored.updatedAt ?? createdAt,
+                    hasRemoteImage: stored.hasRemoteImage ?? false
                 )
             }
         }
@@ -102,7 +110,10 @@ final class MuseChatStore {
                     author: item.author.storedName,
                     text: item.text,
                     museMessageID: item.museMessageID,
-                    imageFile: try writeImageIfNeeded(item)
+                    imageFile: try writeImageIfNeeded(item),
+                    createdAt: item.createdAt,
+                    updatedAt: item.updatedAt,
+                    hasRemoteImage: item.hasRemoteImage
                 )
             }
             let data = try JSONEncoder().encode(StoredHistory(items: stored))
@@ -140,7 +151,7 @@ final class MuseChatStore {
     }
 }
 
-private extension MuseChatItem.Author {
+extension MuseChatItem.Author {
     init?(storedName: String) {
         switch storedName {
         case "user": self = .user
