@@ -21,9 +21,18 @@ final class IOSCommandRegistry {
 
     var commandSpecs: [String: Any] {
         Dictionary(uniqueKeysWithValues: definitions.values.map { definition in
-            (definition.name, [
+            let required = Dictionary(uniqueKeysWithValues: definition.parameters.map { name, rawSpec in
+                let spec = rawSpec as? [String: Any]
+                let type = spec?["type"] as? String ?? "string"
+                let description = spec?["description"] as? String
+                    ?? "Value for \(name.replacingOccurrences(of: "_", with: " "))."
+                return (name, ["type": type, "description": description])
+            })
+            return (definition.name, [
                 "description": definition.summary,
-                "parameters": definition.parameters
+                "required": required,
+                "optional": [:],
+                "timeout_ms": 30_000
             ])
         })
     }

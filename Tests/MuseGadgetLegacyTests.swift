@@ -40,5 +40,34 @@ final class MuseGadgetLegacyTests: XCTestCase {
                        "2d2d0a90cf1a5a4c5db02d56ecc4c5bf" +
                        "34007208d5b887185865")
     }
+
+    func testNoiseCipherMatchesOfficialSDKVector() throws {
+        let cipher = MuseNoiseCipherState()
+        try cipher.initializeKey(Data(0..<32))
+        XCTAssertEqual(
+            try cipher.encrypt(ad: Data("ad".utf8), plaintext: Data("hello".utf8)).hex,
+            "66d9d9b2da11bae424ce671b6e7ef04a4d98656a32"
+        )
+        XCTAssertEqual(
+            try cipher.encrypt(ad: Data(), plaintext: Data()).hex,
+            "367ef8288831557408e102950a16e26a"
+        )
+    }
+
+    func testControlStreamEnvelopeMatchesOfficialSDK() {
+        let request = MuseNoiseWire.startControlStream(streamID: 1)
+        XCTAssertEqual(
+            request.hex,
+            "1219080112150a04504f5354120d2f6c696e6b2d636f6e74726f6c"
+        )
+        XCTAssertEqual(
+            MuseNoiseWire.noiseFrame(payload: request, chunkID: 7).hex,
+            "08071801221b1219080112150a04504f5354120d2f6c696e6b2d636f6e74726f6c"
+        )
+    }
+}
+
+private extension Data {
+    var hex: String { map { String(format: "%02x", $0) }.joined() }
 }
 

@@ -35,6 +35,7 @@ final class PairingCoordinator: NSObject {
 
     var onStateChange: ((State) -> Void)?
     var onLog: ((String) -> Void)?
+    var onCredentialsStored: ((DeviceCredentials) -> Void)?
 
     private let identity: DeviceIdentity
     private let credentials: CredentialStore
@@ -186,6 +187,7 @@ final class PairingCoordinator: NSObject {
             savedAt: Date()
         )
         try credentials.saveDeviceCredentials(saved)
+        onCredentialsStored?(saved)
         try sendJSON(session.encryptStatus("auth_ok")) { [weak self] in
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 self?.peripheral?.stop()

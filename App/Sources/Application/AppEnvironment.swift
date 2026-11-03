@@ -6,20 +6,30 @@ final class AppEnvironment {
     let permissions: PermissionCenter
     let commands: IOSCommandRegistry
     let pairing: PairingCoordinator
+    let runtime: MuseRuntime
 
     init() {
         let identity = DeviceIdentityStore().loadOrCreate()
         let credentialStore = CredentialStore()
         let permissions = PermissionCenter()
         let commands = IOSCommandRegistry.defaultRegistry(permissions: permissions)
+        let pairing = PairingCoordinator(identity: identity, credentials: credentialStore)
+        let runtime = MuseRuntime(identity: identity, commands: commands)
 
         self.identity = identity
         self.credentialStore = credentialStore
         self.permissions = permissions
         self.commands = commands
-        self.pairing = PairingCoordinator(identity: identity, credentials: credentialStore)
+        self.pairing = pairing
+        self.runtime = runtime
 
         importStagedSDKTokenIfPresent()
+
+        pairing.onCredentialsStored = { credentials in runtime.start(credentials: credentials) }
+        runtime.onUnpaired = { pairing.forgetPairing() }
+        if let credentials = credentialStore.loadDeviceCredentials() {
+            runtime.start(credentials: credentials)
+        }
     }
 
     private func importStagedSDKTokenIfPresent() {

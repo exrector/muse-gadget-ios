@@ -7,6 +7,7 @@ final class MuseAppModel: ObservableObject {
     @Published var tokenSaved: Bool
     @Published var isEditingToken = false
     @Published var pairingState: PairingCoordinator.State
+    @Published var runtimeState: MuseRuntimeState
     @Published var isPaired: Bool
     @Published var permissionStates: [AppPermission: PermissionState] = [:]
     @Published var networkName: String
@@ -24,6 +25,7 @@ final class MuseAppModel: ObservableObject {
         tokenSaved = hasToken
         isPaired = hasPairing
         pairingState = environment.pairing.state
+        runtimeState = environment.runtime.state
         networkName = CurrentWiFi.preferredSSID() ?? ""
         setupStep = hasToken ? 2 : 0
 
@@ -52,6 +54,14 @@ final class MuseAppModel: ObservableObject {
             }
         }
         environment.pairing.onLog = { [weak self] message in
+            guard let self else { return }
+            self.diagnostics.append(message)
+            if self.diagnostics.count > 80 { self.diagnostics.removeFirst() }
+        }
+        environment.runtime.onStateChange = { [weak self] state in
+            self?.runtimeState = state
+        }
+        environment.runtime.onLog = { [weak self] message in
             guard let self else { return }
             self.diagnostics.append(message)
             if self.diagnostics.count > 80 { self.diagnostics.removeFirst() }
@@ -157,6 +167,7 @@ final class MuseAppModel: ObservableObject {
     }
 
     func forgetPairing() {
+        environment.runtime.stop()
         environment.pairing.forgetPairing()
         isPaired = false
         setupStep = 3
@@ -680,17 +691,22 @@ private struct MuseChatView: View {
                         MuseMark(size: 46)
                         VStack(alignment: .leading, spacing: 3) {
                             Text("Muse").font(.title2.bold())
-                            Label("Пара создана", systemImage: "checkmark.circle.fill")
+                            Label(
+                                model.runtimeState == .registered ? "Подключено к Muse VM" : "Пара создана",
+                                systemImage: model.runtimeState == .registered ? "network" : "checkmark.circle.fill"
+                            )
                                 .font(.caption.weight(.semibold)).foregroundColor(MuseTheme.mint)
                         }
                         Spacer()
                     }
                     .padding(.top, 8)
 
-                    StatusBanner()
+                    StatusBanner(state: model.runtimeState)
 
                     ChatBubble(
-                        text: "Пара создана и сохранена. Канал Muse VM ещё не подключён; локальные возможности iPhone уже подготовлены.",
+                        text: model.runtimeState == .registered
+                            ? "Гаджет зарегистрирован в Muse. Сетевой канал активен и готов принимать команды."
+                            : "Пара создана и сохранена. Подключаем защищённый канал Muse VM…",
                         isMuse: true
                     )
 
@@ -724,7 +740,7 @@ private struct MuseChatView: View {
             .padding(.bottom, 8)
             .background(.ultraThinMaterial)
             .overlay(alignment: .top) {
-                Text("Чат включится после завершения защищённого канала Muse VM")
+                Text(model.runtimeState == .registered ? "Отправка сообщений будет подключена следующим этапом" : "Ждём регистрации в Muse VM")
                     .font(.caption2)
                     .foregroundColor(MuseTheme.secondary)
                     .offset(y: -17)
@@ -736,12 +752,15 @@ private struct MuseChatView: View {
 }
 
 private struct StatusBanner: View {
+    let state: MuseRuntimeState
+
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "hammer.fill").foregroundColor(.yellow)
+            Image(systemName: state == .registered ? "checkmark.circle.fill" : "arrow.triangle.2.circlepath")
+                .foregroundColor(state == .registered ? MuseTheme.mint : .yellow)
             VStack(alignment: .leading, spacing: 4) {
-                Text("Канал Muse VM в разработке").font(.subheadline.weight(.semibold))
-                Text("Создание пары завершено. Noise XX и Link protocol ещё не подключены — чат пока только показывает локальные события.")
+                Text(state.title).font(.subheadline.weight(.semibold))
+                Text(state.detail)
                     .font(.caption).foregroundColor(MuseTheme.secondary)
             }
             Spacer(minLength: 0)
@@ -832,6 +851,12 @@ private struct MuseSettingsView: View {
 
                 VStack(spacing: 15) {
                     SettingsLine(icon: "checkmark.seal.fill", title: "Пара Muse", value: "Создана", tint: MuseTheme.mint)
+                    SettingsLine(
+                        icon: "network",
+                        title: "Muse VM",
+                        value: model.runtimeState.shortTitle,
+                        tint: model.runtimeState == .registered ? MuseTheme.mint : .yellow
+                    )
                     SettingsLine(icon: "iphone", title: "Имя устройства", value: model.deviceName, tint: MuseTheme.blue)
                     SettingsLine(icon: "wifi", title: "Сеть", value: CurrentWiFi.preferredSSID() ?? "Не указана", tint: MuseTheme.blue)
                     if let account = model.pairedAccount {
@@ -997,6 +1022,48 @@ private extension PairingCoordinator.State {
         case .provisioning: return "Сохраняем пару…"
         case .paired: return "Пара создана"
         case .failed(let message): return "Не получилось: \(message)"
+        }
+    }
+}
+
+private extension MuseRuntimeState {
+    var shortTitle: String {
+        switch self {
+        case .idle: return "Ожидание"
+        case .fetchingVM: return "Поиск VM"
+        case .connecting: return "Соединение"
+        case .handshaking: return "Шифрование"
+        case .registering: return "Регистрация"
+        case .registered: return "Подключена"
+        case .failed: return "Повторяем"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .registered: return "Канал Muse VM подключён"
+        case .failed: return "Канал временно недоступен"
+        case .idle: return "Ожидаем данные пары"
+        default: return "Подключаем Muse VM…"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .registered:
+            return "Noise XX и link.register подтверждены сервером Muse."
+        case .failed(let message):
+            return "\(message). Приложение повторит подключение автоматически."
+        case .idle:
+            return "После создания пары приложение подключится автоматически."
+        case .fetchingVM:
+            return "Получаем виртуальную машину аккаунта."
+        case .connecting:
+            return "Открываем защищённый WebSocket."
+        case .handshaking:
+            return "Выполняем Noise XX с AES-GCM."
+        case .registering:
+            return "Отправляем link.register и ждём подтверждения."
         }
     }
 }

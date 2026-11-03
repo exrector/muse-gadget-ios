@@ -2,7 +2,7 @@
 
 An unofficial, open-source Muse community gadget that turns an older iPhone or iPad into a screen, microphone, speaker, camera and sensor companion for Muse.
 
-The project is a native SwiftUI application targeting iOS/iPadOS 15 or newer. Bluetooth LE is used only for the user-initiated Muse pairing flow. After pairing, the intended runtime transport is the device's existing Internet connection, using the same encrypted Noise and Link protocols as the official Muse Gadget SDK.
+The project is a native SwiftUI application targeting iOS/iPadOS 15 or newer. Bluetooth LE is used only for the user-initiated Muse pairing flow. After pairing, the runtime uses the device's existing Internet connection and the same encrypted Noise and Link protocols as the official Muse Gadget SDK.
 
 > This is an independent community project. It is not made by, endorsed by, or supported by Meta. Muse Gadget SDK tokens are governed separately by the [Muse Gadget SDK Token Terms](https://gadgets.muse.ai/sdk-terms).
 
@@ -20,19 +20,21 @@ The repository contains a buildable native application skeleton and the first re
 - permission center for Bluetooth, local network, camera, microphone, speech, location and motion;
 - automatic current Wi-Fi name detection with a manual SSID-only fallback (iOS does not expose saved Wi-Fi passwords to apps);
 - explicit iOS command registry with no shell or arbitrary filesystem access;
+- Noise XX (`25519_AESGCM_SHA256`) over WebSocket, the Muse protobuf envelope and `/link-control` framing;
+- VM discovery plus `link.register`, `link.invoke`, `link.result` and `link.unpaired` handling;
 - chat-like SwiftUI home, capabilities catalog and settings; technical diagnostics stay collapsed by default.
 
-BLE pairing and credential persistence have been verified end to end on a physical iPhone 6s running iOS 15.8.8. This confirms the pairing stage only; the Wi-Fi runtime is not yet registered with a Muse VM.
+BLE pairing, credential persistence, VM discovery, Noise XX and `link.register` have been verified end to end on a physical iPhone 6s running iOS 15.8.8. A real Muse VM acknowledged the registration on 2026-11-03.
 
-Still to be completed and verified on a real Muse account:
+Still to be completed and verified:
 
-- VM discovery, token rotation and Noise/WebSocket session;
-- `link.register`, `link.invoke` and `link.result` against a real VM;
+- refresh-token rotation and long-running reconnect behavior;
+- real command invocation through `link.invoke` and `link.result`;
 - chat, voice notes, avatar rendering and camera delivery;
 - reliable behavior while the screen is locked;
 - App Store release hardening and localization.
 
-The application deliberately labels the Muse VM channel as under development until Noise XX and Link registration work end to end. It does not present the local chat shell as a live Muse conversation.
+The application reports the Muse VM as connected only after the server acknowledges `link.register`. It does not present the local chat shell as a live Muse conversation yet.
 
 ## Build
 
