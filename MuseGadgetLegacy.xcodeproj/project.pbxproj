@@ -15,11 +15,9 @@
 		A10000000000000000000007 /* BLEFraming.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000007 /* BLEFraming.swift */; };
 		A10000000000000000000008 /* DeviceIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000008 /* DeviceIdentity.swift */; };
 		A10000000000000000000009 /* PairingCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000009 /* PairingCrypto.swift */; };
-		A1000000000000000000000A /* RuntimeScaffold.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000A /* RuntimeScaffold.swift */; };
+		A1000000000000000000000A /* MuseRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000A /* MuseRuntime.swift */; };
 		A1000000000000000000000B /* CredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000B /* CredentialStore.swift */; };
 		A1000000000000000000000C /* PermissionCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000C /* PermissionCenter.swift */; };
-		A1000000000000000000000D /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000D /* MainViewController.swift */; };
-		A1000000000000000000000E /* PermissionsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000E /* PermissionsViewController.swift */; };
 		A1000000000000000000000F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000F /* Assets.xcassets */; };
 		A10000000000000000000010 /* MuseGadgetLegacyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010 /* MuseGadgetLegacyTests.swift */; };
 		A10000000000000000000011 /* MuseAppView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000014 /* MuseAppView.swift */; };
@@ -56,11 +54,9 @@
 		B10000000000000000000007 /* BLEFraming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Protocol/BLEFraming.swift; sourceTree = "<group>"; };
 		B10000000000000000000008 /* DeviceIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Protocol/DeviceIdentity.swift; sourceTree = "<group>"; };
 		B10000000000000000000009 /* PairingCrypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Protocol/PairingCrypto.swift; sourceTree = "<group>"; };
-		B1000000000000000000000A /* RuntimeScaffold.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Protocol/RuntimeScaffold.swift; sourceTree = "<group>"; };
+		B1000000000000000000000A /* MuseRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Protocol/MuseRuntime.swift; sourceTree = "<group>"; };
 		B1000000000000000000000B /* CredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/CredentialStore.swift; sourceTree = "<group>"; };
 		B1000000000000000000000C /* PermissionCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/PermissionCenter.swift; sourceTree = "<group>"; };
-		B1000000000000000000000D /* MainViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UI/MainViewController.swift; sourceTree = "<group>"; };
-		B1000000000000000000000E /* PermissionsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UI/PermissionsViewController.swift; sourceTree = "<group>"; };
 		B1000000000000000000000F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B10000000000000000000010 /* MuseGadgetLegacyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MuseGadgetLegacyTests.swift; sourceTree = "<group>"; };
 		B10000000000000000000011 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -104,7 +100,7 @@
 				B10000000000000000000004, B10000000000000000000005, B10000000000000000000006,
 				B10000000000000000000007, B10000000000000000000008, B10000000000000000000009,
 				B1000000000000000000000A, B1000000000000000000000B, B1000000000000000000000C,
-				B1000000000000000000000D, B1000000000000000000000E, B10000000000000000000014,
+				B10000000000000000000014,
 				B10000000000000000000015, B10000000000000000000016, B10000000000000000000017, B10000000000000000000018, B10000000000000000000019, B1000000000000000000001A, B1000000000000000000001B, B1000000000000000000001C, B1000000000000000000001D, B1000000000000000000001E, B1000000000000000000001F
 			);
 			path = Sources;
@@ -168,7 +164,7 @@
 			A10000000000000000000004, A10000000000000000000005, A10000000000000000000006,
 			A10000000000000000000007, A10000000000000000000008, A10000000000000000000009,
 			A1000000000000000000000A, A1000000000000000000000B, A1000000000000000000000C,
-			A1000000000000000000000D, A1000000000000000000000E, A10000000000000000000011,
+			A10000000000000000000011,
 			A10000000000000000000012, A10000000000000000000013, A10000000000000000000014, A10000000000000000000015, A10000000000000000000016, A10000000000000000000017, A10000000000000000000018, A10000000000000000000019, A1000000000000000000001A, A1000000000000000000001B, A1000000000000000000001C
 		); runOnlyForDeploymentPostprocessing = 0; };
 		I10000000000000000000002 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000010); runOnlyForDeploymentPostprocessing = 0; };

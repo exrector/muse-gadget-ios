@@ -34,5 +34,3 @@ xcodebuild \
   CODE_SIGNING_ALLOWED=NO \
   build-for-testing
 ```
-
-Xcode 27 no longer accepts iOS 13 as a build target; a local compile may temporarily override `IPHONEOS_DEPLOYMENT_TARGET=15.0`. That proves current-SDK compilation only. Keep a separate older-Xcode/CI check before claiming iOS 13 compatibility.
