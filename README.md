@@ -23,6 +23,7 @@ The repository contains a buildable native application skeleton and the first re
 - Noise XX (`25519_AESGCM_SHA256`) over WebSocket, the Muse protobuf envelope and `/link-control` framing;
 - VM discovery plus `link.register`, `link.invoke`, `link.result` and `link.unpaired` handling;
 - chat SwiftUI home, capabilities catalog and settings; technical diagnostics stay collapsed by default.
+- chat history stored on the device, up to the latest 200 messages and excluded from backups; it can be cleared in Settings.
 
 BLE pairing, credential persistence, VM discovery, Noise XX and `link.register` have been verified end to end on a physical iPhone 6s running iOS 15.8.8. A real Muse VM acknowledged the registration on 2026-11-03.
 

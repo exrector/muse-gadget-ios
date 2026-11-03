@@ -8,12 +8,20 @@ struct MuseChatItem: Identifiable {
     let author: Author
     var text: String
     var image: UIImage?
+    var museMessageID: String?
 
-    init(id: UUID = UUID(), author: Author, text: String, image: UIImage? = nil) {
+    init(
+        id: UUID = UUID(),
+        author: Author,
+        text: String,
+        image: UIImage? = nil,
+        museMessageID: String? = nil
+    ) {
         self.id = id
         self.author = author
         self.text = text
         self.image = image
+        self.museMessageID = museMessageID
     }
 }
 
@@ -30,7 +38,9 @@ final class MuseAppModel: ObservableObject {
     @Published var caption = ""
     @Published var diagnostics: [String] = []
     @Published var alertMessage: String?
-    @Published var chatItems: [MuseChatItem] = []
+    @Published var chatItems: [MuseChatItem] {
+        didSet { environment.chatStore.scheduleSave(chatItems) }
+    }
     @Published var isSendingChat = false
     @Published var isAwaitingReply = false
     @Published var museActivity: String?
@@ -53,6 +63,11 @@ final class MuseAppModel: ObservableObject {
 
     init(environment: AppEnvironment) {
         self.environment = environment
+        let history = environment.chatStore.load()
+        chatItems = history
+        for item in history {
+            if let messageID = item.museMessageID { replyItemIDs[messageID] = item.id }
+        }
         keepScreenAwake = UserDefaults.standard.object(forKey: Self.keepScreenAwakeKey) as? Bool ?? true
         let hasToken = environment.credentialStore.loadSDKToken() != nil
         let hasPairing = environment.credentialStore.loadDeviceCredentials() != nil
@@ -106,6 +121,11 @@ final class MuseAppModel: ObservableObject {
             self.apply(self.chatTimeline.feed(record))
         }
         applyIdleTimerPolicy()
+        for name in [UIApplication.didEnterBackgroundNotification, UIApplication.willTerminateNotification] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                self?.environment.chatStore.flush()
+            }
+        }
         NotificationCenter.default.addObserver(
             forName: .museCaptionChanged,
             object: nil,
@@ -347,7 +367,7 @@ final class MuseAppModel: ObservableObject {
                    let index = chatItems.firstIndex(where: { $0.id == itemID }) {
                     chatItems[index].text = text
                 } else if !text.isEmpty {
-                    let item = MuseChatItem(author: .muse, text: text)
+                    let item = MuseChatItem(author: .muse, text: text, museMessageID: messageID)
                     replyItemIDs[messageID] = item.id
                     chatItems.append(item)
                 }
@@ -377,6 +397,12 @@ final class MuseAppModel: ObservableObject {
         default:
             return "Не удалось отправить сообщение. Канал Muse переподключится автоматически."
         }
+    }
+
+    func clearChatHistory() {
+        chatItems.removeAll()
+        replyItemIDs.removeAll()
+        environment.chatStore.clear()
     }
 
     func forgetPairing() {
@@ -956,6 +982,9 @@ private struct MuseChatView: View {
                 }
                 .padding(20)
             }
+            .onAppear {
+                proxy.scrollTo(Self.bottomAnchor, anchor: .bottom)
+            }
             .onChange(of: model.chatItems.count) { _ in
                 withAnimation { proxy.scrollTo(Self.bottomAnchor, anchor: .bottom) }
             }
@@ -1183,6 +1212,7 @@ private struct CapabilitiesView: View {
 private struct MuseSettingsView: View {
     @ObservedObject var model: MuseAppModel
     @State private var showForgetConfirmation = false
+    @State private var showClearHistoryConfirmation = false
 
     var body: some View {
         ScrollView {
@@ -1249,6 +1279,12 @@ private struct MuseSettingsView: View {
                 }
                 .museCard()
 
+                Button("Очистить историю чата", role: .destructive) { showClearHistoryConfirmation = true }
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .buttonStyle(.bordered)
+                    .tint(.red)
+                    .disabled(model.chatItems.isEmpty)
+
                 Button("Повторить пошаговую настройку") { model.restartGuide() }
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .buttonStyle(.bordered)
@@ -1267,6 +1303,16 @@ private struct MuseSettingsView: View {
         .background(MuseTheme.background.ignoresSafeArea())
         .navigationBarHidden(true)
         .onAppear { model.refreshPermissions() }
+        .confirmationDialog(
+            "Очистить историю чата?",
+            isPresented: $showClearHistoryConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Очистить", role: .destructive) { model.clearChatHistory() }
+            Button("Отмена", role: .cancel) {}
+        } message: {
+            Text("Сообщения и фото удалятся с этого устройства. Переписка в самом Muse останется.")
+        }
         .confirmationDialog(
             "Удалить сохранённую пару?",
             isPresented: $showForgetConfirmation,

@@ -250,6 +250,79 @@ final class MuseGadgetLegacyTests: XCTestCase {
         XCTAssertLessThanOrEqual(max(decoded.size.width, decoded.size.height) * decoded.scale, 800)
     }
 
+    func testChatHistorySurvivesReopeningAndDropsFailureNotices() throws {
+        let directory = temporaryChatDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).image { context in
+            UIColor.red.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+        }
+        let question = MuseChatItem(author: .user, text: "вопрос", image: image)
+        let answer = MuseChatItem(author: .muse, text: "ответ", museMessageID: "reply-1")
+        let notice = MuseChatItem(author: .system, text: "сбой")
+
+        let store = MuseChatStore(directory: directory)
+        store.scheduleSave([question, answer, notice])
+        store.flush()
+
+        let reopened = MuseChatStore(directory: directory).load()
+        XCTAssertEqual(reopened.map(\.id), [question.id, answer.id])
+        XCTAssertEqual(reopened.map(\.text), ["вопрос", "ответ"])
+        XCTAssertEqual(reopened[0].author, .user)
+        XCTAssertNotNil(reopened[0].image)
+        XCTAssertEqual(reopened[1].author, .muse)
+        XCTAssertEqual(reopened[1].museMessageID, "reply-1")
+    }
+
+    func testChatHistoryKeepsNewestItemsAndRemovesDroppedImages() throws {
+        let directory = temporaryChatDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 4, height: 4)).image { _ in }
+        let oldest = MuseChatItem(author: .user, text: "старое", image: image)
+        let store = MuseChatStore(directory: directory)
+        store.scheduleSave([oldest])
+        store.flush()
+        XCTAssertEqual(try jpegCount(in: directory), 1)
+
+        let newest = (0..<MuseChatStore.maxStoredItems).map { MuseChatItem(author: .muse, text: "\($0)") }
+        store.scheduleSave([oldest] + newest)
+        store.flush()
+
+        let reopened = MuseChatStore(directory: directory).load()
+        XCTAssertEqual(reopened.map(\.id), newest.map(\.id))
+        XCTAssertEqual(try jpegCount(in: directory), 0)
+    }
+
+    func testChatHistorySetsAsideUnreadableFile() throws {
+        let directory = temporaryChatDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data("не json".utf8).write(to: directory.appendingPathComponent("history.json"))
+
+        XCTAssertTrue(MuseChatStore(directory: directory).load().isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: directory.appendingPathComponent("history.unreadable.json").path
+        ))
+    }
+
+    func testClearingChatHistoryRemovesItFromDisk() {
+        let directory = temporaryChatDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = MuseChatStore(directory: directory)
+        store.scheduleSave([MuseChatItem(author: .user, text: "вопрос")])
+        store.flush()
+        store.clear()
+        XCTAssertTrue(MuseChatStore(directory: directory).load().isEmpty)
+    }
+
+    private func temporaryChatDirectory() -> URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    }
+
+    private func jpegCount(in directory: URL) throws -> Int {
+        try FileManager.default.contentsOfDirectory(atPath: directory.path).filter { $0.hasSuffix(".jpg") }.count
+    }
+
     private func acknowledgedTimeline() -> MuseChatTimeline {
         let timeline = MuseChatTimeline()
         timeline.expectRequest()

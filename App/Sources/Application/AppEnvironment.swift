@@ -8,6 +8,7 @@ final class AppEnvironment {
     let commands: IOSCommandRegistry
     let pairing: PairingCoordinator
     let runtime: MuseRuntime
+    let chatStore = MuseChatStore()
 
     init() {
         let identity = DeviceIdentityStore().loadOrCreate()

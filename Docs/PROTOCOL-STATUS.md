@@ -15,8 +15,8 @@
 | Photo and voice notes | Verified on iPhone 6s, iOS 15.8.8, 2026-11-03 | Muse answers about the sent photo or recording |
 | Native commands (camera, location, motion, speech) | Implemented, awaiting live check | `link.result` for each command from a real invoke |
 | Spoken replies, realtime voice, avatar | Planned | Actual bidirectional user-visible delivery |
-| Second gadget on the same SDK token | Paired on iPad (6th generation), iPadOS 17.7.11, 2026-11-03, by the owner's report | iPhone 6s stays connected afterwards |
-| Haptics on iPhone 6s and older | Open: `kSystemSoundID_Vibrate` is called on iPhone 6s, but no vibration is felt; the motor itself works | The device physically vibrates on `haptics.impact` |
+| Second gadget on the same SDK token | Verified 2026-11-03: Muse sees iPhone 6s and iPad (6th generation) as two devices on one token | — |
+| Haptics on iPhone 6s and older | Verified on iPhone 6s, iOS 15.8.8, 2026-11-03: `haptics.impact` vibrates through `kSystemSoundID_Vibrate` | An earlier attempt was not felt, cause not established |
 | Haptics on iPad | Not supported by the hardware; returns `haptics_unavailable` | — |
 | Local network commands | Permission only | Real discovery and an allowlisted device command |
 
