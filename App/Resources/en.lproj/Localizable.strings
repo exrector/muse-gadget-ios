@@ -45,6 +45,18 @@
 "Начать создание пары" = "Start pairing";
 "Возможности" = "Capabilities";
 "Настройки" = "Settings";
+"MUSE НА ЭТОМ УСТРОЙСТВЕ" = "MUSE ON THIS DEVICE";
+"Чат и ответы" = "Chat and replies";
+"Подключены и готовы" = "Connected and ready";
+"Экран и звук" = "Display and sound";
+"Подписи, речь, яркость и вибрация" = "Captions, speech, brightness, and vibration";
+"Камера и датчики" = "Camera and sensors";
+"Спросят подтверждение перед запуском" = "Approval will be requested before running";
+"Устройства в локальной сети" = "Local network devices";
+"Нет доступа к локальной сети" = "No Local Network access";
+"Доступ есть, новые устройства потребуют подтверждения" = "Access is on; new devices will require approval";
+"settings.sensor_access_format" = "%d of 3 allowed";
+"settings.approved_count_format" = "%d approved";
 "Подключено к Muse VM" = "Connected to Muse VM";
 "Пара создана" = "Paired";
 "Гаджет зарегистрирован в Muse. Сетевой канал активен и готов принимать команды." = "The gadget is registered with Muse. Its secure channel is active and ready for commands.";
@@ -81,7 +93,6 @@
 "Запуск только тех, что вы разрешили" = "Runs only shortcuts you approved";
 "Локальная сеть" = "Local Network";
 "Поиск устройств и HTTP только к разрешённым" = "Device discovery and HTTP only for approved targets";
-"Готово, ждёт проверки с Muse" = "Ready for testing with Muse";
 "Команды Linux, Raspberry Pi и ESP32 здесь заменяются безопасными возможностями iOS. Каждая работает только в рамках разрешений Apple." = "Linux, Raspberry Pi, and ESP32 commands are replaced here with safe iOS capabilities. Each one stays within Apple’s permission model.";
 "Устройство" = "Device";
 "Всё важное собрано здесь. Технические подробности спрятаны внизу." = "Everything important is collected here. Technical details stay at the bottom.";

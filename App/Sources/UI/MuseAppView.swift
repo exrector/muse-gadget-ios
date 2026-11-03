@@ -1178,10 +1178,6 @@ private struct MuseMainTabs: View {
                 .navigationViewStyle(.stack)
                 .tabItem { Label("Muse", systemImage: "message.fill") }
 
-            NavigationView { CapabilitiesView(model: model) }
-                .navigationViewStyle(.stack)
-                .tabItem { Label("Возможности", systemImage: "square.grid.2x2.fill") }
-
             NavigationView { MuseSettingsView(model: model) }
                 .navigationViewStyle(.stack)
                 .tabItem { Label("Настройки", systemImage: "gearshape.fill") }
@@ -1491,58 +1487,6 @@ private struct ChatBubble: View {
     }
 }
 
-private struct CapabilitiesView: View {
-    @ObservedObject var model: MuseAppModel
-
-    private let capabilities: [(String, String, String, String)] = [
-        ("display", "Экран", "Показывает подписи и карточки Muse", "Готово, ждёт проверки с Muse"),
-        ("waveform", "Голос и звук", "Озвучивание и голосовые заметки", "Готово, ждёт проверки с Muse"),
-        ("camera.fill", "Камера", "Фото только после явного разрешения", "Готово, ждёт проверки с Muse"),
-        ("location.fill", "Геопозиция", "Положение только во время работы", "Готово, ждёт проверки с Muse"),
-        ("gyroscope", "Датчики движения", "Снимок движения по команде", "Готово, ждёт проверки с Muse"),
-        ("flashlight.on.fill", "Фонарик и яркость", "Фонарик и яркость экрана по команде", "Готово, ждёт проверки с Muse"),
-        ("square.text.square", "Карточка на экране", "Заголовок и текст поверх чата", "Готово, ждёт проверки с Muse"),
-        ("square.stack.3d.up.fill", "Быстрые команды", "Запуск только тех, что вы разрешили", "Готово, ждёт проверки с Muse"),
-        ("network", "Локальная сеть", "Поиск устройств и HTTP только к разрешённым", "Готово, ждёт проверки с Muse")
-    ]
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                StepIntro(
-                    eyebrow: "iOS Gadget",
-                    title: "Возможности",
-                    text: "Команды Linux, Raspberry Pi и ESP32 здесь заменяются безопасными возможностями iOS. Каждая работает только в рамках разрешений Apple."
-                )
-
-                ForEach(capabilities, id: \.1) { item in
-                    HStack(alignment: .top, spacing: 15) {
-                        Image(systemName: item.0)
-                            .font(.title3)
-                            .foregroundColor(MuseTheme.mint)
-                            .frame(width: 42, height: 42)
-                            .background(MuseTheme.mint.opacity(0.12))
-                            .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(PalL10n.key(item.1)).font(.headline)
-                            Text(PalL10n.key(item.2)).font(.subheadline).foregroundColor(MuseTheme.secondary)
-                            Text(PalL10n.key(item.3))
-                                .font(.caption2.weight(.bold))
-                                .foregroundColor(MuseTheme.blue)
-                                .padding(.top, 3)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .museCard()
-                }
-            }
-            .padding(20)
-        }
-        .background(MuseTheme.background.ignoresSafeArea())
-        .navigationBarHidden(true)
-    }
-}
-
 private struct MuseSettingsView: View {
     @ObservedObject var model: MuseAppModel
     @State private var showForgetConfirmation = false
@@ -1573,12 +1517,59 @@ private struct MuseSettingsView: View {
                 }
                 .museCard()
 
+                VStack(alignment: .leading, spacing: 0) {
+                    SettingsSectionLabel(title: "MUSE НА ЭТОМ УСТРОЙСТВЕ")
+                        .padding(.bottom, 2)
+                    CapabilitySettingsRow(
+                        icon: "message.fill",
+                        title: "Чат и ответы",
+                        detail: model.runtimeState == .registered ? PalL10n.text("Подключены и готовы") : model.runtimeState.shortTitle,
+                        tint: model.runtimeState == .registered ? MuseTheme.mint : .orange
+                    )
+                    Divider().overlay(MuseTheme.stroke)
+                    CapabilitySettingsRow(
+                        icon: "speaker.wave.2.fill",
+                        title: "Экран и звук",
+                        detail: PalL10n.text("Подписи, речь, яркость и вибрация"),
+                        tint: MuseTheme.blue
+                    )
+                    Divider().overlay(MuseTheme.stroke)
+                    CapabilitySettingsRow(
+                        icon: "camera.metering.center.weighted",
+                        title: "Камера и датчики",
+                        detail: sensorAccessSummary,
+                        tint: sensorAccessCount == 3 ? MuseTheme.mint : .orange
+                    )
+                    Divider().overlay(MuseTheme.stroke)
+                    CapabilitySettingsRow(
+                        icon: "square.stack.3d.up.fill",
+                        title: "Быстрые команды",
+                        detail: model.approvedShortcuts.isEmpty
+                            ? PalL10n.text("Спросят подтверждение перед запуском")
+                            : PalL10n.format("settings.approved_count_format", model.approvedShortcuts.count),
+                        tint: MuseTheme.blue
+                    )
+                    Divider().overlay(MuseTheme.stroke)
+                    CapabilitySettingsRow(
+                        icon: "network",
+                        title: "Устройства в локальной сети",
+                        detail: localNetworkSummary,
+                        tint: (model.permissionStates[.localNetwork] ?? .notDetermined) == .granted ? MuseTheme.mint : .orange
+                    )
+                }
+                .museCard()
+
                 VStack(alignment: .leading, spacing: 13) {
                     SettingsSectionLabel(title: "РАЗРЕШЕНИЯ")
                     ForEach(AppPermission.allCases, id: \.self) { permission in
-                        HStack {
+                        HStack(alignment: .top, spacing: 10) {
                             Image(systemName: permission.icon).frame(width: 24).foregroundColor(MuseTheme.blue)
-                            Text(permission.localizedTitle).font(.subheadline)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(permission.localizedTitle).font(.subheadline.weight(.semibold))
+                                Text(permission.explanation)
+                                    .font(.caption)
+                                    .foregroundColor(MuseTheme.secondary)
+                            }
                             Spacer()
                             Text((model.permissionStates[permission] ?? .notDetermined).shortTitle)
                                 .font(.caption.weight(.semibold))
@@ -1699,6 +1690,49 @@ private struct MuseSettingsView: View {
         } message: {
             Text("Потребуется снова добавить устройство в приложении Muse. SDK Token останется в Связке ключей.")
         }
+    }
+
+    private var sensorAccessCount: Int {
+        [AppPermission.camera, .location, .motion].filter {
+            (model.permissionStates[$0] ?? .notDetermined) == .granted
+        }.count
+    }
+
+    private var sensorAccessSummary: String {
+        PalL10n.format("settings.sensor_access_format", sensorAccessCount)
+    }
+
+    private var localNetworkSummary: String {
+        guard (model.permissionStates[.localNetwork] ?? .notDetermined) == .granted else {
+            return PalL10n.text("Нет доступа к локальной сети")
+        }
+        return model.approvedDevices.isEmpty
+            ? PalL10n.text("Доступ есть, новые устройства потребуют подтверждения")
+            : PalL10n.format("settings.approved_count_format", model.approvedDevices.count)
+    }
+}
+
+private struct CapabilitySettingsRow: View {
+    let icon: String
+    let title: String
+    let detail: String
+    let tint: Color
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .foregroundColor(tint)
+                .frame(width: 24, height: 24)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(PalL10n.key(title)).font(.subheadline.weight(.semibold))
+                Text(detail)
+                    .font(.caption)
+                    .foregroundColor(MuseTheme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 11)
     }
 }
 

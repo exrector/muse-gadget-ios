@@ -14,7 +14,8 @@
 | Text chat | Verified on iPhone 6s, iOS 15.8.8, 2026-11-03 | Reply from Muse visible in the app |
 | Photo and voice notes | Verified on iPhone 6s, iOS 15.8.8, 2026-11-03 | Muse answers about the sent photo or recording |
 | Native commands (camera, location, motion, speech) | Implemented, awaiting live check | `link.result` for each command from a real invoke |
-| Spoken replies, realtime voice, avatar | Planned | Actual bidirectional user-visible delivery |
+| Spoken replies and realtime voice | Planned | Actual bidirectional user-visible delivery |
+| Companion avatar | Product UI, not a Link payload | The SDK's ESP32 avatar is a local renderer with idle/listening/thinking/speaking/error states; Muse does not send an avatar image or avatar metadata in `link.register` |
 | Second gadget on the same SDK token | Verified 2026-11-03: Muse sees iPhone 6s and iPad (6th generation) as two devices on one token | — |
 | Haptics on iPhone 6s and older | Verified on iPhone 6s, iOS 15.8.8, 2026-11-03: `haptics.impact` vibrates through `kSystemSoundID_Vibrate` | An earlier attempt was not felt, cause not established |
 | Haptics on iPad | Not supported by the hardware; returns `haptics_unavailable` | — |
