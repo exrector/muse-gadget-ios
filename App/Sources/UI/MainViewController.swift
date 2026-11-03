@@ -11,6 +11,7 @@ final class MainViewController: UIViewController {
     private let pairButton = UIButton(type: .system)
     private let tokenStatusLabel = UILabel()
     private let tokenButton = UIButton(type: .system)
+    private let pasteTokenButton = UIButton(type: .system)
 
     init(environment: AppEnvironment) {
         self.environment = environment
@@ -92,15 +93,16 @@ final class MainViewController: UIViewController {
 
         tokenStatusLabel.numberOfLines = 0
         tokenStatusLabel.font = .preferredFont(forTextStyle: .headline)
-        if #available(iOS 15.0, *) {
-            tokenButton.configuration = .borderedProminent()
-            tokenButton.configuration?.cornerStyle = .large
-        } else {
-            tokenButton.backgroundColor = .systemBlue
-            tokenButton.setTitleColor(.white, for: .normal)
-            tokenButton.layer.cornerRadius = 12
-            tokenButton.contentEdgeInsets = UIEdgeInsets(top: 8, left: 16, bottom: 8, right: 16)
-        }
+        pasteTokenButton.configuration = .borderedProminent()
+        pasteTokenButton.configuration?.title = "Paste token from clipboard"
+        pasteTokenButton.configuration?.image = UIImage(systemName: "doc.on.clipboard")
+        pasteTokenButton.configuration?.imagePadding = 8
+        pasteTokenButton.configuration?.cornerStyle = .large
+        pasteTokenButton.addTarget(self, action: #selector(pasteSDKToken), for: .touchUpInside)
+        pasteTokenButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 52).isActive = true
+
+        tokenButton.configuration = .bordered()
+        tokenButton.configuration?.cornerStyle = .large
         tokenButton.addTarget(self, action: #selector(editSDKToken), for: .touchUpInside)
 
         let getTokenButton = UIButton(type: .system)
@@ -108,7 +110,13 @@ final class MainViewController: UIViewController {
         getTokenButton.contentHorizontalAlignment = .leading
         getTokenButton.addTarget(self, action: #selector(openTokenWebsite), for: .touchUpInside)
 
-        let tokenStack = UIStackView(arrangedSubviews: [tokenStatusLabel, tokenButton, getTokenButton])
+        let clipboardHint = UILabel()
+        clipboardHint.text = "Copy the token on your Mac or main iPhone, then tap the button below."
+        clipboardHint.numberOfLines = 0
+        clipboardHint.font = .preferredFont(forTextStyle: .subheadline)
+        clipboardHint.textColor = .secondaryLabel
+
+        let tokenStack = UIStackView(arrangedSubviews: [tokenStatusLabel, clipboardHint, pasteTokenButton, tokenButton, getTokenButton])
         tokenStack.axis = .vertical
         tokenStack.spacing = 10
         stack.addArrangedSubview(card(title: "PERSONAL SDK TOKEN", content: tokenStack))
@@ -274,6 +282,20 @@ final class MainViewController: UIViewController {
         present(alert, animated: true)
     }
 
+    @objc private func pasteSDKToken() {
+        guard let token = UIPasteboard.general.string else {
+            presentError("The clipboard is empty. Copy your Muse SDK token, then try again.")
+            return
+        }
+        do {
+            try environment.pairing.saveSDKToken(token)
+            refreshTokenUI()
+            appendLog("SDK token saved from clipboard")
+        } catch {
+            presentError("The clipboard does not contain a valid Muse SDK token.")
+        }
+    }
+
     @objc private func openTokenWebsite() {
         guard let url = URL(string: "https://gadgets.muse.ai/settings/sdk-tokens") else { return }
         UIApplication.shared.open(url)
@@ -285,12 +307,10 @@ final class MainViewController: UIViewController {
             ? "Token saved securely on this device"
             : "Required for community pairing"
         tokenStatusLabel.textColor = hasToken ? .systemGreen : .systemOrange
-        let tokenTitle = hasToken ? "Replace token" : "Add SDK token"
-        if #available(iOS 15.0, *) {
-            tokenButton.configuration?.title = tokenTitle
-        } else {
-            tokenButton.setTitle(tokenTitle, for: .normal)
-        }
+        pasteTokenButton.configuration?.title = hasToken
+            ? "Replace from clipboard"
+            : "Paste token from clipboard"
+        tokenButton.configuration?.title = "Enter manually instead"
         pairButton.isEnabled = hasToken
 #if targetEnvironment(simulator)
         pairButton.isEnabled = false

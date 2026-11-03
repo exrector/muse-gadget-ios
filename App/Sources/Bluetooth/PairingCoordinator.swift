@@ -1,6 +1,12 @@
 import Foundation
+import os
+import SystemConfiguration.CaptiveNetwork
 
 final class PairingCoordinator: NSObject {
+    private static let sdkTokenPattern = try! NSRegularExpression(
+        pattern: #"^mgst_[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"#
+    )
+
     enum State: Equatable {
         case idle
         case needsSDKToken
@@ -32,6 +38,7 @@ final class PairingCoordinator: NSObject {
 
     private let identity: DeviceIdentity
     private let credentials: CredentialStore
+    private let logger = Logger(subsystem: "com.exrector.MuseGadgetLegacy", category: "pairing")
     private let queue = DispatchQueue(label: "MuseGadgetLegacy.pairing")
     private let assembler = BLEChunkAssembler()
     private var peripheral: MusePeripheral?
@@ -50,7 +57,10 @@ final class PairingCoordinator: NSObject {
 
     func saveSDKToken(_ rawToken: String) throws {
         let token = rawToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard token.hasPrefix("mgst_"), token.count > 12 else { throw PairingCoordinatorError.invalidSDKToken }
+        let range = NSRange(token.startIndex..<token.endIndex, in: token)
+        guard Self.sdkTokenPattern.firstMatch(in: token, range: range)?.range == range else {
+            throw PairingCoordinatorError.invalidSDKToken
+        }
         try credentials.saveSDKToken(token)
         if state == .needsSDKToken { state = .idle }
         log("SDK token saved in Keychain")
@@ -135,12 +145,16 @@ final class PairingCoordinator: NSObject {
             log("Muse app confirmed encrypted pairing")
 
         case "wifi_scan":
-            let response: [String: Any] = [
-                "type": "wifi_scan_result",
-                "networks": [["ssid": "Use current connection", "rssi": -40, "secure": false]]
-            ]
+            let networks: [[String: Any]]
+            if let ssid = CurrentWiFi.ssid() {
+                networks = [["ssid": ssid, "rssi": -40, "secure": false]]
+                log("Offered the iOS device's current Wi-Fi network")
+            } else {
+                networks = []
+                log("Current Wi-Fi name unavailable; grant Location permission and retry")
+            }
+            let response: [String: Any] = ["type": "wifi_scan_result", "networks": networks]
             try sendJSON(session.encrypt(response))
-            log("Offered the iOS device's current Internet connection")
 
         case "provision_v2":
             try provision(command, session: session)
@@ -172,24 +186,38 @@ final class PairingCoordinator: NSObject {
             savedAt: Date()
         )
         try credentials.saveDeviceCredentials(saved)
-        try sendJSON(session.encryptStatus("auth_ok"))
+        try sendJSON(session.encryptStatus("auth_ok")) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                self?.peripheral?.stop()
+                self?.log("BLE stopped; the next stage is Wi-Fi-only Muse VM registration")
+            }
+        }
         state = .paired
         log("Device credentials stored in Keychain; pairing complete")
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-            self?.peripheral?.stop()
-            self?.log("BLE stopped; the next stage is Wi-Fi-only Muse VM registration")
-        }
     }
 
-    private func sendJSON(_ object: [String: Any]) throws {
+    private func sendJSON(_ object: [String: Any], completion: (() -> Void)? = nil) throws {
         let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
         let packets = try BLEFraming.encode(data, mtu: peripheral?.transportMTU ?? 23)
-        DispatchQueue.main.async { self.peripheral?.send(packets) }
+        DispatchQueue.main.async { self.peripheral?.send(packets, completion: completion) }
     }
 
     private func log(_ message: String) {
+        logger.info("\(message, privacy: .public)")
         DispatchQueue.main.async { self.onLog?(message) }
+    }
+}
+
+private enum CurrentWiFi {
+    static func ssid() -> String? {
+        guard let interfaces = CNCopySupportedInterfaces() as? [String] else { return nil }
+        for interface in interfaces {
+            guard let info = CNCopyCurrentNetworkInfo(interface as CFString) as? [String: Any],
+                  let ssid = info[kCNNetworkInfoKeySSID as String] as? String,
+                  !ssid.isEmpty else { continue }
+            return ssid
+        }
+        return nil
     }
 }
 

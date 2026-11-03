@@ -73,12 +73,14 @@
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Speech recognition can create a local draft before you send it.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Location is shared only after an explicit command and while the app is in use.</string>
+	<string>Location is used while pairing to identify the current Wi-Fi network, and shared only after an explicit command.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-peripheral</string>
 		<string>audio</string>
 	</array>
+	<key>UIFileSharingEnabled</key>
+	<true/>
 </dict>
 </plist>
 

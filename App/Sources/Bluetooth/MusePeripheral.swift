@@ -26,6 +26,9 @@ final class MusePeripheral: NSObject {
     private var transmit: CBMutableCharacteristic?
     private var subscribedCentral: CBCentral?
     private var pendingPackets: [Data] = []
+    private var enqueuedPacketCount = 0
+    private var sentPacketCount = 0
+    private var drainWaiters: [(target: Int, completion: () -> Void)] = []
     private var shouldAdvertise = false
 
     private(set) var transportMTU = 23
@@ -55,10 +58,15 @@ final class MusePeripheral: NSObject {
         transmit = nil
         subscribedCentral = nil
         pendingPackets.removeAll()
+        drainWaiters.removeAll()
     }
 
-    func send(_ packets: [Data]) {
+    func send(_ packets: [Data], completion: (() -> Void)? = nil) {
         pendingPackets.append(contentsOf: packets)
+        enqueuedPacketCount += packets.count
+        if let completion {
+            drainWaiters.append((target: enqueuedPacketCount, completion: completion))
+        }
         drain()
     }
 
@@ -87,7 +95,11 @@ final class MusePeripheral: NSObject {
         while let packet = pendingPackets.first {
             guard manager.updateValue(packet, for: transmit, onSubscribedCentrals: [central]) else { return }
             pendingPackets.removeFirst()
+            sentPacketCount += 1
         }
+        let ready = drainWaiters.prefix { $0.target <= sentPacketCount }
+        drainWaiters.removeFirst(ready.count)
+        ready.forEach { $0.completion() }
     }
 }
 
@@ -149,6 +161,7 @@ extension MusePeripheral: CBPeripheralManagerDelegate {
         guard subscribedCentral?.identifier == central.identifier else { return }
         subscribedCentral = nil
         pendingPackets.removeAll()
+        drainWaiters.removeAll()
         delegate?.musePeripheral(self, didChange: .disconnected)
     }
 
