@@ -45,8 +45,8 @@ enum MuseVoiceRecordMode: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .tap: return "Нажатие"
-        case .hold: return "Удержание"
+        case .tap: return PalL10n.text("Нажатие")
+        case .hold: return PalL10n.text("Удержание")
         }
     }
 }
@@ -283,7 +283,7 @@ final class MuseAppModel: ObservableObject {
 
     func pasteToken() {
         guard let value = UIPasteboard.general.string, !value.isEmpty else {
-            alertMessage = "В буфере обмена нет текста. Скопируйте SDK Token и попробуйте ещё раз."
+            alertMessage = PalL10n.text("В буфере обмена нет текста. Скопируйте SDK Token и попробуйте ещё раз.")
             return
         }
         tokenDraft = value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -302,7 +302,7 @@ final class MuseAppModel: ObservableObject {
             tokenSaved = true
             isEditingToken = false
         } catch {
-            alertMessage = "Этот SDK Token не похож на действующий ключ Muse. Скопируйте его целиком, без пробелов."
+            alertMessage = PalL10n.text("Этот SDK Token не похож на действующий ключ Muse. Скопируйте его целиком, без пробелов.")
         }
     }
 
@@ -372,7 +372,7 @@ final class MuseAppModel: ObservableObject {
     }
 
     func explainCameraUnavailable() {
-        alertMessage = "Камера недоступна. Разрешите доступ к камере в системных настройках."
+        alertMessage = PalL10n.text("Камера недоступна. Разрешите доступ к камере в системных настройках.")
     }
 
     func beginHeldVoiceRecording() {
@@ -386,7 +386,7 @@ final class MuseAppModel: ObservableObject {
                 self?.permissionStates[.microphone] = state
             }
         default:
-            alertMessage = "Микрофон недоступен. Разрешите доступ к микрофону в системных настройках."
+            alertMessage = PalL10n.text("Микрофон недоступен. Разрешите доступ к микрофону в системных настройках.")
         }
     }
 
@@ -410,7 +410,7 @@ final class MuseAppModel: ObservableObject {
                 if state == .granted { self?.startVoiceRecording() }
             }
         default:
-            alertMessage = "Микрофон недоступен. Разрешите доступ к микрофону в системных настройках."
+            alertMessage = PalL10n.text("Микрофон недоступен. Разрешите доступ к микрофону в системных настройках.")
         }
     }
 
@@ -432,15 +432,15 @@ final class MuseAppModel: ObservableObject {
         guard result.success,
               let encoded = result.value["data_base64"] as? String,
               let wav = Data(base64Encoded: encoded) else {
-            chatItems.append(MuseChatItem(author: .system, text: "Не удалось записать голосовую заметку."))
+            chatItems.append(MuseChatItem(author: .system, text: PalL10n.text("Не удалось записать голосовую заметку.")))
             return
         }
         let durationMS = result.value["duration_ms"] as? Int ?? 0
         guard durationMS >= 500, canSendToMuse else {
-            if voiceRecordMode == .hold { showVoiceHint("Удерживайте кнопку, чтобы говорить") }
+            if voiceRecordMode == .hold { showVoiceHint(PalL10n.text("Удерживайте кнопку, чтобы говорить")) }
             return
         }
-        chatItems.append(MuseChatItem(author: .user, text: "🎙 Голосовая заметка · \(max(durationMS / 1_000, 1)) с"))
+        chatItems.append(MuseChatItem(author: .user, text: PalL10n.format("voice.note_format", max(durationMS / 1_000, 1))))
         beginRequest()
         environment.runtime.sendVoiceNote(wav: wav) { [weak self] result in
             self?.finishRequest(result)
@@ -481,20 +481,22 @@ final class MuseAppModel: ObservableObject {
     }
 
     var peerSyncStatus: String {
-        guard isPeerSyncEnabled else { return "Гаджеты в вашей сети не обмениваются историей." }
+        guard isPeerSyncEnabled else { return PalL10n.text("Гаджеты в вашей сети не обмениваются историей.") }
         guard environment.credentialStore.loadSDKToken() != nil else {
-            return "Сначала сохраните SDK Token: по нему гаджеты узнают друг друга."
+            return PalL10n.text("Сначала сохраните SDK Token: по нему гаджеты узнают друг друга.")
         }
-        let state = nearbyGadgetCount > 0 ? "Гаджетов на связи: \(nearbyGadgetCount)." : "Других гаджетов рядом пока нет."
-        return state + " Текст чата передаётся в зашифрованном виде напрямую гаджетам с тем же SDK Token, пока приложение открыто на обоих. Apple ID может быть разным."
+        let state = nearbyGadgetCount > 0
+            ? PalL10n.format("peer.count_format", nearbyGadgetCount)
+            : PalL10n.text("Других гаджетов рядом пока нет.")
+        return state + " " + PalL10n.text("Текст чата передаётся в зашифрованном виде напрямую гаджетам с тем же SDK Token, пока приложение открыто на обоих. Apple ID может быть разным.")
     }
 
     var cloudSyncStatus: String {
-        guard isCloudSyncEnabled else { return "Текст чата хранится только на этом устройстве." }
+        guard isCloudSyncEnabled else { return PalL10n.text("Текст чата хранится только на этом устройстве.") }
         guard environment.chatCloud.isAccountAvailable else {
-            return "На устройстве не выполнен вход в iCloud, поэтому синхронизация не работает."
+            return PalL10n.text("На устройстве не выполнен вход в iCloud, поэтому синхронизация не работает.")
         }
-        return "Текст чата появится на устройствах с тем же Apple ID, обычно в течение нескольких минут. Фото остаются там, где их сделали."
+        return PalL10n.text("Текст чата появится на устройствах с тем же Apple ID, обычно в течение нескольких минут. Фото остаются там, где их сделали.")
     }
 
     private func beginRequest() {
@@ -561,13 +563,13 @@ final class MuseAppModel: ObservableObject {
     private static func describe(_ error: Error) -> String {
         switch error {
         case MuseRuntimeError.payloadTooLarge:
-            return "Файл слишком большой для отправки в Muse."
+            return PalL10n.text("Файл слишком большой для отправки в Muse.")
         case MuseRuntimeError.requestTimedOut:
-            return "Muse не подтвердил сообщение вовремя. Попробуйте ещё раз."
+            return PalL10n.text("Muse не подтвердил сообщение вовремя. Попробуйте ещё раз.")
         case MuseRuntimeError.requestFailed(let status):
-            return "Muse отклонил сообщение (HTTP \(status))."
+            return PalL10n.format("send.http_error_format", status)
         default:
-            return "Не удалось отправить сообщение. Канал Muse переподключится автоматически."
+            return PalL10n.text("Не удалось отправить сообщение. Канал Muse переподключится автоматически.")
         }
     }
 
@@ -641,7 +643,6 @@ struct MuseAppView: View {
                     .transition(.opacity)
             }
         }
-        .preferredColorScheme(.dark)
         .alert("Pal Again", isPresented: Binding(
             get: { model.alertMessage != nil },
             set: { if !$0 { model.alertMessage = nil } }
@@ -654,17 +655,30 @@ struct MuseAppView: View {
 }
 
 private enum MuseTheme {
-    static let violet = Color(red: 0.48, green: 0.36, blue: 0.98)
-    static let blue = Color(red: 0.20, green: 0.63, blue: 1.00)
-    static let mint = Color(red: 0.25, green: 0.87, blue: 0.73)
-    static let card = Color.white.opacity(0.09)
-    static let stroke = Color.white.opacity(0.12)
-    static let secondary = Color.white.opacity(0.66)
+    static let accent = Color(red: 0.00, green: 0.64, blue: 0.72)
+    static let blue = Color(red: 0.05, green: 0.52, blue: 0.92)
+    static let mint = Color(red: 0.00, green: 0.67, blue: 0.57)
+    static let card = Color(UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(white: 1, alpha: 0.085)
+            : UIColor(white: 1, alpha: 0.86)
+    })
+    static let elevated = Color(UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(white: 1, alpha: 0.10)
+            : UIColor(white: 0, alpha: 0.055)
+    })
+    static let stroke = Color(UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(white: 1, alpha: 0.13)
+            : UIColor(white: 0, alpha: 0.10)
+    })
+    static let secondary = Color(UIColor.secondaryLabel)
     static let background = LinearGradient(
         colors: [
-            Color(red: 0.035, green: 0.045, blue: 0.10),
-            Color(red: 0.08, green: 0.055, blue: 0.17),
-            Color(red: 0.025, green: 0.08, blue: 0.13)
+            Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0.025, green: 0.075, blue: 0.10, alpha: 1) : UIColor(red: 0.91, green: 0.98, blue: 1.00, alpha: 1) }),
+            Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0.02, green: 0.11, blue: 0.13, alpha: 1) : UIColor(red: 0.95, green: 1.00, blue: 0.98, alpha: 1) }),
+            Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0.02, green: 0.05, blue: 0.09, alpha: 1) : UIColor(red: 0.92, green: 0.97, blue: 1.00, alpha: 1) })
         ],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
@@ -697,7 +711,7 @@ private struct MusePrimaryButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity, minHeight: 54)
             .background(
                 LinearGradient(
-                    colors: [MuseTheme.violet, MuseTheme.blue],
+                    colors: [MuseTheme.accent, MuseTheme.blue],
                     startPoint: .leading,
                     endPoint: .trailing
                 )
@@ -705,6 +719,34 @@ private struct MusePrimaryButtonStyle: ButtonStyle {
             )
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
+    }
+}
+
+private struct MuseSecondaryButtonStyle: ButtonStyle {
+    var destructive = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.subheadline.weight(.semibold))
+            .foregroundColor(destructive ? .red : MuseTheme.accent)
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .background(MuseTheme.card.opacity(configuration.isPressed ? 0.65 : 1))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(destructive ? Color.red.opacity(0.35) : MuseTheme.stroke, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+}
+
+private struct SettingsSectionLabel: View {
+    let title: String
+
+    var body: some View {
+        Text(PalL10n.key(title))
+            .font(.caption.weight(.semibold))
+            .foregroundColor(MuseTheme.secondary)
+            .accessibilityAddTraits(.isHeader)
     }
 }
 
@@ -751,9 +793,9 @@ private struct MuseOnboarding: View {
 
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Color.white.opacity(0.10))
+                    Capsule().fill(MuseTheme.elevated)
                     Capsule()
-                        .fill(LinearGradient(colors: [MuseTheme.violet, MuseTheme.blue], startPoint: .leading, endPoint: .trailing))
+                        .fill(LinearGradient(colors: [MuseTheme.accent, MuseTheme.blue], startPoint: .leading, endPoint: .trailing))
                         .frame(width: proxy.size.width * CGFloat(model.setupStep + 1) / 5)
                 }
             }
@@ -771,13 +813,13 @@ private struct MuseMark: View {
 
     var body: some View {
         ZStack {
-            Circle().fill(LinearGradient(colors: [MuseTheme.violet, MuseTheme.blue], startPoint: .topLeading, endPoint: .bottomTrailing))
+            Circle().fill(LinearGradient(colors: [MuseTheme.accent, MuseTheme.blue], startPoint: .topLeading, endPoint: .bottomTrailing))
             Image(systemName: "sparkles")
                 .font(.system(size: size * 0.42, weight: .semibold))
                 .foregroundColor(.white)
         }
         .frame(width: size, height: size)
-        .shadow(color: MuseTheme.violet.opacity(0.45), radius: 14, y: 5)
+        .shadow(color: MuseTheme.accent.opacity(0.35), radius: 14, y: 5)
         .accessibilityHidden(true)
     }
 }
@@ -789,14 +831,13 @@ private struct StepIntro: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(eyebrow.uppercased())
+            Text(PalL10n.key(eyebrow))
                 .font(.caption.weight(.bold))
-                .tracking(1.2)
                 .foregroundColor(MuseTheme.mint)
-            Text(title)
+            Text(PalL10n.key(title))
                 .font(.system(.largeTitle, design: .rounded).weight(.bold))
                 .fixedSize(horizontal: false, vertical: true)
-            Text(text)
+            Text(PalL10n.key(text))
                 .font(.body)
                 .foregroundColor(MuseTheme.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -844,8 +885,8 @@ private struct FeatureLine: View {
                 .background(MuseTheme.mint.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.headline)
-                Text(text).font(.subheadline).foregroundColor(MuseTheme.secondary)
+                Text(PalL10n.key(title)).font(.headline)
+                Text(PalL10n.key(text)).font(.subheadline).foregroundColor(MuseTheme.secondary)
             }
             Spacer(minLength: 0)
         }
@@ -865,16 +906,20 @@ private struct TokenStep: View {
             )
 
             VStack(alignment: .leading, spacing: 14) {
-                Label(model.tokenSaved ? "Ключ сохранён" : "SDK Token", systemImage: model.tokenSaved ? "checkmark.circle.fill" : "key.fill")
+                Label {
+                    Text(PalL10n.key(model.tokenSaved ? "Ключ сохранён" : "SDK Token"))
+                } icon: {
+                    Image(systemName: model.tokenSaved ? "checkmark.circle.fill" : "key.fill")
+                }
                     .font(.headline)
-                    .foregroundColor(model.tokenSaved ? MuseTheme.mint : .white)
+                    .foregroundColor(model.tokenSaved ? MuseTheme.mint : .primary)
 
                 if !model.tokenSaved || model.isEditingToken {
                     SecureField("mgst_…", text: $model.tokenDraft)
                         .textInputAutocapitalization(.never)
                         .disableAutocorrection(true)
                         .padding(14)
-                        .background(Color.black.opacity(0.22))
+                        .background(MuseTheme.elevated)
                         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
                     Button {
@@ -883,10 +928,10 @@ private struct TokenStep: View {
                         Label("Вставить из буфера", systemImage: "doc.on.clipboard")
                             .frame(maxWidth: .infinity, minHeight: 46)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(MuseTheme.violet)
+                    .buttonStyle(MuseSecondaryButtonStyle())
 
                     Button("Сохранить введённый ключ") { model.saveToken() }
+                        .buttonStyle(MuseSecondaryButtonStyle())
                         .disabled(model.tokenDraft.isEmpty)
 
                     if model.tokenSaved {
@@ -934,7 +979,7 @@ private struct PermissionsStep: View {
                         state: model.permissionStates[permission] ?? .notDetermined,
                         action: { model.request(permission) }
                     )
-                    if permission != AppPermission.allCases.last { Divider().overlay(Color.white.opacity(0.08)) }
+                    if permission != AppPermission.allCases.last { Divider().overlay(MuseTheme.stroke) }
                 }
             }
             .museCard()
@@ -954,24 +999,44 @@ private struct PermissionRow: View {
     let permission: AppPermission
     let state: PermissionState
     let action: () -> Void
+    @Environment(\.sizeCategory) private var sizeCategory
 
     var body: some View {
-        HStack(spacing: 12) {
+        Group {
+            if sizeCategory.isAccessibilityCategory {
+                VStack(alignment: .leading, spacing: 10) {
+                    permissionDescription
+                    permissionButton.frame(maxWidth: .infinity, alignment: .leading)
+                }
+            } else {
+                HStack(spacing: 12) {
+                    permissionDescription
+                    Spacer(minLength: 8)
+                    permissionButton
+                }
+            }
+        }
+        .padding(.vertical, 9)
+    }
+
+    private var permissionDescription: some View {
+        HStack(alignment: .top, spacing: 12) {
             Image(systemName: permission.icon)
                 .foregroundColor(state == .granted ? MuseTheme.mint : MuseTheme.blue)
                 .frame(width: 30)
             VStack(alignment: .leading, spacing: 2) {
-                Text(permission.russianTitle).font(.subheadline.weight(.semibold))
+                Text(permission.localizedTitle).font(.subheadline.weight(.semibold))
                 Text(permission.explanation).font(.caption).foregroundColor(MuseTheme.secondary)
             }
-            Spacer(minLength: 8)
-            Button(state.buttonTitle, action: action)
-                .font(.caption.weight(.bold))
-                .buttonStyle(.bordered)
-                .tint(state == .granted ? MuseTheme.mint : MuseTheme.blue)
-                .disabled(state == .granted || state == .restricted)
         }
-        .padding(.vertical, 9)
+    }
+
+    private var permissionButton: some View {
+        Button(state.buttonTitle, action: action)
+            .font(.caption.weight(.bold))
+            .buttonStyle(.bordered)
+            .tint(state == .granted ? MuseTheme.mint : MuseTheme.blue)
+            .disabled(state == .granted || state == .restricted)
     }
 }
 
@@ -990,7 +1055,7 @@ private struct NetworkStep: View {
                 HStack {
                     Image(systemName: "wifi").font(.title2).foregroundColor(MuseTheme.mint)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(model.currentSSIDWasDetected ? "Сеть найдена" : "Имя сети")
+                        Text(PalL10n.key(model.currentSSIDWasDetected ? "Сеть найдена" : "Имя сети"))
                             .font(.caption).foregroundColor(MuseTheme.secondary)
                         TextField("Например, Home Wi‑Fi", text: $model.networkName)
                             .font(.headline)
@@ -1003,7 +1068,7 @@ private struct NetworkStep: View {
                     .accessibilityLabel("Определить сеть ещё раз")
                 }
                 .padding(14)
-                .background(Color.black.opacity(0.20))
+                .background(MuseTheme.elevated)
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
 
                 Label("Пароль вводить не нужно", systemImage: "checkmark.shield.fill")
@@ -1041,7 +1106,7 @@ private struct PairingStep: View {
             VStack(alignment: .leading, spacing: 18) {
                 PairInstruction(number: "1", text: "На основном телефоне откройте Muse.")
                 PairInstruction(number: "2", text: "Зайдите в Settings → Devices и включите Developer Mode.")
-                PairInstruction(number: "3", text: "Нажмите + и выберите \(model.deviceName).")
+                PairInstruction(number: "3", text: PalL10n.format("pairing.choose_device_format", model.deviceName))
             }
             .museCard()
 
@@ -1057,8 +1122,7 @@ private struct PairingStep: View {
 
             if model.pairingState.isBusy {
                 Button("Остановить поиск") { model.stopPairing() }
-                    .frame(maxWidth: .infinity, minHeight: 50)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(MuseSecondaryButtonStyle())
             } else {
                 Button("Начать создание пары") { model.startPairing() }
                     .buttonStyle(MusePrimaryButtonStyle())
@@ -1076,9 +1140,9 @@ private struct PairInstruction: View {
             Text(number)
                 .font(.subheadline.weight(.bold))
                 .frame(width: 30, height: 30)
-                .background(MuseTheme.violet.opacity(0.26))
+                .background(MuseTheme.accent.opacity(0.20))
                 .clipShape(Circle())
-            Text(text).font(.body)
+            Text(PalL10n.key(text)).font(.body)
             Spacer(minLength: 0)
         }
     }
@@ -1147,10 +1211,11 @@ private struct MuseChatView: View {
                         MuseMark(size: 46)
                         VStack(alignment: .leading, spacing: 3) {
                             Text("Muse").font(.title2.bold())
-                            Label(
-                                model.runtimeState == .registered ? "Подключено к Muse VM" : "Пара создана",
-                                systemImage: model.runtimeState == .registered ? "network" : "checkmark.circle.fill"
-                            )
+                            Label {
+                                Text(PalL10n.key(model.runtimeState == .registered ? "Подключено к Muse VM" : "Пара создана"))
+                            } icon: {
+                                Image(systemName: model.runtimeState == .registered ? "network" : "checkmark.circle.fill")
+                            }
                                 .font(.caption.weight(.semibold)).foregroundColor(MuseTheme.mint)
                         }
                         Spacer()
@@ -1160,9 +1225,9 @@ private struct MuseChatView: View {
                     StatusBanner(state: model.runtimeState)
 
                     ChatBubble(
-                        text: model.runtimeState == .registered
+                        text: PalL10n.text(model.runtimeState == .registered
                             ? "Гаджет зарегистрирован в Muse. Сетевой канал активен и готов принимать команды."
-                            : "Пара создана и сохранена. Подключаем защищённый канал Muse VM…",
+                            : "Пара создана и сохранена. Подключаем защищённый канал Muse VM…"),
                         isMuse: true
                     )
 
@@ -1192,7 +1257,7 @@ private struct MuseChatView: View {
                     ForEach(model.chatItems) { item in
                         ChatBubble(
                             text: item.hasRemoteImage && item.image == nil
-                                ? ["📷 Фото с другого устройства", item.text].filter { !$0.isEmpty }.joined(separator: "\n")
+                                ? [PalL10n.text("📷 Фото с другого устройства"), item.text].filter { !$0.isEmpty }.joined(separator: "\n")
                                 : item.text,
                             isMuse: item.author != .user,
                             image: item.image
@@ -1202,7 +1267,7 @@ private struct MuseChatView: View {
                     if model.isAwaitingReply {
                         HStack(spacing: 10) {
                             ProgressView()
-                            Text(model.museActivity ?? "Muse отвечает…")
+                            Text(model.museActivity ?? PalL10n.text("Muse отвечает…"))
                                 .font(.subheadline)
                                 .foregroundColor(MuseTheme.secondary)
                             Spacer(minLength: 0)
@@ -1230,8 +1295,8 @@ private struct MuseChatView: View {
                     HStack(spacing: 10) {
                         Image(systemName: "waveform").foregroundColor(.red)
                         Text(model.voiceRecordMode == .hold
-                             ? "\(model.recordingSeconds) с · отпустите, чтобы отправить"
-                             : "Запись · \(model.recordingSeconds) с из 40")
+                             ? PalL10n.format("recording.release_format", model.recordingSeconds)
+                             : PalL10n.format("recording.progress_format", model.recordingSeconds))
                             .font(.subheadline.monospacedDigit())
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)
@@ -1239,7 +1304,7 @@ private struct MuseChatView: View {
                     }
                     .padding(.horizontal, 15)
                     .frame(minHeight: 46)
-                    .background(Color.white.opacity(0.08))
+                    .background(MuseTheme.elevated)
                     .clipShape(Capsule())
                 } else {
                     Menu {
@@ -1265,7 +1330,7 @@ private struct MuseChatView: View {
                     TextField("Сообщение для Muse", text: $draft)
                         .padding(.horizontal, 15)
                         .frame(minHeight: 46)
-                        .background(Color.white.opacity(0.08))
+                        .background(MuseTheme.elevated)
                         .clipShape(Capsule())
                         .disabled(model.runtimeState != .registered)
                         .submitLabel(.send)
@@ -1278,7 +1343,7 @@ private struct MuseChatView: View {
                         Image(systemName: model.isSendingChat ? "ellipsis" : "arrow.up")
                             .font(.headline)
                             .frame(width: 44, height: 44)
-                            .background(canSend ? MuseTheme.violet : Color.white.opacity(0.10))
+                            .background(canSend ? MuseTheme.accent : MuseTheme.elevated)
                             .clipShape(Circle())
                     }
                     .disabled(!canSend)
@@ -1292,7 +1357,7 @@ private struct MuseChatView: View {
             .padding(.bottom, 8)
             .background(.ultraThinMaterial)
             .overlay(alignment: .top) {
-                Text(model.voiceHint ?? (model.runtimeState == .registered ? "Защищённый чат Muse активен" : "Ждём регистрации в Muse VM"))
+                Text(model.voiceHint ?? PalL10n.text(model.runtimeState == .registered ? "Защищённый чат Muse активен" : "Ждём регистрации в Muse VM"))
                     .font(.caption2)
                     .foregroundColor(MuseTheme.secondary)
                     .offset(y: -17)
@@ -1342,7 +1407,7 @@ private struct VoiceRecordButton: View {
         Image(systemName: model.isRecordingVoice && model.voiceRecordMode == .tap ? "stop.fill" : "mic.fill")
             .font(.headline)
             .frame(width: 44, height: 44)
-            .background(model.isRecordingVoice ? Color.red : Color.white.opacity(0.10))
+            .background(model.isRecordingVoice ? Color.red : MuseTheme.elevated)
             .clipShape(Circle())
             .opacity(model.canSendToMuse || model.isRecordingVoice ? 1 : 0.4)
     }
@@ -1419,7 +1484,7 @@ private struct ChatBubble: View {
             }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
-                .background(isMuse ? Color.white.opacity(0.10) : MuseTheme.violet)
+                .background(isMuse ? MuseTheme.elevated : MuseTheme.accent)
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             if isMuse { Spacer(minLength: 45) }
         }
@@ -1459,10 +1524,10 @@ private struct CapabilitiesView: View {
                             .background(MuseTheme.mint.opacity(0.12))
                             .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(item.1).font(.headline)
-                            Text(item.2).font(.subheadline).foregroundColor(MuseTheme.secondary)
-                            Text(item.3.uppercased())
-                                .font(.caption2.weight(.bold)).tracking(0.8)
+                            Text(PalL10n.key(item.1)).font(.headline)
+                            Text(PalL10n.key(item.2)).font(.subheadline).foregroundColor(MuseTheme.secondary)
+                            Text(PalL10n.key(item.3))
+                                .font(.caption2.weight(.bold))
                                 .foregroundColor(MuseTheme.blue)
                                 .padding(.top, 3)
                         }
@@ -1493,7 +1558,7 @@ private struct MuseSettingsView: View {
                 )
 
                 VStack(spacing: 15) {
-                    SettingsLine(icon: "checkmark.seal.fill", title: "Пара Muse", value: "Создана", tint: MuseTheme.mint)
+                    SettingsLine(icon: "checkmark.seal.fill", title: "Пара Muse", value: PalL10n.text("Создана"), tint: MuseTheme.mint)
                     SettingsLine(
                         icon: "network",
                         title: "Muse VM",
@@ -1501,19 +1566,19 @@ private struct MuseSettingsView: View {
                         tint: model.runtimeState == .registered ? MuseTheme.mint : .yellow
                     )
                     SettingsLine(icon: "iphone", title: "Имя устройства", value: model.deviceName, tint: MuseTheme.blue)
-                    SettingsLine(icon: "wifi", title: "Сеть", value: CurrentWiFi.preferredSSID() ?? "Не указана", tint: MuseTheme.blue)
+                    SettingsLine(icon: "wifi", title: "Сеть", value: CurrentWiFi.preferredSSID() ?? PalL10n.text("Не указана"), tint: MuseTheme.blue)
                     if let account = model.pairedAccount {
-                        SettingsLine(icon: "person.crop.circle", title: "Аккаунт", value: account, tint: MuseTheme.violet)
+                        SettingsLine(icon: "person.crop.circle", title: "Аккаунт", value: account, tint: MuseTheme.accent)
                     }
                 }
                 .museCard()
 
                 VStack(alignment: .leading, spacing: 13) {
-                    Text("РАЗРЕШЕНИЯ").font(.caption.weight(.bold)).tracking(1).foregroundColor(MuseTheme.secondary)
+                    SettingsSectionLabel(title: "РАЗРЕШЕНИЯ")
                     ForEach(AppPermission.allCases, id: \.self) { permission in
                         HStack {
                             Image(systemName: permission.icon).frame(width: 24).foregroundColor(MuseTheme.blue)
-                            Text(permission.russianTitle).font(.subheadline)
+                            Text(permission.localizedTitle).font(.subheadline)
                             Spacer()
                             Text((model.permissionStates[permission] ?? .notDetermined).shortTitle)
                                 .font(.caption.weight(.semibold))
@@ -1529,7 +1594,7 @@ private struct MuseSettingsView: View {
                 .museCard()
 
                 VStack(alignment: .leading, spacing: 13) {
-                    Text("РАЗРЕШЕНО ДЛЯ MUSE").font(.caption.weight(.bold)).tracking(1).foregroundColor(MuseTheme.secondary)
+                    SettingsSectionLabel(title: "РАЗРЕШЕНО ДЛЯ MUSE")
                     if model.approvedShortcuts.isEmpty && model.approvedDevices.isEmpty {
                         Text("Пока ничего. Когда Muse попросит запустить Быструю команду или обратиться к устройству в сети, приложение спросит вас.")
                             .font(.caption)
@@ -1545,7 +1610,7 @@ private struct MuseSettingsView: View {
                 .museCard()
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("ЗАПИСЬ ГОЛОСА").font(.caption.weight(.bold)).tracking(1).foregroundColor(MuseTheme.secondary)
+                    SettingsSectionLabel(title: "ЗАПИСЬ ГОЛОСА")
                     Picker("Запись голоса", selection: $model.voiceRecordMode) {
                         ForEach(MuseVoiceRecordMode.allCases) { mode in
                             Text(mode.title).tag(mode)
@@ -1553,44 +1618,39 @@ private struct MuseSettingsView: View {
                     }
                     .pickerStyle(.segmented)
                     .disabled(model.isRecordingVoice)
-                    Text(model.voiceRecordMode == .hold
+                    Text(PalL10n.text(model.voiceRecordMode == .hold
                          ? "Удерживайте кнопку микрофона и говорите. Отпустите, чтобы отправить."
-                         : "Нажмите на микрофон, чтобы начать запись. Нажмите ещё раз, чтобы отправить.")
+                         : "Нажмите на микрофон, чтобы начать запись. Нажмите ещё раз, чтобы отправить."))
                         .font(.caption)
                         .foregroundColor(MuseTheme.secondary)
                 }
                 .museCard()
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Toggle("История чата по Wi-Fi", isOn: $model.isPeerSyncEnabled)
-                        .font(.subheadline)
-                    Text(model.peerSyncStatus)
-                        .font(.caption)
-                        .foregroundColor(MuseTheme.secondary)
-                }
-                .museCard()
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Toggle("История чата в iCloud", isOn: $model.isCloudSyncEnabled)
-                        .font(.subheadline)
-                    Text(model.cloudSyncStatus)
-                        .font(.caption)
-                        .foregroundColor(MuseTheme.secondary)
-                }
-                .museCard()
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Toggle("Не гасить экран", isOn: $model.keepScreenAwake)
-                        .font(.subheadline)
-                    Text("Камера, микрофон и датчики отвечают Muse, только пока приложение на экране.")
-                        .font(.caption)
-                        .foregroundColor(MuseTheme.secondary)
+                VStack(alignment: .leading, spacing: 14) {
+                    SettingsSectionLabel(title: "СИНХРОНИЗАЦИЯ И РАБОТА")
+                    SettingsToggleRow(
+                        title: "История чата по Wi-Fi",
+                        detail: model.peerSyncStatus,
+                        isOn: $model.isPeerSyncEnabled
+                    )
+                    Divider().overlay(MuseTheme.stroke)
+                    SettingsToggleRow(
+                        title: "История чата в iCloud",
+                        detail: model.cloudSyncStatus,
+                        isOn: $model.isCloudSyncEnabled
+                    )
+                    Divider().overlay(MuseTheme.stroke)
+                    SettingsToggleRow(
+                        title: "Не гасить экран",
+                        detail: PalL10n.text("Камера, микрофон и датчики отвечают Muse, только пока приложение на экране."),
+                        isOn: $model.keepScreenAwake
+                    )
                 }
                 .museCard()
 
                 DisclosureGroup("Диагностика") {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(model.diagnostics.isEmpty ? "Новых событий нет" : model.diagnostics.joined(separator: "\n"))
+                        Text(model.diagnostics.isEmpty ? PalL10n.text("Новых событий нет") : model.diagnostics.joined(separator: "\n"))
                             .font(.caption2.monospaced())
                             .foregroundColor(MuseTheme.secondary)
                             .textSelection(.enabled)
@@ -1600,23 +1660,17 @@ private struct MuseSettingsView: View {
                 .museCard()
 
                 Button("Очистить историю чата", role: .destructive) { showClearHistoryConfirmation = true }
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .buttonStyle(.bordered)
-                    .tint(.red)
+                    .buttonStyle(MuseSecondaryButtonStyle(destructive: true))
                     .disabled(model.chatItems.isEmpty)
 
                 Button("Повторить пошаговую настройку") { model.restartGuide() }
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(MuseSecondaryButtonStyle())
 
                 Button("Заменить SDK Token") { model.beginTokenReplacement() }
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(MuseSecondaryButtonStyle())
 
                 Button("Удалить пару с Muse", role: .destructive) { showForgetConfirmation = true }
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .buttonStyle(.bordered)
-                    .tint(.red)
+                    .buttonStyle(MuseSecondaryButtonStyle(destructive: true))
             }
             .padding(20)
         }
@@ -1631,9 +1685,9 @@ private struct MuseSettingsView: View {
             Button("Очистить", role: .destructive) { model.clearChatHistory() }
             Button("Отмена", role: .cancel) {}
         } message: {
-            Text(model.isCloudSyncEnabled || model.isPeerSyncEnabled
+            Text(PalL10n.key(model.isCloudSyncEnabled || model.isPeerSyncEnabled
                  ? "Сообщения удалятся с этого устройства и с других ваших гаджетов, с которыми включена синхронизация. Переписка в самом Muse останется."
-                 : "Сообщения и фото удалятся с этого устройства. Переписка в самом Muse останется.")
+                 : "Сообщения и фото удалятся с этого устройства. Переписка в самом Muse останется."))
         }
         .confirmationDialog(
             "Удалить сохранённую пару?",
@@ -1664,44 +1718,71 @@ private struct GrantRow: View {
     }
 }
 
+private struct SettingsToggleRow: View {
+    let title: String
+    let detail: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle(isOn: $isOn) {
+                Text(PalL10n.key(title)).font(.subheadline.weight(.semibold))
+            }
+            .tint(MuseTheme.accent)
+            Text(detail)
+                .font(.caption)
+                .foregroundColor(MuseTheme.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
 private struct SettingsLine: View {
     let icon: String
     let title: String
     let value: String
     let tint: Color
+    @Environment(\.sizeCategory) private var sizeCategory
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(alignment: sizeCategory.isAccessibilityCategory ? .top : .center, spacing: 12) {
             Image(systemName: icon).foregroundColor(tint).frame(width: 24)
-            Text(title).font(.subheadline)
-            Spacer()
-            Text(value).font(.subheadline.weight(.semibold)).lineLimit(1)
+            if sizeCategory.isAccessibilityCategory {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(PalL10n.key(title)).font(.subheadline)
+                    Text(value).font(.subheadline.weight(.semibold))
+                }
+            } else {
+                Text(PalL10n.key(title)).font(.subheadline)
+                Spacer()
+                Text(value).font(.subheadline.weight(.semibold)).lineLimit(1)
+            }
         }
     }
 }
 
 private extension AppPermission {
-    var russianTitle: String {
+    var localizedTitle: String {
         switch self {
         case .bluetooth: return "Bluetooth"
-        case .localNetwork: return "Локальная сеть"
-        case .camera: return "Камера"
-        case .microphone: return "Микрофон"
-        case .speechRecognition: return "Распознавание речи"
-        case .location: return "Геопозиция"
-        case .motion: return "Датчики движения"
+        case .localNetwork: return PalL10n.text("Локальная сеть")
+        case .camera: return PalL10n.text("Камера")
+        case .microphone: return PalL10n.text("Микрофон")
+        case .speechRecognition: return PalL10n.text("Распознавание речи")
+        case .location: return PalL10n.text("Геопозиция")
+        case .motion: return PalL10n.text("Датчики движения")
         }
     }
 
     var explanation: String {
         switch self {
-        case .bluetooth: return "Найти устройство во время создания пары"
-        case .localNetwork: return "Обнаруживать сервисы Muse рядом"
-        case .camera: return "Сделать фото только по вашей команде"
-        case .microphone: return "Записать голосовую заметку"
-        case .speechRecognition: return "Превратить речь в текст"
-        case .location: return "Определить Wi‑Fi и выполнять команды геопозиции"
-        case .motion: return "Использовать акселерометр и движение"
+        case .bluetooth: return PalL10n.text("Найти устройство во время создания пары")
+        case .localNetwork: return PalL10n.text("Обнаруживать сервисы Muse рядом")
+        case .camera: return PalL10n.text("Сделать фото только по вашей команде")
+        case .microphone: return PalL10n.text("Записать голосовую заметку")
+        case .speechRecognition: return PalL10n.text("Превратить речь в текст")
+        case .location: return PalL10n.text("Определить Wi‑Fi и выполнять команды геопозиции")
+        case .motion: return PalL10n.text("Использовать акселерометр и движение")
         }
     }
 
@@ -1721,21 +1802,21 @@ private extension AppPermission {
 private extension PermissionState {
     var shortTitle: String {
         switch self {
-        case .notDetermined: return "Не запрошено"
-        case .granted: return "Разрешено"
-        case .denied: return "Запрещено"
-        case .restricted: return "Ограничено"
-        case .unavailable: return "Недоступно"
+        case .notDetermined: return PalL10n.text("Не запрошено")
+        case .granted: return PalL10n.text("Разрешено")
+        case .denied: return PalL10n.text("Запрещено")
+        case .restricted: return PalL10n.text("Ограничено")
+        case .unavailable: return PalL10n.text("Недоступно")
         }
     }
 
     var buttonTitle: String {
         switch self {
-        case .notDetermined: return "Разрешить"
-        case .granted: return "Готово"
-        case .denied: return "Настройки"
-        case .restricted: return "Недоступно"
-        case .unavailable: return "Повторить"
+        case .notDetermined: return PalL10n.text("Разрешить")
+        case .granted: return PalL10n.text("Готово")
+        case .denied: return PalL10n.text("Настройки")
+        case .restricted: return PalL10n.text("Недоступно")
+        case .unavailable: return PalL10n.text("Повторить")
         }
     }
 }
@@ -1750,15 +1831,15 @@ private extension PairingCoordinator.State {
 
     var friendlyTitle: String {
         switch self {
-        case .idle: return "Готово к созданию пары"
-        case .needsSDKToken: return "Сначала добавьте SDK Token"
-        case .bluetooth: return "Включаем Bluetooth…"
-        case .advertising: return "Устройство видно в Muse"
-        case .connected: return "Muse подключается…"
-        case .encrypted: return "Защищаем соединение…"
-        case .provisioning: return "Сохраняем пару…"
-        case .paired: return "Пара создана"
-        case .failed(let message): return "Не получилось: \(message)"
+        case .idle: return PalL10n.text("Готово к созданию пары")
+        case .needsSDKToken: return PalL10n.text("Сначала добавьте SDK Token")
+        case .bluetooth: return PalL10n.text("Включаем Bluetooth…")
+        case .advertising: return PalL10n.text("Устройство видно в Muse")
+        case .connected: return PalL10n.text("Muse подключается…")
+        case .encrypted: return PalL10n.text("Защищаем соединение…")
+        case .provisioning: return PalL10n.text("Сохраняем пару…")
+        case .paired: return PalL10n.text("Пара создана")
+        case .failed(let message): return PalL10n.format("pairing.failed_format", message)
         }
     }
 }
@@ -1766,41 +1847,41 @@ private extension PairingCoordinator.State {
 private extension MuseRuntimeState {
     var shortTitle: String {
         switch self {
-        case .idle: return "Ожидание"
-        case .fetchingVM: return "Поиск VM"
-        case .connecting: return "Соединение"
-        case .handshaking: return "Шифрование"
-        case .registering: return "Регистрация"
-        case .registered: return "Подключена"
-        case .failed: return "Повторяем"
+        case .idle: return PalL10n.text("Ожидание")
+        case .fetchingVM: return PalL10n.text("Поиск VM")
+        case .connecting: return PalL10n.text("Соединение")
+        case .handshaking: return PalL10n.text("Шифрование")
+        case .registering: return PalL10n.text("Регистрация")
+        case .registered: return PalL10n.text("Подключена")
+        case .failed: return PalL10n.text("Повторяем")
         }
     }
 
     var title: String {
         switch self {
-        case .registered: return "Канал Muse VM подключён"
-        case .failed: return "Канал временно недоступен"
-        case .idle: return "Ожидаем данные пары"
-        default: return "Подключаем Muse VM…"
+        case .registered: return PalL10n.text("Канал Muse VM подключён")
+        case .failed: return PalL10n.text("Канал временно недоступен")
+        case .idle: return PalL10n.text("Ожидаем данные пары")
+        default: return PalL10n.text("Подключаем Muse VM…")
         }
     }
 
     var detail: String {
         switch self {
         case .registered:
-            return "Noise XX и link.register подтверждены сервером Muse."
+            return PalL10n.text("Noise XX и link.register подтверждены сервером Muse.")
         case .failed(let message):
-            return "\(message). Приложение повторит подключение автоматически."
+            return PalL10n.format("runtime.failed_detail_format", message)
         case .idle:
-            return "После создания пары приложение подключится автоматически."
+            return PalL10n.text("После создания пары приложение подключится автоматически.")
         case .fetchingVM:
-            return "Получаем виртуальную машину аккаунта."
+            return PalL10n.text("Получаем виртуальную машину аккаунта.")
         case .connecting:
-            return "Открываем защищённый WebSocket."
+            return PalL10n.text("Открываем защищённый WebSocket.")
         case .handshaking:
-            return "Выполняем Noise XX с AES-GCM."
+            return PalL10n.text("Выполняем Noise XX с AES-GCM.")
         case .registering:
-            return "Отправляем link.register и ждём подтверждения."
+            return PalL10n.text("Отправляем link.register и ждём подтверждения.")
         }
     }
 }

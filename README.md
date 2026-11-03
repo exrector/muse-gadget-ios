@@ -16,6 +16,8 @@ An unofficial, open-source Muse community gadget that turns an older iPhone or i
 - **Apple Shortcuts:** Muse can run shortcuts you allow, which reaches the Home app, reminders, messages and more.
 - **Your local network:** Muse can find devices on your Wi-Fi and send web requests to the ones you allow.
 - **History sync** between devices on one Apple ID through iCloud.
+- **English and Russian interface** selected by iOS, including localized permission prompts. The per-app language can be changed in iOS Settings; there is no separate language switch inside Pal Again.
+- **System appearance** with a turquoise-blue design that follows Light and Dark Mode on iOS 15 and newer.
 
 iOS has no shell, so unlike the Linux gadget there is no `system.run`. Muse gets an explicit list of native commands, and anything new it wants to reach needs a tap on the device.
 
@@ -38,7 +40,7 @@ iOS has no shell, so unlike the Linux gadget there is no `system.run`. Muse gets
 
 ## Current status
 
-The core works on the devices below, but much of it is new and long-running stability has not been observed yet. The screens are in Russian only for now.
+The core works on the devices below, but much of it is new and long-running stability has not been observed yet.
 
 **Tested on:** iPhone 6s with iOS 15.8.8, and iPad (6th generation) with iPadOS 17.7.11.
 
@@ -48,7 +50,7 @@ The core works on the devices below, but much of it is new and long-running stab
 | Partly verified | iCloud sync (iPad to iPhone only), Apple Shortcuts (simple shortcuts, without checking a returned result) |
 | Built, not yet verified on a device | Camera, location, motion, speech and flashlight commands, brightness, screen cards, local network commands, hold-to-record |
 | Built, off by default | Encrypted chat sync directly between gadgets over Wi-Fi, for devices on different Apple IDs |
-| Not built yet | Spoken replies, realtime voice, avatar, photo sync, an SSH client, WebSocket, MQTT, UDP and SSDP for local devices, English screens |
+| Not built yet | Spoken replies, realtime voice, avatar, photo sync, an SSH client, WebSocket, MQTT, UDP and SSDP for local devices |
 
 **The app has to stay on screen.** iOS suspends apps in the background, so the gadget answers only while open. It keeps the screen awake by default.
 

@@ -1,0 +1,9 @@
+"CFBundleDisplayName" = "Pal Again";
+"NSBluetoothAlwaysUsageDescription" = "Bluetooth нужен только для создания пары с Muse и обнаружения этого устройства как гаджета.";
+"NSBluetoothPeripheralUsageDescription" = "Bluetooth нужен только для создания пары с Muse и обнаружения этого устройства как гаджета.";
+"NSCameraUsageDescription" = "Доступ к камере позволяет отправить фотографию в Muse только по вашей команде.";
+"NSLocalNetworkUsageDescription" = "Доступ к локальной сети позволяет находить гаджеты Muse и связанные сервисы рядом.";
+"NSLocationWhenInUseUsageDescription" = "Геопозиция используется при создании пары, чтобы определить текущую сеть Wi‑Fi, и передаётся только по явной команде.";
+"NSMicrophoneUsageDescription" = "Доступ к микрофону позволяет записать голосовое сообщение для Muse.";
+"NSMotionUsageDescription" = "Доступ к движению позволяет Muse получить ограниченный снимок данных датчиков после вашего разрешения.";
+"NSSpeechRecognitionUsageDescription" = "Распознавание речи позволяет создать локальный черновик перед отправкой.";

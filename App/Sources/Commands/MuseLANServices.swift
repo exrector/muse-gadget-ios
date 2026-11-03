@@ -431,8 +431,8 @@ final class MuseLANServices {
             let target = "\(request.host):\(request.port)"
             let action = "\(request.method) \(MuseDisplayText.sanitized(request.url.path, maxLength: 80))"
             self.approvals.ask(
-                title: "Разрешить доступ к устройству?",
-                message: "Muse просит обратиться к \(target) в вашей сети: \(action). Если разрешить, дальше доступ к этому устройству будет без вопроса. Отозвать можно в настройках."
+                title: PalL10n.text("Разрешить доступ к устройству?"),
+                message: PalL10n.format("lan.approval_format", target, action)
             ) { decision in
                 guard case .granted = decision else {
                     completion(CommandResult(success: false, value: ["error": decision.errorCode]))

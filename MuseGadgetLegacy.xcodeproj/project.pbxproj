@@ -32,6 +32,9 @@
 		A1000000000000000000001A /* MuseLANServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001D /* MuseLANServices.swift */; };
 		A1000000000000000000001B /* MuseChatSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001E /* MuseChatSync.swift */; };
 		A1000000000000000000001C /* MuseChatPeerSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001F /* MuseChatPeerSync.swift */; };
+		A1000000000000000000001D /* PalLocalization.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000020 /* PalLocalization.swift */; };
+		A1000000000000000000001E /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000001 /* Localizable.strings */; };
+		A1000000000000000000001F /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000002 /* InfoPlist.strings */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -74,6 +77,11 @@
 		B1000000000000000000001D /* MuseLANServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Commands/MuseLANServices.swift; sourceTree = "<group>"; };
 		B1000000000000000000001E /* MuseChatSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/MuseChatSync.swift; sourceTree = "<group>"; };
 		B1000000000000000000001F /* MuseChatPeerSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/MuseChatPeerSync.swift; sourceTree = "<group>"; };
+		B10000000000000000000020 /* PalLocalization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UI/PalLocalization.swift; sourceTree = "<group>"; };
+		B20000000000000000000001 /* en Localizable.strings */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
+		B20000000000000000000002 /* ru Localizable.strings */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ru; path = ru.lproj/Localizable.strings; sourceTree = "<group>"; };
+		B20000000000000000000003 /* en InfoPlist.strings */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		B20000000000000000000004 /* ru InfoPlist.strings */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ru; path = ru.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -101,12 +109,12 @@
 				B10000000000000000000007, B10000000000000000000008, B10000000000000000000009,
 				B1000000000000000000000A, B1000000000000000000000B, B1000000000000000000000C,
 				B10000000000000000000014,
-				B10000000000000000000015, B10000000000000000000016, B10000000000000000000017, B10000000000000000000018, B10000000000000000000019, B1000000000000000000001A, B1000000000000000000001B, B1000000000000000000001C, B1000000000000000000001D, B1000000000000000000001E, B1000000000000000000001F
+				B10000000000000000000015, B10000000000000000000016, B10000000000000000000017, B10000000000000000000018, B10000000000000000000019, B1000000000000000000001A, B1000000000000000000001B, B1000000000000000000001C, B1000000000000000000001D, B1000000000000000000001E, B1000000000000000000001F, B10000000000000000000020
 			);
 			path = Sources;
 			sourceTree = "<group>";
 		};
-		G10000000000000000000004 /* Resources */ = {isa = PBXGroup; children = (B1000000000000000000000F); path = Resources; sourceTree = "<group>"; };
+		G10000000000000000000004 /* Resources */ = {isa = PBXGroup; children = (B1000000000000000000000F, C20000000000000000000001, C20000000000000000000002); path = Resources; sourceTree = "<group>"; };
 		G10000000000000000000005 /* Tests */ = {isa = PBXGroup; children = (B10000000000000000000010); path = Tests; sourceTree = "<group>"; };
 		G10000000000000000000006 /* Products */ = {isa = PBXGroup; children = (B10000000000000000000012, B10000000000000000000013); name = Products; sourceTree = "<group>"; };
 /* End PBXGroup section */
@@ -144,7 +152,7 @@
 			compatibilityVersion = "Xcode 15.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
-			knownRegions = (en, Base);
+			knownRegions = (en, ru, Base);
 			mainGroup = G10000000000000000000001;
 			productRefGroup = G10000000000000000000006;
 			projectDirPath = "";
@@ -154,7 +162,7 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		J10000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A1000000000000000000000F); runOnlyForDeploymentPostprocessing = 0; };
+		J10000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A1000000000000000000000F, A1000000000000000000001E, A1000000000000000000001F); runOnlyForDeploymentPostprocessing = 0; };
 		J10000000000000000000002 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 
@@ -164,11 +172,26 @@
 			A10000000000000000000004, A10000000000000000000005, A10000000000000000000006,
 			A10000000000000000000007, A10000000000000000000008, A10000000000000000000009,
 			A1000000000000000000000A, A1000000000000000000000B, A1000000000000000000000C,
-			A10000000000000000000011,
+			A10000000000000000000011, A1000000000000000000001D,
 			A10000000000000000000012, A10000000000000000000013, A10000000000000000000014, A10000000000000000000015, A10000000000000000000016, A10000000000000000000017, A10000000000000000000018, A10000000000000000000019, A1000000000000000000001A, A1000000000000000000001B, A1000000000000000000001C
 		); runOnlyForDeploymentPostprocessing = 0; };
 		I10000000000000000000002 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000010); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXVariantGroup section */
+		C20000000000000000000001 /* Localizable.strings */ = {
+			isa = PBXVariantGroup;
+			children = (B20000000000000000000001, B20000000000000000000002);
+			name = Localizable.strings;
+			sourceTree = "<group>";
+		};
+		C20000000000000000000002 /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (B20000000000000000000003, B20000000000000000000004);
+			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
 
 /* Begin PBXTargetDependency section */
 		K10000000000000000000001 = {isa = PBXTargetDependency; target = E10000000000000000000001; targetProxy = C10000000000000000000001; };

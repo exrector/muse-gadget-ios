@@ -93,8 +93,8 @@ final class MuseShortcutsBridge {
             return
         }
         approvals.ask(
-            title: "Запустить Быструю команду?",
-            message: "Muse просит запустить «\(name)». Если разрешить, дальше она будет запускаться без вопроса. Отозвать можно в настройках."
+            title: PalL10n.text("Запустить Быструю команду?"),
+            message: PalL10n.format("shortcut.approval_format", name)
         ) { [weak self] decision in
             guard let self else { return }
             guard case .granted = decision else {

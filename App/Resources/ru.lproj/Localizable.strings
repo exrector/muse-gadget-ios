@@ -1,0 +1,11 @@
+/* Russian source phrases intentionally fall back to their key. Only semantic format keys need values here. */
+"pairing.choose_device_format" = "Нажмите + и выберите %@.";
+"pairing.failed_format" = "Не получилось: %@";
+"runtime.failed_detail_format" = "%@. Приложение повторит подключение автоматически.";
+"voice.note_format" = "🎙 Голосовая заметка · %d с";
+"peer.count_format" = "Гаджетов на связи: %d.";
+"send.http_error_format" = "Muse отклонил сообщение (HTTP %d).";
+"recording.release_format" = "%d с · отпустите, чтобы отправить";
+"recording.progress_format" = "Запись · %d с из 40";
+"shortcut.approval_format" = "Muse просит запустить «%@». Если разрешить, дальше она будет запускаться без вопроса. Отозвать можно в настройках.";
+"lan.approval_format" = "Muse просит обратиться к %@ в вашей сети: %@. Если разрешить, дальше доступ к этому устройству будет без вопроса. Отозвать можно в настройках.";

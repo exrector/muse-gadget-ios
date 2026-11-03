@@ -2,7 +2,7 @@
 
 Muse Gadget turns an iPhone or iPad you no longer use every day into a gadget for your Muse: a screen, microphone, speaker, camera and set of sensors that Muse can use, plus a chat you can type or talk into.
 
-The app's screens are in Russian for now, so this guide gives each label in Russian with its meaning. [Руководство на русском](USER-GUIDE.ru.md).
+Pal Again follows the language and Light/Dark appearance selected in iOS. English and Russian are included; you can override the language for Pal Again in iOS Settings without changing the language of the whole device. [Руководство на русском](USER-GUIDE.ru.md).
 
 The app is not on the App Store yet. To install it, you need to [build it yourself](BUILDING.md) with a Mac.
 
@@ -19,27 +19,27 @@ One token works for several gadgets. Muse shows each as a separate device.
 Setup is five steps, and the app walks you through them.
 
 1. **Welcome.** Tap through the introduction.
-2. **Add your token.** Open «Получить ключ на gadgets.muse.ai» (get a key), copy your token, come back and tap «Вставить из буфера» (paste from clipboard). The app stores the token in the iOS Keychain and clears it from the clipboard.
+2. **Add your token.** Open **Get a key at gadgets.muse.ai**, copy your token, come back and tap **Paste from Clipboard**. The app stores the token in the iOS Keychain and clears it from the clipboard.
 3. **Permissions.** Tap each one and answer the system prompt. Bluetooth and local network are needed for pairing. The others enable the matching features, and you can leave them for later.
-4. **Wi-Fi.** The app fills in your network name when iOS allows it. Otherwise, type the name. It never asks for or stores your Wi-Fi password here. Tap «Сохранить и перейти к паре» (save and go to pairing).
-5. **Pair.** Tap «Начать создание пары» (start pairing) and keep this screen open. Then, on your main phone:
+4. **Wi-Fi.** The app fills in your network name when iOS allows it. Otherwise, type the name. It never asks for or stores your Wi-Fi password here. Tap **Save and continue to pairing**.
+5. **Pair.** Tap **Start pairing** and keep this screen open. Then, on your main phone:
    1. Open Muse and go to Settings > Devices.
    2. Turn on Developer Mode.
    3. Tap **+** and choose the name shown on the gadget, `MuseGadgetXXXXXX`. Check that the last six characters match.
 
 When Muse asks for a Wi-Fi network and shows only **Other**, enter the exact name of the network the gadget is on, and its password if asked. The app ignores what it receives there and keeps using the connection it already has.
 
-The chat opens when pairing finishes. Wait for «Подключено к Muse VM» (connected to Muse) at the top before you try anything.
+The chat opens when pairing finishes. Wait for **Connected to Muse VM** at the top before you try anything.
 
 ## Chat
 
 The **Muse** tab is the conversation. Messages you send here go into your main Muse chat, marked as coming from this device.
 
 - **Text:** type and tap the arrow. While Muse works, you see a progress line.
-- **Photos:** tap **+**, then «Сделать фото» (take a photo) or «Выбрать из галереи» (choose from library). Text you have already typed goes with the photo as its caption.
-- **Voice notes:** use the microphone button, up to 40 seconds. You can choose how it works in Settings under «Запись голоса»:
-  - «Нажатие» (tap): tap to start, tap again to send.
-  - «Удержание» (hold): hold while you speak, release to send.
+- **Photos:** tap **+**, then **Take Photo** or **Choose from Photos**. Text you have already typed goes with the photo as its caption.
+- **Voice notes:** use the microphone button, up to 40 seconds. You can choose how it works in Settings under **Voice recording**:
+  - **Tap:** tap to start, tap again to send.
+  - **Hold:** hold while you speak, release to send.
 
 ## What Muse can do with the gadget
 
@@ -62,7 +62,7 @@ Ask Muse in the chat, or from your main phone. If you have several gadgets, say 
 
 Some of these have not been confirmed on a real device yet. See [what has been tested](PROTOCOL-STATUS.md).
 
-**The gadget has to be open on screen.** iOS suspends apps in the background, so the camera, microphone, sensors and everything else stop answering once you leave the app. «Не гасить экран» (keep the screen on) in Settings is on by default for this reason, and a stand with a charger suits this well.
+**The gadget has to be open on screen.** iOS suspends apps in the background, so the camera, microphone, sensors and everything else stop answering once you leave the app. **Keep Screen Awake** in Settings is on by default for this reason, and a stand with a charger suits this well.
 
 ### Apple Shortcuts
 
@@ -70,7 +70,7 @@ Muse can run shortcuts from the Shortcuts app, which reaches things like the Hom
 
 1. Create the shortcut in the Shortcuts app.
 2. Ask Muse to run it by its exact name.
-3. The first time, the gadget asks you to allow that name. Tap «Разрешить» (allow) or «Запретить» (deny). You have 20 seconds.
+3. The first time, the gadget asks you to allow that name. Tap **Allow** or **Don’t Allow**. You have 20 seconds.
 
 The screen switches to Shortcuts and comes back when it finishes. If the shortcut gives back text, Muse receives it. iOS does not let apps see your list of shortcuts, so Muse knows only the names it was told or that you have already allowed.
 
@@ -88,16 +88,16 @@ The **Настройки** tab has:
 
 | Setting | What it does |
 |---|---|
-| «Разрешения» | Shows what iOS has allowed, with a link to system settings |
-| «Разрешено для Muse» | Lists shortcuts and network devices you allowed. Tap «Убрать» to withdraw one |
-| «Запись голоса» | Tap or hold for voice notes |
-| «История чата по Wi-Fi» | Direct sync between gadgets. Off by default, and still being tested |
-| «История чата в iCloud» | Sync through iCloud. On by default |
-| «Не гасить экран» | Keeps the screen on while paired |
-| «Диагностика» | Technical log, including the result of each command |
-| «Очистить историю чата» | Deletes the saved chat |
-| «Заменить SDK Token» | Stores a different token |
-| «Удалить пару с Muse» | Removes the pairing, after which you set the gadget up again |
+| **Permissions** | Shows what iOS has allowed, with a link to system settings |
+| **Approved for Muse** | Lists shortcuts and network devices you allowed. Tap **Remove** to withdraw one |
+| **Voice recording** | Tap or hold for voice notes |
+| **Chat history over Wi-Fi** | Direct sync between gadgets. Off by default, and still being tested |
+| **Chat history in iCloud** | Sync through iCloud. On by default |
+| **Keep Screen Awake** | Keeps the screen on while paired |
+| **Diagnostics** | Technical log, including the result of each command |
+| **Clear Chat History** | Deletes the saved chat |
+| **Replace SDK Token** | Stores a different token |
+| **Remove Muse Pairing** | Removes the pairing, after which you set the gadget up again |
 
 The **Возможности** tab summarizes what the gadget offers.
 
@@ -105,7 +105,7 @@ The **Возможности** tab summarizes what the gadget offers.
 
 The app keeps your latest 200 messages on the device, including small photo previews, so they are still there when you reopen it.
 
-**iCloud sync** copies the text to your other devices on the same Apple ID, usually within a few minutes. Photos stay on the device that took them, and others show «Фото с другого устройства» (photo from another device). Devices on different Apple IDs do not sync.
+**iCloud sync** copies the text to your other devices on the same Apple ID, usually within a few minutes. Photos stay on the device that took them, and others show **Photo from another device**. Devices on different Apple IDs do not sync.
 
 Clearing the history with sync on also clears it on your other synced devices. Your conversation in Muse itself stays either way. Messages Muse sends while the app is closed do not appear in the gadget, because Muse offers no way to fetch past messages.
 
@@ -126,11 +126,11 @@ Pairing protects your credentials from people passively listening, but it cannot
 |---|---|
 | Muse does not find the gadget | Keep the pairing screen open on the gadget, close to the main phone, with Bluetooth on. Check that Developer Mode is on in Muse |
 | Muse lists only **Other** for Wi-Fi | Type the gadget's network name and password. See [Set up the gadget](#set-up-the-gadget) |
-| Muse rejects the token during pairing | Create a new token on gadgets.muse.ai and use «Заменить SDK Token» |
+| Muse rejects the token during pairing | Create a new token on gadgets.muse.ai and use **Replace SDK Token** |
 | A long token is hard to paste on a small screen | Use the USB method in [BUILDING.md](BUILDING.md#put-a-token-on-the-device-over-usb) |
-| «Подключено к Muse VM» does not appear | Check the gadget's Internet connection, then look in «Диагностика». The app keeps retrying, waiting up to a minute between attempts |
-| The app says Muse revoked the pairing | Use «Удалить пару с Muse», then set the gadget up again |
+| **Connected to Muse VM** does not appear | Check the gadget's Internet connection, then look in **Diagnostics**. The app keeps retrying, waiting up to a minute between attempts |
+| The app says Muse revoked the pairing | Use **Remove Muse Pairing**, then set the gadget up again |
 | A command fails with `foreground_required` | Open the app on the gadget and keep it on screen |
-| A command fails with `permission_required` | Allow that permission under «Разрешения» |
+| A command fails with `permission_required` | Allow that permission under **Permissions** |
 | Vibration does nothing | Check Settings > Accessibility > Touch > Vibration on the device. iPads have no motor |
-| History does not sync | Both devices need the same Apple ID, with «История чата в iCloud» on. Open the app again to prompt a check |
+| History does not sync | Both devices need the same Apple ID, with **Chat history in iCloud** on. Open the app again to prompt a check |

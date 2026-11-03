@@ -680,6 +680,30 @@ final class MuseGadgetLegacyTests: XCTestCase {
         wait(for: [leftReceived, rightReceived], timeout: 60)
     }
 
+    func testEnglishAndRussianLocalizationsAreBundled() throws {
+        let englishPath = try XCTUnwrap(Bundle.main.path(forResource: "en", ofType: "lproj"))
+        let russianPath = try XCTUnwrap(Bundle.main.path(forResource: "ru", ofType: "lproj"))
+        let english = try XCTUnwrap(Bundle(path: englishPath))
+        let russian = try XCTUnwrap(Bundle(path: russianPath))
+
+        XCTAssertEqual(
+            english.localizedString(forKey: "Настройки", value: nil, table: "Localizable"),
+            "Settings"
+        )
+        XCTAssertEqual(
+            russian.localizedString(forKey: "Настройки", value: "Настройки", table: "Localizable"),
+            "Настройки"
+        )
+        XCTAssertEqual(
+            english.localizedString(forKey: "pairing.choose_device_format", value: nil, table: "Localizable"),
+            "Tap + and choose %@."
+        )
+        XCTAssertEqual(
+            russian.localizedString(forKey: "pairing.choose_device_format", value: nil, table: "Localizable"),
+            "Нажмите + и выберите %@."
+        )
+    }
+
     private func syncItem(
         _ text: String,
         at seconds: TimeInterval,
