@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Muse Gadget Legacy</string>
+	<string>Muse Gadget</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -70,10 +70,18 @@
 	<string>Camera access lets you explicitly send a photo to your paired Muse.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Microphone access lets you record a voice message for your paired Muse.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>Motion access lets Muse use a bounded snapshot of this device's motion sensors after you grant permission.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Speech recognition can create a local draft before you send it.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Location is used while pairing to identify the current Wi-Fi network, and shared only after an explicit command.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Local network access lets this iPhone discover and communicate with Muse gadgets and companion services nearby.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_muse-gadget._tcp</string>
+	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-peripheral</string>

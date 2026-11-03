@@ -146,7 +146,7 @@ final class PairingCoordinator: NSObject {
 
         case "wifi_scan":
             let networks: [[String: Any]]
-            if let ssid = CurrentWiFi.ssid() {
+            if let ssid = CurrentWiFi.preferredSSID() {
                 networks = [["ssid": ssid, "rssi": -40, "secure": false]]
                 log("Offered the iOS device's current Wi-Fi network")
             } else {
@@ -208,7 +208,28 @@ final class PairingCoordinator: NSObject {
     }
 }
 
-private enum CurrentWiFi {
+enum CurrentWiFi {
+    private static let fallbackKey = "MuseGadgetLegacy.fallbackSSID"
+
+    static func preferredSSID() -> String? {
+        ssid() ?? savedSSID()
+    }
+
+    static func savedSSID() -> String? {
+        let value = UserDefaults.standard.string(forKey: fallbackKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return value?.isEmpty == false ? value : nil
+    }
+
+    static func saveFallbackSSID(_ value: String) {
+        let clean = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if clean.isEmpty {
+            UserDefaults.standard.removeObject(forKey: fallbackKey)
+        } else {
+            UserDefaults.standard.set(clean, forKey: fallbackKey)
+        }
+    }
+
     static func ssid() -> String? {
         guard let interfaces = CNCopySupportedInterfaces() as? [String] else { return nil }
         for interface in interfaces {

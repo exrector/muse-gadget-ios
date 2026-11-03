@@ -2,11 +2,14 @@ import AVFoundation
 import CoreBluetooth
 import CoreLocation
 import CoreMotion
+import dnssd
 import Foundation
+import Network
 import Speech
 
-enum AppPermission: CaseIterable {
+enum AppPermission: CaseIterable, Hashable {
     case bluetooth
+    case localNetwork
     case camera
     case microphone
     case speechRecognition
@@ -16,6 +19,7 @@ enum AppPermission: CaseIterable {
     var title: String {
         switch self {
         case .bluetooth: return "Bluetooth pairing"
+        case .localNetwork: return "Local network"
         case .camera: return "Camera"
         case .microphone: return "Microphone"
         case .speechRecognition: return "Speech recognition"
@@ -42,6 +46,18 @@ final class PermissionCenter: NSObject {
         return manager
     }()
     private var locationCompletion: ((PermissionState) -> Void)?
+    private var localNetworkBrowser: NWBrowser?
+    private var localNetworkCompletion: ((PermissionState) -> Void)?
+    private var localNetworkTimeout: DispatchWorkItem?
+    private var localNetworkState: PermissionState
+    private var motionManager: CMMotionActivityManager?
+
+    override init() {
+        let saved = UserDefaults.standard.string(forKey: "MuseGadgetLegacy.localNetworkPermission")
+        let restored = saved.flatMap(PermissionState.init(rawValue:))
+        localNetworkState = restored == .unavailable ? .notDetermined : (restored ?? .notDetermined)
+        super.init()
+    }
 
     func status(for permission: AppPermission) -> PermissionState {
         switch permission {
@@ -56,6 +72,8 @@ final class PermissionCenter: NSObject {
                 }
             }
             return .notDetermined
+        case .localNetwork:
+            return localNetworkState
         case .camera:
             return map(AVCaptureDevice.authorizationStatus(for: .video))
         case .microphone:
@@ -97,6 +115,8 @@ final class PermissionCenter: NSObject {
             guard current == .notDetermined else { completion(current); return }
             bluetoothCompletion = completion
             bluetoothManager = CBPeripheralManager(delegate: self, queue: .main)
+        case .localNetwork:
+            requestLocalNetwork(completion: completion)
         case .camera:
             AVCaptureDevice.requestAccess(for: .video) { _ in
                 DispatchQueue.main.async { completion(self.status(for: permission)) }
@@ -110,15 +130,81 @@ final class PermissionCenter: NSObject {
                 DispatchQueue.main.async { completion(self.status(for: permission)) }
             }
         case .location:
+            let current = status(for: permission)
+            guard current == .notDetermined else { completion(current); return }
             locationCompletion = completion
             locationManager.requestWhenInUseAuthorization()
         case .motion:
             guard CMMotionActivityManager.isActivityAvailable() else { completion(.unavailable); return }
             let manager = CMMotionActivityManager()
+            motionManager = manager
             manager.queryActivityStarting(from: Date(), to: Date(), to: .main) { _, _ in
                 completion(self.status(for: permission))
+                self.motionManager = nil
             }
         }
+    }
+
+    func resetLocalNetworkStatusForRecheck() {
+        guard localNetworkState != .granted else { return }
+        localNetworkState = .notDetermined
+        UserDefaults.standard.removeObject(forKey: "MuseGadgetLegacy.localNetworkPermission")
+    }
+
+    private func requestLocalNetwork(completion: @escaping (PermissionState) -> Void) {
+        localNetworkBrowser?.cancel()
+        localNetworkTimeout?.cancel()
+        localNetworkCompletion = completion
+        let parameters = NWParameters.tcp
+        parameters.includePeerToPeer = true
+        let browser = NWBrowser(
+            for: .bonjour(type: "_muse-gadget._tcp", domain: nil),
+            using: parameters
+        )
+        localNetworkBrowser = browser
+        browser.stateUpdateHandler = { [weak self] state in
+            DispatchQueue.main.async {
+                guard let self, self.localNetworkCompletion != nil else { return }
+                switch state {
+                case .ready:
+                    self.finishLocalNetworkRequest(.granted)
+                case .waiting(let error):
+                    self.finishLocalNetworkRequest(self.isLocalNetworkPolicyDenied(error) ? .denied : .unavailable)
+                case .failed(let error):
+                    self.finishLocalNetworkRequest(self.isLocalNetworkPolicyDenied(error) ? .denied : .unavailable)
+                default:
+                    break
+                }
+            }
+        }
+        browser.start(queue: DispatchQueue(label: "MuseGadgetLegacy.local-network-permission"))
+
+        let timeout = DispatchWorkItem { [weak self] in
+            self?.finishLocalNetworkRequest(.unavailable)
+        }
+        localNetworkTimeout = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8, execute: timeout)
+    }
+
+    private func finishLocalNetworkRequest(_ state: PermissionState) {
+        localNetworkState = state
+        if state == .unavailable {
+            UserDefaults.standard.removeObject(forKey: "MuseGadgetLegacy.localNetworkPermission")
+        } else {
+            UserDefaults.standard.set(state.rawValue, forKey: "MuseGadgetLegacy.localNetworkPermission")
+        }
+        let completion = localNetworkCompletion
+        localNetworkCompletion = nil
+        localNetworkTimeout?.cancel()
+        localNetworkTimeout = nil
+        localNetworkBrowser?.cancel()
+        localNetworkBrowser = nil
+        completion?(state)
+    }
+
+    private func isLocalNetworkPolicyDenied(_ error: NWError) -> Bool {
+        guard case .dns(let code) = error else { return false }
+        return code == DNSServiceErrorType(kDNSServiceErr_PolicyDenied)
     }
 
     private func map(_ status: AVAuthorizationStatus) -> PermissionState {

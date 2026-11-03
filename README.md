@@ -1,8 +1,8 @@
-# Muse Gadget Legacy for iOS and iPadOS
+# Muse Gadget for iOS and iPadOS
 
 An unofficial, open-source Muse community gadget that turns an older iPhone or iPad into a screen, microphone, speaker, camera and sensor companion for Muse.
 
-The project is native UIKit and currently targets iOS/iPadOS 13 or newer. Bluetooth LE is used only for the user-initiated Muse pairing flow. After pairing, the intended runtime transport is the device's existing Internet connection, using the same encrypted Noise and Link protocols as the official Muse Gadget SDK.
+The project is a native SwiftUI application targeting iOS/iPadOS 15 or newer. Bluetooth LE is used only for the user-initiated Muse pairing flow. After pairing, the intended runtime transport is the device's existing Internet connection, using the same encrypted Noise and Link protocols as the official Muse Gadget SDK.
 
 > This is an independent community project. It is not made by, endorsed by, or supported by Meta. Muse Gadget SDK tokens are governed separately by the [Muse Gadget SDK Token Terms](https://gadgets.muse.ai/sdk-terms).
 
@@ -16,20 +16,23 @@ The repository contains a buildable native application skeleton and the first re
 - official BLE chunk framing;
 - community pairing v5 cryptography (P-256, HKDF-SHA256, AES-256-GCM);
 - `get_device_info`, encrypted confirmation, Wi-Fi-current-connection provisioning and credential persistence;
-- permission center for camera, microphone, speech and location;
+- five-step guided setup with one-tap clipboard import for the SDK token;
+- permission center for Bluetooth, local network, camera, microphone, speech, location and motion;
+- automatic current Wi-Fi name detection with a manual SSID-only fallback (iOS does not expose saved Wi-Fi passwords to apps);
 - explicit iOS command registry with no shell or arbitrary filesystem access;
-- UIKit diagnostics dashboard showing every setup stage.
+- chat-like SwiftUI home, capabilities catalog and settings; technical diagnostics stay collapsed by default.
+
+BLE pairing and credential persistence have been verified end to end on a physical iPhone 6s running iOS 15.8.8. This confirms the pairing stage only; the Wi-Fi runtime is not yet registered with a Muse VM.
 
 Still to be completed and verified on a real Muse account:
 
-- live Muse app discovery and end-to-end provisioning;
 - VM discovery, token rotation and Noise/WebSocket session;
 - `link.register`, `link.invoke` and `link.result` against a real VM;
 - chat, voice notes, avatar rendering and camera delivery;
 - reliable behavior while the screen is locked;
-- lowering the deployment target below iOS 13.
+- App Store release hardening and localization.
 
-No successful pairing is claimed until the real app shows the device, the gadget receives and stores device credentials, and the Wi-Fi-only runtime registers with a Muse VM.
+The application deliberately labels the Muse VM channel as under development until Noise XX and Link registration work end to end. It does not present the local chat shell as a live Muse conversation.
 
 ## Build
 

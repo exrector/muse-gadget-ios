@@ -22,6 +22,7 @@
 		A1000000000000000000000E /* PermissionsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000E /* PermissionsViewController.swift */; };
 		A1000000000000000000000F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000F /* Assets.xcassets */; };
 		A10000000000000000000010 /* MuseGadgetLegacyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010 /* MuseGadgetLegacyTests.swift */; };
+		A10000000000000000000011 /* MuseAppView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000014 /* MuseAppView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -54,6 +55,7 @@
 		B10000000000000000000011 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B10000000000000000000012 /* MuseGadgetLegacy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MuseGadgetLegacy.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B10000000000000000000013 /* MuseGadgetLegacyTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MuseGadgetLegacyTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10000000000000000000014 /* MuseAppView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UI/MuseAppView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -80,7 +82,7 @@
 				B10000000000000000000004, B10000000000000000000005, B10000000000000000000006,
 				B10000000000000000000007, B10000000000000000000008, B10000000000000000000009,
 				B1000000000000000000000A, B1000000000000000000000B, B1000000000000000000000C,
-				B1000000000000000000000D, B1000000000000000000000E
+				B1000000000000000000000D, B1000000000000000000000E, B10000000000000000000014
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -143,7 +145,7 @@
 			A10000000000000000000004, A10000000000000000000005, A10000000000000000000006,
 			A10000000000000000000007, A10000000000000000000008, A10000000000000000000009,
 			A1000000000000000000000A, A1000000000000000000000B, A1000000000000000000000C,
-			A1000000000000000000000D, A1000000000000000000000E
+			A1000000000000000000000D, A1000000000000000000000E, A10000000000000000000011
 		); runOnlyForDeploymentPostprocessing = 0; };
 		I10000000000000000000002 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000010); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */

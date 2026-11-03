@@ -1,3 +1,4 @@
+import SwiftUI
 import UIKit
 
 final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
@@ -12,8 +13,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               let appDelegate = UIApplication.shared.delegate as? AppDelegate else { return }
 
         let window = UIWindow(windowScene: windowScene)
-        window.rootViewController = UINavigationController(
-            rootViewController: MainViewController(environment: appDelegate.environment)
+        window.rootViewController = UIHostingController(
+            rootView: MuseAppView(environment: appDelegate.environment)
         )
         window.makeKeyAndVisible()
         self.window = window
