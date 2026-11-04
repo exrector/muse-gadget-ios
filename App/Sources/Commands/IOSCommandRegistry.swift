@@ -79,7 +79,8 @@ final class IOSCommandRegistry {
         nativeServices: NativeCommandServices,
         shortcuts: MuseShortcutsBridge,
         grants: MuseGrantStore,
-        lan: MuseLANServices
+        lan: MuseLANServices,
+        images: MuseVMImageService
     ) -> IOSCommandRegistry {
         let registry = IOSCommandRegistry()
 
@@ -151,9 +152,14 @@ final class IOSCommandRegistry {
 
         registry.register(CommandDefinition(
             name: "display.show_card",
-            summary: "Show a card with a title and optional text at the top of the gadget's chat screen.",
+            summary: "Show or update the pinned live card above the gadget chat. Use kind=timer with duration_seconds for a countdown, or kind=progress with progress from 0 to 1.",
             parameters: ["title": ["type": "string", "description": "Short title, up to 120 characters."]],
-            optional: ["body": ["type": "string", "description": "Plain text, up to 1000 characters."]]
+            optional: [
+                "body": ["type": "string", "description": "Plain text, up to 1000 characters."],
+                "kind": ["type": "string", "description": "Card type: info, timer, or progress."],
+                "duration_seconds": ["type": "number", "description": "For a timer: countdown duration from 1 to 86400 seconds."],
+                "progress": ["type": "number", "description": "For progress: completion from 0.0 to 1.0."]
+            ]
         )) { arguments, completion in
             guard let title = arguments["title"] as? String, !title.isEmpty, title.count <= 120 else {
                 completion(CommandResult(success: false, value: ["error": "invalid_title"]))
@@ -164,7 +170,30 @@ final class IOSCommandRegistry {
                 completion(CommandResult(success: false, value: ["error": "invalid_body"]))
                 return
             }
-            nativeServices.showCard(MuseCard(title: title, body: body), completion: completion)
+            let explicitKind = (arguments["kind"] as? String).flatMap(MuseCard.Kind.init(rawValue:))
+            let kind = explicitKind ?? .info
+            let duration = (arguments["duration_seconds"] as? NSNumber)?.doubleValue
+            let progress = (arguments["progress"] as? NSNumber)?.doubleValue
+            guard duration.map({ $0.isFinite && (1...86_400).contains($0) }) ?? true,
+                  progress.map({ $0.isFinite && (0...1).contains($0) }) ?? true else {
+                completion(CommandResult(success: false, value: ["error": "invalid_card_state"]))
+                return
+            }
+            guard kind != .timer || duration != nil,
+                  kind != .progress || progress != nil else {
+                completion(CommandResult(success: false, value: ["error": "missing_card_state"]))
+                return
+            }
+            nativeServices.showCard(
+                MuseCard.interpreted(
+                    title: title,
+                    body: body,
+                    kind: explicitKind,
+                    durationSeconds: duration,
+                    progress: progress
+                ),
+                completion: completion
+            )
         }
 
         registry.register(CommandDefinition(
@@ -173,6 +202,72 @@ final class IOSCommandRegistry {
             parameters: [:]
         )) { _, completion in
             nativeServices.showCard(nil, completion: completion)
+        }
+
+        registry.register(CommandDefinition(
+            name: "display.set_avatar",
+            summary: "Set this gadget's picture of you from an image file on your VM. Draw your own avatar from your profile as a square PNG or JPEG, save it on the VM, then call this. The device keeps the image across restarts and shows it beside your name in its chat. To make it move, call this once per state with an animated GIF, APNG or WebP of your avatar in that state.",
+            parameters: ["path": [
+                "type": "string",
+                "description": "Path of the image file on this VM, relative, as the VM's file API takes it, such as workspace/avatar.png. At most 4 MiB."
+            ]],
+            optional: ["state": [
+                "type": "string",
+                "description": "Which state this animation is for: idle, listening, thinking or speaking. Leave it out for a still picture."
+            ]],
+            timeoutMS: 60_000
+        )) { arguments, completion in
+            images.installAvatar(
+                path: arguments["path"] as? String ?? "",
+                state: arguments["state"] as? String,
+                completion: completion
+            )
+        }
+
+        registry.register(CommandDefinition(
+            name: "display.clear_avatar",
+            summary: "Remove the picture set with display.set_avatar and go back to the default mark.",
+            parameters: [:]
+        )) { _, completion in
+            images.clearAvatar()
+            completion(CommandResult(success: true, value: ["cleared": true]))
+        }
+
+        registry.register(CommandDefinition(
+            name: "display.draw_file",
+            summary: "Show an image file from your VM above the gadget's chat. The device reads the file over its connection to the VM, so the file need not be on the internet: to show a picture from the web, save it on the VM first. Replies when the image is on screen. It stays until the user closes it or you call display.clear_image.",
+            parameters: ["path": [
+                "type": "string",
+                "description": "Path of the image file on this VM, relative, as the VM's file API takes it, such as workspace/picture.jpg. At most 4 MiB."
+            ]],
+            timeoutMS: 60_000
+        )) { arguments, completion in
+            images.draw(path: arguments["path"] as? String ?? "", completion: completion)
+        }
+
+        registry.register(CommandDefinition(
+            name: "display.clear_image",
+            summary: "Remove the image shown with display.draw_file.",
+            parameters: [:]
+        )) { _, completion in
+            images.clearDrawnImage()
+            completion(CommandResult(success: true, value: ["cleared": true]))
+        }
+
+        registry.register(CommandDefinition(
+            name: "voice.configure",
+            summary: "Set how loud audio.speak speaks on this device, kept across restarts. Without volume, reports the current one. The device's own volume buttons still apply on top.",
+            parameters: [:],
+            optional: ["volume": ["type": "integer", "description": "Speech volume, 0 to 100."]]
+        )) { arguments, completion in
+            if let raw = arguments["volume"] {
+                guard let volume = (raw as? NSNumber)?.doubleValue, (0...100).contains(volume) else {
+                    completion(CommandResult(success: false, value: ["error": "invalid_volume"]))
+                    return
+                }
+                MuseSpeechVolume.set(Int(volume))
+            }
+            completion(CommandResult(success: true, value: ["volume": MuseSpeechVolume.current]))
         }
 
         registry.register(CommandDefinition(

@@ -148,6 +148,23 @@ private struct MuseHTTPResult {
     let body: Data
 }
 
+struct MuseAgentIdentity: Equatable {
+    let name: String
+
+    /// The daemon wraps the identity as `{"ok":true,"result":{"name":...}}`.
+    static func parse(_ data: Data) -> MuseAgentIdentity? {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        let result = root["result"] as? [String: Any] ?? root
+        let name = (result["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return name.isEmpty ? nil : MuseAgentIdentity(name: name)
+    }
+}
+
+enum MuseVMFileError: Error {
+    case status(Int)
+    case tooLarge
+}
+
 private struct PendingHTTPRequest {
     var status: Int?
     var body = Data()
@@ -188,6 +205,8 @@ final class MuseRuntime: NSObject {
     var onLog: ((String) -> Void)?
     var onUnpaired: (() -> Void)?
     var onChatRecord: (([String: Any]) -> Void)?
+    var onAgentIdentity: ((MuseAgentIdentity) -> Void)?
+    var onCommandFinished: ((String, Bool) -> Void)?
 
     private let identity: DeviceIdentity
     private let commands: IOSCommandRegistry
@@ -628,6 +647,7 @@ final class MuseRuntime: NSObject {
         path: String,
         body: Data,
         headers: [MuseHTTPHeader],
+        includeStandardHeaders: Bool = true,
         completion: @escaping (Result<MuseHTTPResult, Error>) -> Void
     ) {
         guard transport != nil else {
@@ -636,8 +656,10 @@ final class MuseRuntime: NSObject {
         }
         let streamID = allocateStreamID()
         var requestHeaders = headers
-        requestHeaders.append(MuseHTTPHeader(name: "x-request-id", value: UUID().uuidString.lowercased()))
-        requestHeaders.append(MuseHTTPHeader(name: "x-app-id", value: "musegadget"))
+        if includeStandardHeaders {
+            requestHeaders.append(MuseHTTPHeader(name: "x-request-id", value: UUID().uuidString.lowercased()))
+            requestHeaders.append(MuseHTTPHeader(name: "x-app-id", value: "musegadget"))
+        }
         let uploadInParts = body.count > Self.maxInlineRequestBytes
         let timeout = DispatchWorkItem { [weak self] in
             self?.resetStream(streamID, reason: "request ended")
@@ -801,6 +823,7 @@ final class MuseRuntime: NSObject {
                 log("Registered with Muse")
                 schedulePing()
                 openChatSubscription()
+                fetchAgentIdentity()
             }
             return
         }
@@ -832,6 +855,7 @@ final class MuseRuntime: NSObject {
                 guard invokeGeneration == self.generation else { return }
                 let outcome = result.success ? "ok" : result.value["error"] as? String ?? "failed"
                 self.log("Command \(command): \(outcome)")
+                DispatchQueue.main.async { self.onCommandFinished?(command, result.success) }
                 var response: [String: Any] = [
                     "method": "link.result",
                     "id": invokeID,
@@ -863,6 +887,94 @@ final class MuseRuntime: NSObject {
             fail("Could not send link.result", reconnect: true)
         }
     }
+
+    /// Asks for the agent's name once, as the SDK's firmware does. A refusal only leaves the name
+    /// unknown: Muse answers 403 to this gadget's credential, and the route carries no avatar anyway.
+    private func fetchAgentIdentity() {
+        performRequest(
+            method: "GET",
+            path: "/identity",
+            body: Data(),
+            headers: [],
+            includeStandardHeaders: false
+        ) { [weak self] result in
+            guard let self else { return }
+            guard case .success(let response) = result else {
+                self.log("Muse identity request failed")
+                return
+            }
+            guard (200..<300).contains(response.status),
+                  let identity = MuseAgentIdentity.parse(response.body) else {
+                self.log("Muse identity unavailable, HTTP \(response.status)")
+                return
+            }
+            DispatchQueue.main.async { self.onAgentIdentity?(identity) }
+        }
+    }
+
+    /// Reads a VM file in ranges, as the SDK's `display.draw_file` does: the daemon may send a whole
+    /// reply in one frame, and a reply here is limited to 1 MiB. Completes on `queue`.
+    func readVMFile(path: String, maxBytes: Int, completion: @escaping (Result<Data, Error>) -> Void) {
+        queue.async {
+            guard let encoded = path.addingPercentEncoding(withAllowedCharacters: Self.vmPathCharacters) else {
+                completion(.failure(MuseVMFileError.status(0)))
+                return
+            }
+            self.readVMRange(path: "/fs/raw/\(encoded)", received: Data(), maxBytes: maxBytes, completion: completion)
+        }
+    }
+
+    private func readVMRange(
+        path: String,
+        received: Data,
+        maxBytes: Int,
+        completion: @escaping (Result<Data, Error>) -> Void
+    ) {
+        let chunk = Self.vmFileChunkBytes
+        performRequest(
+            method: "GET",
+            path: path,
+            body: Data(),
+            headers: [MuseHTTPHeader(name: "Range", value: "bytes=\(received.count)-\(received.count + chunk - 1)")],
+            includeStandardHeaders: false
+        ) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .failure(let error):
+                completion(.failure(error))
+            case .success(let response):
+                switch response.status {
+                case 200 where received.isEmpty:
+                    // The daemon ignored Range and sent the whole file.
+                    completion(response.body.count <= maxBytes
+                        ? .success(response.body)
+                        : .failure(MuseVMFileError.tooLarge))
+                case 206:
+                    let total = received + response.body
+                    if total.count > maxBytes {
+                        completion(.failure(MuseVMFileError.tooLarge))
+                    } else if response.body.count < chunk {
+                        completion(.success(total))
+                    } else {
+                        self.readVMRange(path: path, received: total, maxBytes: maxBytes, completion: completion)
+                    }
+                case 416 where !received.isEmpty:
+                    // The file ended exactly on the last range.
+                    completion(.success(received))
+                default:
+                    completion(.failure(MuseVMFileError.status(response.status)))
+                }
+            }
+        }
+    }
+
+    private static let vmFileChunkBytes = 256 * 1024
+
+    private static let vmPathCharacters: CharacterSet = {
+        var allowed = CharacterSet.alphanumerics
+        allowed.insert(charactersIn: "-._~/")
+        return allowed
+    }()
 
     private func sendEncrypted(_ plaintext: Data, completion: @escaping () -> Void) throws {
         guard let transport else { throw MuseNoiseError.invalidState }

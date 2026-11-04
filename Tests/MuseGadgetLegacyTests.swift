@@ -1,3 +1,4 @@
+import ImageIO
 import XCTest
 @testable import MuseGadgetLegacy
 
@@ -702,6 +703,219 @@ final class MuseGadgetLegacyTests: XCTestCase {
             russian.localizedString(forKey: "pairing.choose_device_format", value: nil, table: "Localizable"),
             "Нажмите + и выберите %@."
         )
+    }
+
+    func testMuseWidgetMarkupExtractsIDsAndHidesWireMarkers() {
+        let parsed = MuseWidgetMarkup.parse(
+            "Готово.\n\n[[hatch_widget:widget-one]]\n[[hatch_widget:widget-two]]"
+        )
+        XCTAssertEqual(parsed.text, "Готово.")
+        XCTAssertEqual(parsed.widgetIDs, ["widget-one", "widget-two"])
+    }
+
+    func testMuseWidgetMarkupKeepsOrdinaryTextAndDeduplicatesWidgets() {
+        XCTAssertEqual(
+            MuseWidgetMarkup.parse("Обычный ответ"),
+            MuseWidgetMarkup(text: "Обычный ответ", widgetIDs: [])
+        )
+        let parsed = MuseWidgetMarkup.parse("[[hatch_widget:same]] [[hatch_widget:same]]")
+        XCTAssertEqual(parsed.widgetIDs, ["same"])
+        XCTAssertTrue(parsed.text.isEmpty)
+    }
+
+    func testAgentIdentityReadsTheWrappedNameAndRejectsAnEmptyOne() {
+        XCTAssertEqual(MuseAgentIdentity.parse(Data(#"{"ok":true,"result":{"name":"Muse"}}"#.utf8))?.name, "Muse")
+        XCTAssertNil(MuseAgentIdentity.parse(Data(#"{"result":{"name":"  "}}"#.utf8)))
+        XCTAssertNil(MuseAgentIdentity.parse(Data("route not allowed".utf8)))
+    }
+
+    func testAvatarPathMustBeRelativeAndInsideTheVM() {
+        XCTAssertTrue(MuseVMImageService.isValidVMPath("workspace/pal-again-avatar.png"))
+        XCTAssertTrue(MuseVMImageService.isValidVMPath("аватар.png"))
+        for path in ["", "/etc/passwd", "../secret.png", "workspace/../../x.png", "workspace//x.png",
+                     "workspace/./x.png", "workspace\\x.png", "x\n.png", String(repeating: "a", count: 513)] {
+            XCTAssertFalse(MuseVMImageService.isValidVMPath(path), path)
+        }
+    }
+
+    private func samplePNG(side: CGFloat = 32) throws -> Data {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).image { context in
+            UIColor.red.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: side, height: side))
+        }
+        return try XCTUnwrap(image.pngData())
+    }
+
+    private func sampleGIF(frames: Int) throws -> Data {
+        let output = NSMutableData()
+        let destination = try XCTUnwrap(CGImageDestinationCreateWithData(output, "com.compuserve.gif" as CFString, frames, nil))
+        let image = try XCTUnwrap(UIImage(data: try samplePNG())?.cgImage)
+        for _ in 0..<frames {
+            CGImageDestinationAddImage(destination, image, [
+                kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFDelayTime: 0.5]
+            ] as CFDictionary)
+        }
+        XCTAssertTrue(CGImageDestinationFinalize(destination))
+        return output as Data
+    }
+
+    func testAvatarAnimationKeepsTimingAndLimitsFrames() throws {
+        let short = try XCTUnwrap(MuseAvatarAnimation.decode(try sampleGIF(frames: 3)))
+        XCTAssertEqual(short.frames.count, 3)
+        XCTAssertEqual(short.duration, 1.5, accuracy: 0.01)
+
+        let long = try XCTUnwrap(MuseAvatarAnimation.decode(try sampleGIF(frames: 100)))
+        XCTAssertLessThanOrEqual(long.frames.count, MuseAvatarAnimation.maxFrames)
+        XCTAssertEqual(long.duration, 50, accuracy: 0.1)
+        XCTAssertNil(MuseAvatarAnimation.decode(Data("not an image".utf8)))
+    }
+
+    func testAvatarStateNamesAcceptTheVariantsMuseUses() {
+        XCTAssertEqual(MuseAvatarState(commandValue: "working"), .thinking)
+        XCTAssertEqual(MuseAvatarState(commandValue: "TALKING"), .speaking)
+        XCTAssertNil(MuseAvatarState(commandValue: "dancing"))
+    }
+
+    func testAvatarAnimationsSurviveARestartAndIdleSetsTheStillPicture() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = MuseAvatarStore(directory: directory)
+        let gif = try sampleGIF(frames: 2)
+
+        _ = try store.saveAnimation(gif, state: .speaking)
+        XCTAssertNil(store.load())
+        _ = try store.saveAnimation(gif, state: .idle)
+        XCTAssertNotNil(store.load())
+
+        let reopened = MuseAvatarStore(directory: directory).loadAnimations()
+        XCTAssertEqual(Set(reopened.keys), [.idle, .speaking])
+        XCTAssertEqual(reopened[.idle]?.frames.count, 2)
+
+        store.clear()
+        XCTAssertTrue(store.loadAnimations().isEmpty)
+        XCTAssertNil(store.load())
+    }
+
+    func testAvatarCommandRejectsAnUnknownStateBeforeReadingAnything() {
+        let service = MuseVMImageService(store: MuseAvatarStore(
+            directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        ))
+        service.readVMFile = { _, _, _ in XCTFail("nothing should be read") }
+        var result: CommandResult?
+        service.installAvatar(path: "workspace/a.gif", state: "dancing") { result = $0 }
+        XCTAssertEqual(result?.value["error"] as? String, "invalid_state")
+    }
+
+    func testDrawFileShowsAnImageAndReportsFailuresWithoutShowingOne() throws {
+        let png = try samplePNG()
+        let service = MuseVMImageService(store: MuseAvatarStore(
+            directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        ))
+        var responses: [Result<Data, Error>] = [
+            .success(png),
+            .success(Data("not an image".utf8)),
+            .failure(MuseVMFileError.status(403)),
+            .failure(MuseVMFileError.tooLarge)
+        ]
+        service.readVMFile = { path, maxBytes, completion in
+            XCTAssertEqual(path, "workspace/picture.png")
+            XCTAssertEqual(maxBytes, MuseVMImageService.maxFileBytes)
+            completion(responses.removeFirst())
+        }
+        var results: [CommandResult] = []
+        for _ in 0..<4 {
+            service.draw(path: "workspace/picture.png") { results.append($0) }
+        }
+        service.draw(path: "../secret.png") { results.append($0) }
+
+        XCTAssertEqual(results[0].value["drawn"] as? Bool, true)
+        XCTAssertEqual(results[0].value["width"] as? Int, 32)
+        XCTAssertEqual(results[1].value["error"] as? String, "not_an_image")
+        XCTAssertEqual(results[2].value["error"] as? String, "file_unavailable")
+        XCTAssertEqual(results[2].value["http_status"] as? Int, 403)
+        XCTAssertEqual(results[3].value["error"] as? String, "file_too_large")
+        XCTAssertEqual(results[4].value["error"] as? String, "invalid_path")
+    }
+
+    func testVoiceConfigureKeepsVolumeInRangeAndReportsIt() {
+        let registry = IOSCommandRegistry.defaultRegistry(
+            nativeServices: NativeCommandServices(permissions: PermissionCenter()),
+            shortcuts: MuseShortcutsBridge(grants: MuseGrantStore(), approvals: MuseApprovalCenter()),
+            grants: MuseGrantStore(),
+            lan: MuseLANServices(permissions: PermissionCenter(), grants: MuseGrantStore(), approvals: MuseApprovalCenter()),
+            images: MuseVMImageService()
+        )
+        let previous = MuseSpeechVolume.current
+        defer { MuseSpeechVolume.set(previous) }
+
+        var result: CommandResult?
+        registry.invoke(name: "voice.configure", arguments: ["volume": 40]) { result = $0 }
+        XCTAssertEqual(result?.value["volume"] as? Int, 40)
+        registry.invoke(name: "voice.configure", arguments: [:]) { result = $0 }
+        XCTAssertEqual(result?.value["volume"] as? Int, 40)
+        registry.invoke(name: "voice.configure", arguments: ["volume": 101]) { result = $0 }
+        XCTAssertEqual(result?.value["error"] as? String, "invalid_volume")
+        XCTAssertEqual(MuseSpeechVolume.current, 40)
+    }
+
+    func testChatMarkdownDropsItsMarkersAndKeepsLineBreaks() {
+        let text = String(MuseChatMarkdown.attributed("- **Яркость** и `code`\n\nдальше").characters)
+        XCTAssertEqual(text, "• Яркость и code\n\nдальше")
+        XCTAssertEqual(String(MuseChatMarkdown.attributed("2 * 3 = 6").characters), "2 * 3 = 6")
+    }
+
+    func testToastsCoverActionsAndStayQuietForEverythingElse() {
+        XCTAssertNotNil(MuseCommandToast(command: "torch.set", succeeded: true))
+        XCTAssertNotNil(MuseCommandToast(command: "camera.capture", succeeded: false))
+        XCTAssertNil(MuseCommandToast(command: "device.health", succeeded: true))
+        XCTAssertNil(MuseCommandToast(command: "display.set_caption", succeeded: true))
+    }
+
+    func testDeviceSummaryLeavesOutWhatIsUnknown() {
+        XCTAssertEqual(MuseDeviceSummary.text(batteryLevel: -1, batteryState: .unknown, freeBytes: nil), "")
+        XCTAssertFalse(MuseDeviceSummary.text(batteryLevel: 0.5, batteryState: .charging, freeBytes: nil).isEmpty)
+    }
+
+    func testAvatarStoreShrinksAnImageKeepsItAndSurvivesBadFiles() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = MuseAvatarStore(directory: directory)
+        XCTAssertNil(store.load())
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let large = UIGraphicsImageRenderer(size: CGSize(width: 1024, height: 1024), format: format).image { context in
+            UIColor.blue.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 1024, height: 1024))
+        }
+        let saved = try store.save(imageData: try XCTUnwrap(large.pngData()))
+        XCTAssertEqual(UIImage(data: saved)?.cgImage?.width, MuseAvatarStore.maxPixelSize)
+        XCTAssertEqual(MuseAvatarStore(directory: directory).load(), saved)
+
+        XCTAssertThrowsError(try store.save(imageData: Data("not an image".utf8)))
+        XCTAssertEqual(store.load(), saved)
+
+        store.clear()
+        XCTAssertNil(store.load())
+    }
+
+    func testCardInfersRussianAndEnglishTimersFromBasicTitleBody() {
+        let russian = MuseCard.interpreted(
+            title: "Таймер", body: "30 минут — время пошло",
+            kind: nil, durationSeconds: nil, progress: nil,
+            shownAt: Date(timeIntervalSince1970: 10)
+        )
+        XCTAssertEqual(russian.kind, .timer)
+        XCTAssertEqual(russian.durationSeconds, 1_800)
+
+        let english = MuseCard.interpreted(
+            title: "Timer", body: "1.5 hours remaining",
+            kind: nil, durationSeconds: nil, progress: nil
+        )
+        XCTAssertEqual(english.kind, .timer)
+        XCTAssertEqual(english.durationSeconds, 5_400)
     }
 
     private func syncItem(

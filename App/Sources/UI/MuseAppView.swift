@@ -37,6 +37,58 @@ struct MuseChatItem: Identifiable {
     }
 }
 
+/// Muse writes Markdown. Inline styles are rendered and list markers become bullets; other block
+/// syntax stays as text, since a chat bubble has no use for headings or tables.
+enum MuseChatMarkdown {
+    private static let cache = NSCache<NSString, NSAttributedString>()
+
+    static func attributed(_ source: String) -> AttributedString {
+        if let cached = cache.object(forKey: source as NSString) { return AttributedString(cached) }
+        let bulleted = source
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { line -> String in
+                let trimmed = line.drop { $0 == " " }
+                guard trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") else { return String(line) }
+                return String(line.prefix(line.count - trimmed.count)) + "• " + trimmed.dropFirst(2)
+            }
+            .joined(separator: "\n")
+        let parsed = (try? AttributedString(
+            markdown: bulleted,
+            options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        )) ?? AttributedString(bulleted)
+        cache.setObject(NSAttributedString(parsed), forKey: source as NSString)
+        return parsed
+    }
+}
+
+struct MuseWidgetMarkup: Equatable {
+    let text: String
+    let widgetIDs: [String]
+
+    static func parse(_ source: String) -> MuseWidgetMarkup {
+        let pattern = #"\[\[hatch_widget:([^\]]+)\]\]"#
+        guard let expression = try? NSRegularExpression(pattern: pattern) else {
+            return MuseWidgetMarkup(text: source, widgetIDs: [])
+        }
+        let range = NSRange(source.startIndex..., in: source)
+        let matches = expression.matches(in: source, range: range)
+        guard !matches.isEmpty else { return MuseWidgetMarkup(text: source, widgetIDs: []) }
+
+        var ids: [String] = []
+        var seen = Set<String>()
+        for match in matches {
+            guard let idRange = Range(match.range(at: 1), in: source) else { continue }
+            let id = String(source[idRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !id.isEmpty, seen.insert(id).inserted { ids.append(id) }
+        }
+        let stripped = expression.stringByReplacingMatches(in: source, range: range, withTemplate: "")
+        let compact = stripped
+            .replacingOccurrences(of: #"\n[ \t]*\n[ \t]*\n+"#, with: "\n\n", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return MuseWidgetMarkup(text: compact, widgetIDs: ids)
+    }
+}
+
 enum MuseVoiceRecordMode: String, CaseIterable, Identifiable {
     case tap
     case hold
@@ -96,6 +148,16 @@ final class MuseAppModel: ObservableObject {
     @Published var museActivity: String?
     @Published var approvalPrompt: MuseApprovalPrompt?
     @Published var card: MuseCard?
+    @Published var agentIdentity: MuseAgentIdentity?
+    @Published var agentAvatar: Data?
+    @Published var avatarAnimations: [MuseAvatarState: MuseAvatarAnimation] = [:]
+    @Published var avatarRequested = false
+    @Published var drawnImage: UIImage?
+    @Published var deviceAudio: MuseDeviceAudio?
+    @Published var commandToast: MuseCommandToast?
+    @Published var batterySummary = ""
+    @Published var screenBrightness = Double(UIScreen.main.brightness)
+    @Published var speechVolume = Double(MuseSpeechVolume.current)
     @Published var approvedShortcuts: [String] = []
     @Published var approvedDevices: [MuseLANGrant] = []
     @Published var isRecordingVoice = false
@@ -199,6 +261,56 @@ final class MuseAppModel: ObservableObject {
         environment.runtime.onChatRecord = { [weak self] record in
             guard let self else { return }
             self.apply(self.chatTimeline.feed(record))
+        }
+        environment.runtime.onAgentIdentity = { [weak self] identity in
+            self?.agentIdentity = identity
+        }
+        environment.runtime.onCommandFinished = { [weak self] command, succeeded in
+            self?.showToast(for: command, succeeded: succeeded)
+        }
+        agentAvatar = environment.vmImages.currentAvatar()
+        reloadAvatarAnimations()
+        refreshBattery()
+        for name in [UIDevice.batteryLevelDidChangeNotification, UIDevice.batteryStateDidChangeNotification] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                self?.refreshBattery()
+            }
+        }
+        for name in [UIScreen.brightnessDidChangeNotification, Notification.Name.museBrightnessChanged] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                self?.screenBrightness = Double(UIScreen.main.brightness)
+            }
+        }
+        NotificationCenter.default.addObserver(
+            forName: .museSpeechVolumeChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.speechVolume = Double(MuseSpeechVolume.current)
+        }
+        NotificationCenter.default.addObserver(
+            forName: .museDrawnImageChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            self?.drawnImage = note.object as? UIImage
+        }
+        NotificationCenter.default.addObserver(
+            forName: .museDeviceAudioChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            self?.deviceAudio = note.object as? MuseDeviceAudio
+        }
+        NotificationCenter.default.addObserver(
+            forName: .museAvatarChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.agentAvatar = self.environment.vmImages.currentAvatar()
+            self.avatarRequested = false
+            self.reloadAvatarAnimations()
         }
         applyIdleTimerPolicy()
         for name in [UIApplication.didEnterBackgroundNotification, UIApplication.willTerminateNotification] {
@@ -325,6 +437,64 @@ final class MuseAppModel: ObservableObject {
 
     func stopPairing() {
         environment.pairing.stop()
+    }
+
+    func requestAvatar() {
+        avatarRequested = true
+        sendChat(PalL10n.format("avatar.request_format", UIDevice.current.name))
+    }
+
+    /// The state's own animation, or the idle one while it has none.
+    var currentAvatarAnimation: MuseAvatarAnimation? {
+        let state: MuseAvatarState
+        if deviceAudio == .speaking {
+            state = .speaking
+        } else if deviceAudio == .listening || isRecordingVoice {
+            state = .listening
+        } else if isAwaitingReply || museActivity != nil {
+            state = .thinking
+        } else {
+            state = .idle
+        }
+        return avatarAnimations[state] ?? avatarAnimations[.idle]
+    }
+
+    private func reloadAvatarAnimations() {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let animations = self?.environment.vmImages.avatarAnimations() else { return }
+            DispatchQueue.main.async { self?.avatarAnimations = animations }
+        }
+    }
+
+    func clearAvatar() {
+        environment.vmImages.clearAvatar()
+    }
+
+    func setScreenBrightness(_ level: Double) {
+        screenBrightness = level
+        UIScreen.main.brightness = CGFloat(level)
+    }
+
+    func setSpeechVolume(_ volume: Double) {
+        speechVolume = volume
+        MuseSpeechVolume.set(Int(volume.rounded()))
+    }
+
+    private func refreshBattery() {
+        UIDevice.current.isBatteryMonitoringEnabled = true
+        batterySummary = MuseDeviceSummary.text(
+            batteryLevel: UIDevice.current.batteryLevel,
+            batteryState: UIDevice.current.batteryState,
+            freeBytes: (try? FileManager.default.attributesOfFileSystem(forPath: NSHomeDirectory()))?[.systemFreeSize] as? Int64
+        )
+    }
+
+    private func showToast(for command: String, succeeded: Bool) {
+        guard let toast = MuseCommandToast(command: command, succeeded: succeeded) else { return }
+        commandToast = toast
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+            if self?.commandToast?.id == toast.id { self?.commandToast = nil }
+        }
     }
 
     func sendChat(_ text: String) {
@@ -655,6 +825,8 @@ struct MuseAppView: View {
 }
 
 private enum MuseTheme {
+    // Solid on purpose: an iPhone 6s struggles with blur behind a scrolling chat.
+    static let bar = Color(UIColor.secondarySystemBackground)
     static let accent = Color(red: 0.00, green: 0.64, blue: 0.72)
     static let blue = Color(red: 0.05, green: 0.52, blue: 0.92)
     static let mint = Color(red: 0.00, green: 0.67, blue: 0.57)
@@ -700,6 +872,25 @@ private struct MuseCardModifier: ViewModifier {
 
 private extension View {
     func museCard() -> some View { modifier(MuseCardModifier()) }
+
+    @ViewBuilder
+    func chatKeyboardDismissBehavior(isFocused: FocusState<Bool>.Binding) -> some View {
+        let dragToDismiss = DragGesture(minimumDistance: 8)
+            .onChanged { value in
+                if value.translation.height > 4 { isFocused.wrappedValue = false }
+            }
+
+        if #available(iOS 16.0, *) {
+            self
+                .scrollDismissesKeyboard(.interactively)
+                .simultaneousGesture(dragToDismiss)
+                .onTapGesture { isFocused.wrappedValue = false }
+        } else {
+            self
+                .simultaneousGesture(dragToDismiss)
+                .onTapGesture { isFocused.wrappedValue = false }
+        }
+    }
 }
 
 private struct MusePrimaryButtonStyle: ButtonStyle {
@@ -804,7 +995,7 @@ private struct MuseOnboarding: View {
         .padding(.horizontal, 20)
         .padding(.top, 12)
         .padding(.bottom, 12)
-        .background(.ultraThinMaterial)
+        .background(MuseTheme.bar)
     }
 }
 
@@ -819,7 +1010,6 @@ private struct MuseMark: View {
                 .foregroundColor(.white)
         }
         .frame(width: size, height: size)
-        .shadow(color: MuseTheme.accent.opacity(0.35), radius: 14, y: 5)
         .accessibilityHidden(true)
     }
 }
@@ -1169,6 +1359,50 @@ private struct PairPulse: View {
     }
 }
 
+/// A short note that a command acted on the device. Only for things a person can notice or would
+/// want to know about; captions, cards and sensors already show themselves or do nothing visible.
+struct MuseCommandToast: Equatable {
+    let id = UUID()
+    let text: String
+    let succeeded: Bool
+
+    private static let titles: [String: String] = [
+        "torch.set": "Фонарик",
+        "haptics.impact": "Вибрация",
+        "shortcuts.run": "Быстрая команда",
+        "display.set_brightness": "Яркость",
+        "camera.capture": "Снимок камеры",
+        "location.current": "Местоположение",
+        "lan.request": "Запрос в локальную сеть",
+        "display.set_avatar": "Аватар Muse"
+    ]
+
+    init?(command: String, succeeded: Bool) {
+        guard let title = Self.titles[command] else { return nil }
+        self.succeeded = succeeded
+        text = PalL10n.format(
+            succeeded ? "command.done_format" : "command.failed_format",
+            PalL10n.text(title)
+        )
+    }
+}
+
+enum MuseDeviceSummary {
+    static func text(batteryLevel: Float, batteryState: UIDevice.BatteryState, freeBytes: Int64?) -> String {
+        var parts: [String] = []
+        if batteryLevel >= 0 {
+            let percent = Int((batteryLevel * 100).rounded())
+            let charging = batteryState == .charging || batteryState == .full
+            parts.append(PalL10n.format(charging ? "device.battery_charging_format" : "device.battery_format", percent))
+        }
+        if let freeBytes {
+            let size = ByteCountFormatter.string(fromByteCount: freeBytes, countStyle: .file)
+            parts.append(PalL10n.format("device.free_format", size))
+        }
+        return parts.joined(separator: " · ")
+    }
+}
+
 private struct MuseMainTabs: View {
     @ObservedObject var model: MuseAppModel
 
@@ -1183,6 +1417,56 @@ private struct MuseMainTabs: View {
                 .tabItem { Label("Настройки", systemImage: "gearshape.fill") }
         }
         .accentColor(MuseTheme.mint)
+        .overlay(alignment: .top) {
+            if let toast = model.commandToast {
+                Label(toast.text, systemImage: toast.succeeded ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .background(toast.succeeded ? MuseTheme.mint : Color.orange)
+                    .clipShape(Capsule())
+                    .padding(.top, 8)
+                    .allowsHitTesting(false)
+                    .accessibilityAddTraits(.isStaticText)
+            }
+        }
+    }
+}
+
+/// An image Muse put on the screen. A tap opens it across the whole screen.
+private struct MuseDrawnImagePanel: View {
+    let image: UIImage
+    let dismiss: () -> Void
+    @State private var isFullScreen = false
+
+    var body: some View {
+        Image(uiImage: image)
+            .resizable()
+            .scaledToFit()
+            .frame(maxWidth: .infinity, maxHeight: 280)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .contentShape(Rectangle())
+            .onTapGesture { isFullScreen = true }
+            .overlay(alignment: .topTrailing) {
+                Button(action: dismiss) {
+                    // Dark behind white, so it shows on a light picture as well as a dark one.
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.white)
+                        .background(Circle().fill(Color.black.opacity(0.6)))
+                        .padding(8)
+                }
+                .accessibilityLabel(PalL10n.text("Закрыть"))
+            }
+            .accessibilityElement(children: .contain)
+            .fullScreenCover(isPresented: $isFullScreen) {
+                ZStack {
+                    Color.black.ignoresSafeArea()
+                    Image(uiImage: image).resizable().scaledToFit()
+                }
+                .onTapGesture { isFullScreen = false }
+            }
     }
 }
 
@@ -1195,57 +1479,34 @@ private struct MuseChatView: View {
     @ObservedObject var model: MuseAppModel
     @State private var draft = ""
     @State private var mediaPicker: MediaPicker?
+    @FocusState private var isComposerFocused: Bool
 
     private static let bottomAnchor = "chat-bottom"
 
     var body: some View {
         VStack(spacing: 0) {
+            MuseChatHeader(model: model)
+
+            if let card = model.card {
+                MuseWidgetCard(card: card) { model.card = nil }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(MuseTheme.bar)
+                    .overlay(alignment: .bottom) { Divider() }
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
+            if let image = model.drawnImage {
+                MuseDrawnImagePanel(image: image) { model.drawnImage = nil }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(MuseTheme.bar)
+                    .overlay(alignment: .bottom) { Divider() }
+            }
+
             ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 18) {
-                    HStack {
-                        MuseMark(size: 46)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Muse").font(.title2.bold())
-                            Label {
-                                Text(PalL10n.key(model.runtimeState == .registered ? "Подключено к Muse VM" : "Пара создана"))
-                            } icon: {
-                                Image(systemName: model.runtimeState == .registered ? "network" : "checkmark.circle.fill")
-                            }
-                                .font(.caption.weight(.semibold)).foregroundColor(MuseTheme.mint)
-                        }
-                        Spacer()
-                    }
-                    .padding(.top, 8)
-
-                    StatusBanner(state: model.runtimeState)
-
-                    ChatBubble(
-                        text: PalL10n.text(model.runtimeState == .registered
-                            ? "Гаджет зарегистрирован в Muse. Сетевой канал активен и готов принимать команды."
-                            : "Пара создана и сохранена. Подключаем защищённый канал Muse VM…"),
-                        isMuse: true
-                    )
-
-                    if let card = model.card {
-                        HStack(alignment: .top, spacing: 12) {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(card.title).font(.headline)
-                                if !card.body.isEmpty {
-                                    Text(card.body)
-                                        .font(.subheadline)
-                                        .foregroundColor(MuseTheme.secondary)
-                                }
-                            }
-                            Spacer(minLength: 0)
-                            Button { model.card = nil } label: {
-                                Image(systemName: "xmark").font(.caption.weight(.bold))
-                            }
-                            .accessibilityLabel("Закрыть карточку")
-                        }
-                        .museCard()
-                    }
-
                     if !model.caption.isEmpty {
                         ChatBubble(text: model.caption, isMuse: true)
                     }
@@ -1275,6 +1536,7 @@ private struct MuseChatView: View {
                 }
                 .padding(20)
             }
+            .chatKeyboardDismissBehavior(isFocused: $isComposerFocused)
             .onAppear {
                 proxy.scrollTo(Self.bottomAnchor, anchor: .bottom)
             }
@@ -1324,6 +1586,7 @@ private struct MuseChatView: View {
                     .accessibilityLabel("Добавить фото")
 
                     TextField("Сообщение для Muse", text: $draft)
+                        .focused($isComposerFocused)
                         .padding(.horizontal, 15)
                         .frame(minHeight: 46)
                         .background(MuseTheme.elevated)
@@ -1337,7 +1600,8 @@ private struct MuseChatView: View {
                 if hasDraft && !model.isRecordingVoice {
                     Button(action: sendDraft) {
                         Image(systemName: model.isSendingChat ? "ellipsis" : "arrow.up")
-                            .font(.headline)
+                            .font(.headline.weight(.bold))
+                            .foregroundColor(canSend ? .white : MuseTheme.secondary)
                             .frame(width: 44, height: 44)
                             .background(canSend ? MuseTheme.accent : MuseTheme.elevated)
                             .clipShape(Circle())
@@ -1351,12 +1615,14 @@ private struct MuseChatView: View {
             .padding(.horizontal, 16)
             .padding(.top, 10)
             .padding(.bottom, 8)
-            .background(.ultraThinMaterial)
+            .background(MuseTheme.bar)
             .overlay(alignment: .top) {
-                Text(model.voiceHint ?? PalL10n.text(model.runtimeState == .registered ? "Защищённый чат Muse активен" : "Ждём регистрации в Muse VM"))
-                    .font(.caption2)
-                    .foregroundColor(MuseTheme.secondary)
-                    .offset(y: -17)
+                if let voiceHint = model.voiceHint {
+                    Text(voiceHint)
+                        .font(.caption2)
+                        .foregroundColor(MuseTheme.secondary)
+                        .offset(y: -17)
+                }
             }
         }
         .background(MuseTheme.background.ignoresSafeArea())
@@ -1392,6 +1658,173 @@ private struct MuseChatView: View {
         let message = draft
         draft = ""
         model.sendChat(message)
+    }
+}
+
+/// UIImageView plays frames with far less work than redrawing a SwiftUI view on a timer.
+private struct MuseAvatarAnimationView: UIViewRepresentable {
+    let animation: MuseAvatarAnimation
+
+    final class Coordinator {
+        var shown: UUID?
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> UIImageView {
+        let view = UIImageView()
+        view.contentMode = .scaleAspectFill
+        view.clipsToBounds = true
+        view.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        view.setContentHuggingPriority(.defaultLow, for: .vertical)
+        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        view.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+        return view
+    }
+
+    func updateUIView(_ view: UIImageView, context: Context) {
+        if context.coordinator.shown != animation.id {
+            context.coordinator.shown = animation.id
+            view.stopAnimating()
+            view.image = animation.frames.first
+            view.animationImages = animation.frames.count > 1 ? animation.frames : nil
+            view.animationDuration = animation.duration
+        }
+        if view.animationImages != nil, !view.isAnimating { view.startAnimating() }
+    }
+}
+
+private struct MuseChatHeader: View {
+    @ObservedObject var model: MuseAppModel
+
+    private var status: String {
+        switch model.deviceAudio {
+        case .speaking: return PalL10n.text("Говорит")
+        case .listening: return PalL10n.text("Слушает")
+        case nil: break
+        }
+        if model.isRecordingVoice { return PalL10n.text("Слушает") }
+        if let activity = model.museActivity, !activity.isEmpty { return activity }
+        return model.runtimeState == .registered
+            ? PalL10n.text("Подключено")
+            : model.runtimeState.shortTitle
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Group {
+                if let animation = model.currentAvatarAnimation {
+                    MuseAvatarAnimationView(animation: animation)
+                } else if let data = model.agentAvatar,
+                   let avatar = UIImage(data: data) {
+                    Image(uiImage: avatar)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    MuseMark(size: 34)
+                }
+            }
+            .frame(width: 44, height: 44)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            Text(model.agentIdentity?.name.isEmpty == false ? model.agentIdentity!.name : "Muse")
+                .font(.headline)
+                .lineLimit(1)
+            Circle()
+                .fill(model.runtimeState == .registered ? MuseTheme.mint : Color.orange)
+                .frame(width: 7, height: 7)
+                .accessibilityHidden(true)
+            Text(status)
+                .font(.subheadline.weight(.medium))
+                .foregroundColor(MuseTheme.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+            Spacer(minLength: 0)
+            if model.isAwaitingReply {
+                ProgressView()
+                    .scaleEffect(0.8)
+                    .accessibilityLabel("Muse отвечает…")
+            }
+        }
+        .padding(.horizontal, 16)
+        .frame(minHeight: 52)
+        .background(MuseTheme.bar)
+        .overlay(alignment: .bottom) { Divider() }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct MuseWidgetCard: View {
+    let card: MuseCard
+    let dismiss: () -> Void
+
+    private func remaining(at date: Date) -> TimeInterval? {
+        guard let duration = card.durationSeconds else { return nil }
+        return max(0, duration - date.timeIntervalSince(card.shownAt))
+    }
+
+    private func timerText(_ remaining: TimeInterval) -> String {
+        let seconds = Int(remaining.rounded(.up))
+        let hours = seconds / 3600
+        let minutes = (seconds % 3600) / 60
+        let tail = seconds % 60
+        return hours > 0
+            ? String(format: "%d:%02d:%02d", hours, minutes, tail)
+            : String(format: "%02d:%02d", minutes, tail)
+    }
+
+    var body: some View {
+        TimelineView(.periodic(from: card.shownAt, by: card.kind == .timer ? 1 : 60)) { context in
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: card.kind == .timer ? "timer" : card.kind == .progress ? "chart.bar.fill" : "rectangle.on.rectangle.angled")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(MuseTheme.accent)
+                    .frame(width: 32, height: 32)
+                    .background(MuseTheme.accent.opacity(0.13))
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(card.title)
+                            .font(.headline)
+                        Spacer(minLength: 8)
+                        if let value = remaining(at: context.date) {
+                            Text(timerText(value))
+                                .font(.system(.headline, design: .monospaced).weight(.semibold))
+                                .foregroundColor(value == 0 ? .red : MuseTheme.accent)
+                        } else if let progress = card.progress {
+                            Text("\(Int((progress * 100).rounded()))%")
+                                .font(.headline.monospacedDigit())
+                                .foregroundColor(MuseTheme.accent)
+                        }
+                    }
+                    if let duration = card.durationSeconds,
+                       let value = remaining(at: context.date) {
+                        ProgressView(value: duration - value, total: duration)
+                            .tint(MuseTheme.accent)
+                    } else if let progress = card.progress {
+                        ProgressView(value: progress)
+                            .tint(MuseTheme.accent)
+                    }
+                    if !card.body.isEmpty {
+                        Text(card.body)
+                            .font(.subheadline)
+                            .foregroundColor(MuseTheme.secondary)
+                            .lineLimit(3)
+                            .textSelection(.enabled)
+                    }
+                }
+                Button(action: dismiss) {
+                    Image(systemName: "xmark")
+                        .font(.caption.weight(.bold))
+                        .frame(width: 30, height: 30)
+                        .background(MuseTheme.elevated)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Закрыть карточку")
+            }
+            .museCard()
+            .accessibilityElement(children: .contain)
+        }
     }
 }
 
@@ -1440,49 +1873,49 @@ private struct VoiceRecordButton: View {
     }
 }
 
-private struct StatusBanner: View {
-    let state: MuseRuntimeState
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: state == .registered ? "checkmark.circle.fill" : "arrow.triangle.2.circlepath")
-                .foregroundColor(state == .registered ? MuseTheme.mint : .yellow)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(state.title).font(.subheadline.weight(.semibold))
-                Text(state.detail)
-                    .font(.caption).foregroundColor(MuseTheme.secondary)
-            }
-            Spacer(minLength: 0)
-        }
-        .museCard()
-    }
-}
-
 private struct ChatBubble: View {
     let text: String
     let isMuse: Bool
     var image: UIImage?
 
+    private var rendered: MuseWidgetMarkup {
+        isMuse
+            ? MuseWidgetMarkup.parse(text.trimmingCharacters(in: .whitespacesAndNewlines))
+            : MuseWidgetMarkup(text: text, widgetIDs: [])
+    }
+
     var body: some View {
-        HStack {
-            if !isMuse { Spacer(minLength: 45) }
-            VStack(alignment: .leading, spacing: 8) {
-                if let image {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxWidth: 220, maxHeight: 260)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                }
-                if !text.isEmpty {
-                    Text(text).font(.body).textSelection(.enabled)
+        Group {
+            if !rendered.text.isEmpty || image != nil {
+                HStack {
+                    if !isMuse { Spacer(minLength: 45) }
+                    VStack(alignment: .leading, spacing: 8) {
+                        if let image {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(maxWidth: 220, maxHeight: 260)
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        }
+                        if !rendered.text.isEmpty {
+                            Group {
+                                if isMuse {
+                                    Text(MuseChatMarkdown.attributed(rendered.text))
+                                } else {
+                                    Text(rendered.text)
+                                }
+                            }
+                            .font(.body)
+                            .textSelection(.enabled)
+                        }
+                    }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .background(isMuse ? MuseTheme.elevated : MuseTheme.accent)
+                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    if isMuse { Spacer(minLength: 45) }
                 }
             }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(isMuse ? MuseTheme.elevated : MuseTheme.accent)
-                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            if isMuse { Spacer(minLength: 45) }
         }
     }
 }
@@ -1491,6 +1924,7 @@ private struct MuseSettingsView: View {
     @ObservedObject var model: MuseAppModel
     @State private var showForgetConfirmation = false
     @State private var showClearHistoryConfirmation = false
+    @State private var showAbout = false
 
     var body: some View {
         ScrollView {
@@ -1525,6 +1959,29 @@ private struct MuseSettingsView: View {
                         title: "Чат и ответы",
                         detail: model.runtimeState == .registered ? PalL10n.text("Подключены и готовы") : model.runtimeState.shortTitle,
                         tint: model.runtimeState == .registered ? MuseTheme.mint : .orange
+                    )
+                    Divider().overlay(MuseTheme.stroke)
+                    Button(action: model.requestAvatar) {
+                        CapabilitySettingsRow(
+                            icon: "person.crop.circle.fill",
+                            title: "Аватар Muse",
+                            detail: PalL10n.text(avatarDetail),
+                            tint: model.agentAvatar == nil ? MuseTheme.blue : MuseTheme.mint
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!model.canSendToMuse)
+                    if model.agentAvatar != nil {
+                        Button("Убрать аватар", action: model.clearAvatar)
+                            .font(.subheadline)
+                            .padding(.bottom, 8)
+                    }
+                    Divider().overlay(MuseTheme.stroke)
+                    CapabilitySettingsRow(
+                        icon: "battery.75",
+                        title: "Это устройство",
+                        detail: model.batterySummary,
+                        tint: MuseTheme.mint
                     )
                     Divider().overlay(MuseTheme.stroke)
                     CapabilitySettingsRow(
@@ -1600,25 +2057,31 @@ private struct MuseSettingsView: View {
                 }
                 .museCard()
 
-                VStack(alignment: .leading, spacing: 8) {
-                    SettingsSectionLabel(title: "ЗАПИСЬ ГОЛОСА")
-                    Picker("Запись голоса", selection: $model.voiceRecordMode) {
-                        ForEach(MuseVoiceRecordMode.allCases) { mode in
-                            Text(mode.title).tag(mode)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .disabled(model.isRecordingVoice)
-                    Text(PalL10n.text(model.voiceRecordMode == .hold
-                         ? "Удерживайте кнопку микрофона и говорите. Отпустите, чтобы отправить."
-                         : "Нажмите на микрофон, чтобы начать запись. Нажмите ещё раз, чтобы отправить."))
-                        .font(.caption)
-                        .foregroundColor(MuseTheme.secondary)
-                }
-                .museCard()
-
                 VStack(alignment: .leading, spacing: 14) {
-                    SettingsSectionLabel(title: "СИНХРОНИЗАЦИЯ И РАБОТА")
+                    SettingsSectionLabel(title: "ПОВЕДЕНИЕ И СИНХРОНИЗАЦИЯ")
+                    SettingsSliderRow(
+                        title: "Яркость экрана",
+                        detail: "Muse тоже может её менять, здесь видно текущее значение",
+                        value: Binding(get: { model.screenBrightness }, set: model.setScreenBrightness),
+                        range: 0...1
+                    )
+                    Divider().overlay(MuseTheme.stroke)
+                    SettingsSliderRow(
+                        title: "Громкость речи",
+                        detail: "Для того, что Muse произносит вслух. Кнопки громкости устройства тоже действуют",
+                        value: Binding(get: { model.speechVolume }, set: model.setSpeechVolume),
+                        range: 0...100
+                    )
+                    Divider().overlay(MuseTheme.stroke)
+                    SettingsChoiceRow(
+                        title: "Запись голоса",
+                        detail: PalL10n.text(model.voiceRecordMode == .hold
+                            ? "Удерживайте кнопку микрофона и говорите. Отпустите, чтобы отправить."
+                            : "Нажмите на микрофон, чтобы начать запись. Нажмите ещё раз, чтобы отправить."),
+                        selection: $model.voiceRecordMode,
+                        isDisabled: model.isRecordingVoice
+                    )
+                    Divider().overlay(MuseTheme.stroke)
                     SettingsToggleRow(
                         title: "История чата по Wi-Fi",
                         detail: model.peerSyncStatus,
@@ -1637,6 +2100,16 @@ private struct MuseSettingsView: View {
                         isOn: $model.keepScreenAwake
                     )
                 }
+                .museCard()
+
+                Button { showAbout = true } label: {
+                    SettingsNavigationRow(
+                        icon: "info.circle.fill",
+                        title: "О приложении",
+                        detail: "Репозиторий, тестирование, участие, конфиденциальность и лицензии"
+                    )
+                }
+                .buttonStyle(.plain)
                 .museCard()
 
                 DisclosureGroup("Диагностика") {
@@ -1668,6 +2141,9 @@ private struct MuseSettingsView: View {
         .background(MuseTheme.background.ignoresSafeArea())
         .navigationBarHidden(true)
         .onAppear { model.refreshPermissions() }
+        .sheet(isPresented: $showAbout) {
+            PalAboutView()
+        }
         .confirmationDialog(
             "Очистить историю чата?",
             isPresented: $showClearHistoryConfirmation,
@@ -1698,6 +2174,11 @@ private struct MuseSettingsView: View {
         }.count
     }
 
+    private var avatarDetail: String {
+        if model.avatarRequested { return "Запрос отправлен, ответ придёт в чат" }
+        return model.agentAvatar == nil ? "Нажмите, и Muse пришлёт его сюда" : "Нажмите, чтобы обновить"
+    }
+
     private var sensorAccessSummary: String {
         PalL10n.format("settings.sensor_access_format", sensorAccessCount)
     }
@@ -1709,6 +2190,231 @@ private struct MuseSettingsView: View {
         return model.approvedDevices.isEmpty
             ? PalL10n.text("Доступ есть, новые устройства потребуют подтверждения")
             : PalL10n.format("settings.approved_count_format", model.approvedDevices.count)
+    }
+}
+
+private struct SettingsChoiceRow: View {
+    let title: String
+    let detail: String
+    @Binding var selection: MuseVoiceRecordMode
+    let isDisabled: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 12) {
+                Text(PalL10n.key(title))
+                    .font(.subheadline.weight(.semibold))
+                Spacer(minLength: 12)
+                Menu {
+                    Picker("Запись голоса", selection: $selection) {
+                        ForEach(MuseVoiceRecordMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Text(selection.title)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.caption2.weight(.bold))
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(MuseTheme.accent)
+                }
+                .disabled(isDisabled)
+            }
+            Text(detail)
+                .font(.caption)
+                .foregroundColor(MuseTheme.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+private struct SettingsNavigationRow: View {
+    let icon: String
+    let title: String
+    let detail: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .foregroundColor(MuseTheme.accent)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(PalL10n.key(title))
+                    .font(.subheadline.weight(.semibold))
+                Text(PalL10n.key(detail))
+                    .font(.caption)
+                    .foregroundColor(MuseTheme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.bold))
+                .foregroundColor(MuseTheme.secondary)
+        }
+        .contentShape(Rectangle())
+    }
+}
+
+private struct PalAboutView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    private let repositoryURL = URL(string: "https://github.com/exrector/muse-gadget-ios")!
+    private let testingURL = URL(string: "https://github.com/exrector/muse-gadget-ios/blob/main/Docs/TESTING.md")!
+    private let contributingURL = URL(string: "https://github.com/exrector/muse-gadget-ios/blob/main/CONTRIBUTING.md")!
+    private let privacyURL = URL(string: "https://github.com/exrector/muse-gadget-ios/blob/main/PRIVACY.md")!
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    VStack(spacing: 10) {
+                        MuseMark(size: 70)
+                        Text("Pal Again")
+                            .font(.title2.bold())
+                        Text("Make Old Devices Smart Again.")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundColor(MuseTheme.secondary)
+                        Text(appVersion)
+                            .font(.caption.monospacedDigit())
+                            .foregroundColor(MuseTheme.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .museCard()
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        SettingsSectionLabel(title: "ПРОЕКТ")
+                        AboutExternalRow(icon: "chevron.left.forwardslash.chevron.right", title: "Исходный код", url: repositoryURL)
+                        Divider().overlay(MuseTheme.stroke)
+                        AboutExternalRow(icon: "testtube.2", title: "Присоединиться к тестированию", url: testingURL)
+                        Divider().overlay(MuseTheme.stroke)
+                        AboutExternalRow(icon: "person.2.fill", title: "Помочь проекту", url: contributingURL)
+                    }
+                    .museCard()
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        SettingsSectionLabel(title: "КОНФИДЕНЦИАЛЬНОСТЬ")
+                        Text("SDK Token и данные пары хранятся в системной Связке ключей. Сообщения, фото, голос и запрошенные данные устройства передаются Muse только для выполнения выбранных вами функций. Pal Again не содержит рекламы и собственной аналитики.")
+                            .font(.subheadline)
+                            .fixedSize(horizontal: false, vertical: true)
+                        AboutExternalRow(icon: "hand.raised.fill", title: "Политика конфиденциальности", url: privacyURL)
+                    }
+                    .museCard()
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        SettingsSectionLabel(title: "ЛИЦЕНЗИИ И ПРАВОВЫЕ СВЕДЕНИЯ")
+                        Text("Pal Again — независимый проект сообщества с открытым исходным кодом. Muse и связанные товарные знаки принадлежат их правообладателям.")
+                            .font(.subheadline)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text("Каждый пользователь вводит собственный SDK Token. Pal Again не содержит общего токена и не продаёт доступ к Muse.")
+                            .font(.caption)
+                            .foregroundColor(MuseTheme.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text("Pal Again стоит $1. Эта сумма оплачивает готовую сборку, подпись и доставку через App Store и помогает поддерживать независимую разработку, тестирование на старых устройствах и Apple Developer Program стоимостью около $100 в год. Доступ к Muse не продаётся: каждый пользователь использует собственный SDK Token.")
+                            .font(.caption)
+                            .foregroundColor(MuseTheme.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Divider().overlay(MuseTheme.stroke)
+                        NavigationLink {
+                            BundledLegalDocumentView(title: "Apache License 2.0", resourceName: "LICENSE")
+                        } label: {
+                            AboutNavigationRow(title: "Apache License 2.0")
+                        }
+                        Divider().overlay(MuseTheme.stroke)
+                        NavigationLink {
+                            BundledLegalDocumentView(title: "NOTICE", resourceName: "NOTICE")
+                        } label: {
+                            AboutNavigationRow(title: "NOTICE")
+                        }
+                    }
+                    .museCard()
+                }
+                .padding(20)
+            }
+            .background(MuseTheme.background.ignoresSafeArea())
+            .navigationTitle("О приложении")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Готово") { dismiss() }
+                }
+            }
+        }
+        .navigationViewStyle(.stack)
+    }
+
+    private var appVersion: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
+        return PalL10n.format("about.version_format", version, build)
+    }
+}
+
+private struct AboutExternalRow: View {
+    let icon: String
+    let title: String
+    let url: URL
+
+    var body: some View {
+        Link(destination: url) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .foregroundColor(MuseTheme.accent)
+                    .frame(width: 26)
+                Text(PalL10n.key(title))
+                    .font(.subheadline.weight(.semibold))
+                Spacer(minLength: 8)
+                Image(systemName: "arrow.up.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundColor(MuseTheme.secondary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct AboutNavigationRow: View {
+    let title: String
+
+    var body: some View {
+        HStack {
+            Text(PalL10n.key(title))
+                .font(.subheadline.weight(.semibold))
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.bold))
+                .foregroundColor(MuseTheme.secondary)
+        }
+        .contentShape(Rectangle())
+    }
+}
+
+private struct BundledLegalDocumentView: View {
+    let title: String
+    let resourceName: String
+
+    var body: some View {
+        ScrollView {
+            Text(documentText)
+                .font(.caption.monospaced())
+                .foregroundColor(.primary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(20)
+        }
+        .background(MuseTheme.background.ignoresSafeArea())
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var documentText: String {
+        guard let url = Bundle.main.url(forResource: resourceName, withExtension: nil),
+              let text = try? String(contentsOf: url) else {
+            return PalL10n.text("Документ не найден в сборке.")
+        }
+        return text
     }
 }
 
@@ -1748,6 +2454,26 @@ private struct GrantRow: View {
             Spacer()
             Button("Убрать", role: .destructive, action: revoke)
                 .font(.caption.weight(.semibold))
+        }
+    }
+}
+
+private struct SettingsSliderRow: View {
+    let title: String
+    let detail: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(PalL10n.key(title)).font(.subheadline.weight(.semibold))
+            Slider(value: $value, in: range)
+                .tint(MuseTheme.accent)
+                .accessibilityLabel(PalL10n.text(title))
+            Text(PalL10n.key(detail))
+                .font(.caption)
+                .foregroundColor(MuseTheme.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }

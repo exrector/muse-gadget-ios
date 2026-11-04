@@ -48,6 +48,8 @@ Ask Muse in the chat, or from your main phone. If you have several gadgets, say 
 | Ask for | What happens |
 |---|---|
 | A caption or a card | Text appears on the gadget's screen |
+| Your avatar | Under Settings, tap **Muse avatar**. Muse draws it in the chat and it appears beside its name |
+| Show a picture | Muse saves it on its VM and it appears above the chat. Tap to enlarge it, or × to close it |
 | Say something aloud | The gadget speaks through its speaker |
 | Vibrate | iPhone vibrates. iPads have no vibration motor and report that |
 | Flashlight | Turns on or off, where the device has one |
@@ -90,6 +92,9 @@ The **Настройки** tab has:
 |---|---|
 | **Permissions** | Shows what iOS has allowed, with a link to system settings |
 | **Approved for Muse** | Lists shortcuts and network devices you allowed. Tap **Remove** to withdraw one |
+| **Muse avatar** | Asks Muse to draw its avatar in the chat |
+| **This device** | Battery and free space |
+| **Screen brightness**, **Speech volume** | Screen brightness and how loud Muse speaks |
 | **Voice recording** | Tap or hold for voice notes |
 | **Chat history over Wi-Fi** | Direct sync between gadgets. Off by default, and still being tested |
 | **Chat history in iCloud** | Sync through iCloud. On by default |

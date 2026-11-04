@@ -30,11 +30,14 @@
 		A10000000000000000000018 /* MuseApprovals.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001B /* MuseApprovals.swift */; };
 		A10000000000000000000019 /* MuseShortcutsBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001C /* MuseShortcutsBridge.swift */; };
 		A1000000000000000000001A /* MuseLANServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001D /* MuseLANServices.swift */; };
+		A10000000000000000000F01 /* MuseVMImages.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000F01 /* MuseVMImages.swift */; };
 		A1000000000000000000001B /* MuseChatSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001E /* MuseChatSync.swift */; };
 		A1000000000000000000001C /* MuseChatPeerSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001F /* MuseChatPeerSync.swift */; };
 		A1000000000000000000001D /* PalLocalization.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000020 /* PalLocalization.swift */; };
 		A1000000000000000000001E /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000001 /* Localizable.strings */; };
 		A1000000000000000000001F /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000002 /* InfoPlist.strings */; };
+		A10000000000000000000020 /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000021 /* LICENSE */; };
+		A10000000000000000000021 /* NOTICE in Resources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000022 /* NOTICE */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -75,9 +78,12 @@
 		B1000000000000000000001B /* MuseApprovals.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Commands/MuseApprovals.swift; sourceTree = "<group>"; };
 		B1000000000000000000001C /* MuseShortcutsBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Commands/MuseShortcutsBridge.swift; sourceTree = "<group>"; };
 		B1000000000000000000001D /* MuseLANServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Commands/MuseLANServices.swift; sourceTree = "<group>"; };
+		B10000000000000000000F01 /* MuseVMImages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/MuseVMImages.swift; sourceTree = "<group>"; };
 		B1000000000000000000001E /* MuseChatSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/MuseChatSync.swift; sourceTree = "<group>"; };
 		B1000000000000000000001F /* MuseChatPeerSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/MuseChatPeerSync.swift; sourceTree = "<group>"; };
 		B10000000000000000000020 /* PalLocalization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UI/PalLocalization.swift; sourceTree = "<group>"; };
+		B10000000000000000000021 /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE; sourceTree = "<group>"; };
+		B10000000000000000000022 /* NOTICE */ = {isa = PBXFileReference; lastKnownFileType = text; path = NOTICE; sourceTree = "<group>"; };
 		B20000000000000000000001 /* en Localizable.strings */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		B20000000000000000000002 /* ru Localizable.strings */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ru; path = ru.lproj/Localizable.strings; sourceTree = "<group>"; };
 		B20000000000000000000003 /* en InfoPlist.strings */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
@@ -92,7 +98,7 @@
 /* Begin PBXGroup section */
 		G10000000000000000000001 = {
 			isa = PBXGroup;
-			children = (G10000000000000000000002 /* App */, G10000000000000000000005 /* Tests */, G10000000000000000000006 /* Products */);
+			children = (G10000000000000000000002 /* App */, G10000000000000000000005 /* Tests */, B10000000000000000000021 /* LICENSE */, B10000000000000000000022 /* NOTICE */, G10000000000000000000006 /* Products */);
 			sourceTree = "<group>";
 		};
 		G10000000000000000000002 /* App */ = {
@@ -109,7 +115,7 @@
 				B10000000000000000000007, B10000000000000000000008, B10000000000000000000009,
 				B1000000000000000000000A, B1000000000000000000000B, B1000000000000000000000C,
 				B10000000000000000000014,
-				B10000000000000000000015, B10000000000000000000016, B10000000000000000000017, B10000000000000000000018, B10000000000000000000019, B1000000000000000000001A, B1000000000000000000001B, B1000000000000000000001C, B1000000000000000000001D, B1000000000000000000001E, B1000000000000000000001F, B10000000000000000000020
+				B10000000000000000000015, B10000000000000000000016, B10000000000000000000017, B10000000000000000000018, B10000000000000000000019, B1000000000000000000001A, B1000000000000000000001B, B1000000000000000000001C, B1000000000000000000001D, B10000000000000000000F01, B1000000000000000000001E, B1000000000000000000001F, B10000000000000000000020
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -162,7 +168,7 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		J10000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A1000000000000000000000F, A1000000000000000000001E, A1000000000000000000001F); runOnlyForDeploymentPostprocessing = 0; };
+		J10000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A1000000000000000000000F, A1000000000000000000001E, A1000000000000000000001F, A10000000000000000000020, A10000000000000000000021); runOnlyForDeploymentPostprocessing = 0; };
 		J10000000000000000000002 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 
@@ -173,7 +179,7 @@
 			A10000000000000000000007, A10000000000000000000008, A10000000000000000000009,
 			A1000000000000000000000A, A1000000000000000000000B, A1000000000000000000000C,
 			A10000000000000000000011, A1000000000000000000001D,
-			A10000000000000000000012, A10000000000000000000013, A10000000000000000000014, A10000000000000000000015, A10000000000000000000016, A10000000000000000000017, A10000000000000000000018, A10000000000000000000019, A1000000000000000000001A, A1000000000000000000001B, A1000000000000000000001C
+			A10000000000000000000012, A10000000000000000000013, A10000000000000000000014, A10000000000000000000015, A10000000000000000000016, A10000000000000000000017, A10000000000000000000018, A10000000000000000000019, A1000000000000000000001A, A10000000000000000000F01, A1000000000000000000001B, A1000000000000000000001C
 		); runOnlyForDeploymentPostprocessing = 0; };
 		I10000000000000000000002 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000010); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */

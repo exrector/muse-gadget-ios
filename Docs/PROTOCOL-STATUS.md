@@ -19,7 +19,15 @@
 | Second gadget on the same SDK token | Verified 2026-11-03: Muse sees iPhone 6s and iPad (6th generation) as two devices on one token | — |
 | Haptics on iPhone 6s and older | Verified on iPhone 6s, iOS 15.8.8, 2026-11-03: `haptics.impact` vibrates through `kSystemSoundID_Vibrate` | An earlier attempt was not felt, cause not established |
 | Haptics on iPad | Not supported by the hardware; returns `haptics_unavailable` | — |
-| Flashlight, brightness, card | Implemented, awaiting live check | Visible change on the device from a real invoke |
+| Flashlight | By the owner's report, 2026-11-04: `torch.set` works on iPhone 6s and returns `torch_unavailable` on iPad (6th generation), which has no flash | — |
+| Brightness, card | Implemented, awaiting live check | Visible change on the device from a real invoke |
+| `GET /identity` | Refused on iPad (6th generation), 2026-11-04: HTTP 403, `route not allowed for this credential's scopes`, while chat on the same session works. The name stays «Muse» | A 200 with the agent's name |
+| `display.set_avatar` | Verified on iPad (6th generation), iPadOS 17.7.11, 2026-11-04: Muse saved a PNG, the VM file was read over the Noise session, and the picture stayed in the chat header after a reinstall | The same on iPhone 6s |
+| Avatar animations by state | Verified on iPad (6th generation), 2026-11-04: Muse installed four animated WebP files, and the idle animation plays in the chat header | The avatar visibly changing while Muse thinks and speaks; the same on iPhone 6s |
+| `display.draw_file` | Verified on iPad (6th generation), 2026-11-04: `drawn: true`, image shown above the chat | The same on iPhone 6s |
+| `audio.speak` | Verified on iPad (6th generation), 2026-11-04, by the owner's report | The same on iPhone 6s |
+| `voice.configure` | Implemented, awaiting live check | `audio.speak` is quieter at a lower volume |
+| Speaking and listening states, command toasts, battery, brightness and volume controls | Implemented, awaiting live check | Seen on the device during a real invoke |
 | `shortcuts.run` | Simple notification shortcuts run on iPhone 6s, iOS 15.8.8, 2026-11-03, by the owner's report | `finished=true` and a text result reaching Muse |
 | Chat sync through iCloud | Verified from iPad to iPhone 15 Pro Max on one Apple ID, 2026-11-03, by the owner's report | The reverse direction, with both devices paired |
 | Chat sync over Wi-Fi | Postponed and off by default; exchange verified between two instances over real sockets on a Mac, where the first run after a rebuild can stall for about 25 seconds before recovering | iPhone 6s and iPad show the same text history with different Apple IDs |

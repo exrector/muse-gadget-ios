@@ -11,3 +11,10 @@
 "lan.approval_format" = "Muse просит обратиться к %@ в вашей сети: %@. Если разрешить, дальше доступ к этому устройству будет без вопроса. Отозвать можно в настройках.";
 "settings.sensor_access_format" = "Разрешено: %d из 3";
 "settings.approved_count_format" = "Подтверждено: %d";
+"about.version_format" = "Версия %@ (%@)";
+"avatar.request_format" = "Поставь свой аватар на экран гаджета «%@». Для каждого состояния idle, listening, thinking и speaking возьми анимированный вариант своего аватара из профиля Muse: GIF, APNG или WebP, квадратный, до 256×256 и до 4 МБ. Сохрани файлы на своей VM и для каждого вызови на этом устройстве команду display.set_avatar с path и state. Рисуй заново только то, чего нет. Если анимаций нет совсем, вызови display.set_avatar с неподвижной картинкой без state и скажи об этом.";
+"command.done_format" = "%@: готово";
+"command.failed_format" = "%@: не удалось";
+"device.battery_format" = "Заряд %d %%";
+"device.battery_charging_format" = "Заряд %d %%, заряжается";
+"device.free_format" = "свободно %@";

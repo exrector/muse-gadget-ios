@@ -35,6 +35,7 @@ final class NativeCommandServices {
             guard Self.requireForeground(completion) else { return }
             let previous = Double(UIScreen.main.brightness)
             UIScreen.main.brightness = CGFloat(level)
+            NotificationCenter.default.post(name: .museBrightnessChanged, object: nil)
             completion(CommandResult(success: true, value: ["level": level, "previous_level": previous]))
         }
     }
@@ -126,11 +127,16 @@ final class NativeCommandServices {
                 Self.deliver(.failure("invalid_arguments"), to: completion)
                 return
             }
+            NotificationCenter.default.post(name: .museDeviceAudioChanged, object: MuseDeviceAudio.listening)
             self.recorder.record(
                 durationSeconds: min(durationSeconds, 15),
-                maxBytes: 2 * 1024 * 1024,
-                completion: completion
-            )
+                maxBytes: 2 * 1024 * 1024
+            ) { result in
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .museDeviceAudioChanged, object: nil)
+                }
+                completion(result)
+            }
         }
     }
 
@@ -195,13 +201,113 @@ struct MuseCard: Equatable, Identifiable {
     let id = UUID()
     let title: String
     let body: String
+    let kind: Kind
+    let durationSeconds: TimeInterval?
+    let progress: Double?
+    let shownAt: Date
+
+    enum Kind: String, Equatable {
+        case info
+        case timer
+        case progress
+    }
+
+    init(
+        title: String,
+        body: String,
+        kind: Kind = .info,
+        durationSeconds: TimeInterval? = nil,
+        progress: Double? = nil,
+        shownAt: Date = Date()
+    ) {
+        self.title = title
+        self.body = body
+        self.kind = kind
+        self.durationSeconds = durationSeconds
+        self.progress = progress
+        self.shownAt = shownAt
+    }
+
+    static func interpreted(
+        title: String,
+        body: String,
+        kind explicitKind: Kind?,
+        durationSeconds explicitDuration: TimeInterval?,
+        progress: Double?,
+        shownAt: Date = Date()
+    ) -> MuseCard {
+        var kind = explicitKind ?? .info
+        var duration = explicitDuration
+        if explicitKind == nil,
+           duration == nil,
+           (title + " " + body).lowercased().range(of: #"(timer|таймер)"#, options: .regularExpression) != nil,
+           let inferred = inferredDuration(from: title + " " + body) {
+            kind = .timer
+            duration = inferred
+        }
+        return MuseCard(
+            title: title,
+            body: body,
+            kind: kind,
+            durationSeconds: duration,
+            progress: progress,
+            shownAt: shownAt
+        )
+    }
+
+    private static func inferredDuration(from text: String) -> TimeInterval? {
+        let pattern = #"([0-9]+(?:[.,][0-9]+)?)\s*(seconds?|secs?|секунд[а-я]*|сек|minutes?|mins?|минут[а-я]*|мин|hours?|hrs?|час[а-я]*)"#
+        guard let expression = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
+              let match = expression.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              let numberRange = Range(match.range(at: 1), in: text),
+              let unitRange = Range(match.range(at: 2), in: text),
+              let number = Double(text[numberRange].replacingOccurrences(of: ",", with: ".")) else { return nil }
+        let unit = text[unitRange].lowercased()
+        let multiplier: Double
+        if unit.hasPrefix("h") || unit.hasPrefix("час") { multiplier = 3_600 }
+        else if unit.hasPrefix("m") || unit.hasPrefix("мин") { multiplier = 60 }
+        else { multiplier = 1 }
+        let duration = number * multiplier
+        return duration.isFinite && (1...86_400).contains(duration) ? duration : nil
+    }
 
     static func == (lhs: MuseCard, rhs: MuseCard) -> Bool {
-        lhs.title == rhs.title && lhs.body == rhs.body
+        lhs.title == rhs.title
+            && lhs.body == rhs.body
+            && lhs.kind == rhs.kind
+            && lhs.durationSeconds == rhs.durationSeconds
+            && lhs.progress == rhs.progress
+            && lhs.shownAt == rhs.shownAt
+    }
+}
+
+/// What the speaker or microphone is doing because of a command, so the screen can say so.
+enum MuseDeviceAudio {
+    case speaking
+    case listening
+}
+
+enum MuseSpeechVolume {
+    private static let key = "speechVolume"
+
+    /// 0 to 100. A missing value reads as full volume.
+    static var current: Int {
+        guard let stored = UserDefaults.standard.object(forKey: key) as? Int else { return 100 }
+        return min(max(stored, 0), 100)
+    }
+
+    static func set(_ volume: Int) {
+        UserDefaults.standard.set(min(max(volume, 0), 100), forKey: key)
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .museSpeechVolumeChanged, object: nil)
+        }
     }
 }
 
 extension Notification.Name {
+    static let museDeviceAudioChanged = Notification.Name("MuseGadgetLegacy.deviceAudioChanged")
+    static let museSpeechVolumeChanged = Notification.Name("MuseGadgetLegacy.speechVolumeChanged")
+    static let museBrightnessChanged = Notification.Name("MuseGadgetLegacy.brightnessChanged")
     static let museCardChanged = Notification.Name("MuseGadgetLegacy.cardChanged")
 }
 
@@ -324,7 +430,9 @@ private final class NativeSpeechService: NSObject, AVSpeechSynthesizerDelegate, 
         let identifier = UUID().uuidString.lowercased()
         speechID = identifier
         let utterance = AVSpeechUtterance(string: value)
+        utterance.volume = Float(MuseSpeechVolume.current) / 100
         synthesizer.speak(utterance)
+        NotificationCenter.default.post(name: .museDeviceAudioChanged, object: MuseDeviceAudio.speaking)
         NativeCommandServices.deliver(CommandResult(success: true, value: [
             "accepted": true,
             "speaking": true,
@@ -342,6 +450,7 @@ private final class NativeSpeechService: NSObject, AVSpeechSynthesizerDelegate, 
 
     private func finishAudioSession() {
         speechID = nil
+        NotificationCenter.default.post(name: .museDeviceAudioChanged, object: nil)
         try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
         activity.end()
     }

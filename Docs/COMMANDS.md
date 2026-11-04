@@ -6,7 +6,7 @@ The set is an explicit allowlist, defined in [`IOSCommandRegistry.swift`](../App
 
 ## General rules
 
-- **Visible only.** Everything except `device.health`, `display.set_caption`, `shortcuts.list` and an already approved `lan.request` fails with `foreground_required` when the app is not on screen.
+- **Visible only.** Everything except `device.health`, `display.set_caption`, `display.set_avatar`, `display.clear_avatar`, `display.draw_file`, `display.clear_image`, `voice.configure`, `shortcuts.list` and an already approved `lan.request` fails with `foreground_required` when the app is not on screen.
 - **No remote permission prompts.** A command that needs an iOS permission fails with `permission_required` until the user has granted it in the app.
 - **On-screen approval.** Each new shortcut name and each new local host and port needs a tap on the device. Waiting for it can take up to 20 seconds.
 - **Timeouts.** A command answers `command_timeout` after 30 seconds, unless noted below.
@@ -45,6 +45,37 @@ Errors: `invalid_title`, `invalid_body`.
 
 Removes the card. Takes no parameters.
 
+### `display.set_avatar`
+
+Sets the picture shown beside Muse's name in the chat, from an image file on the VM. Muse has no route for reading an agent's avatar, so it draws the picture itself and saves it first. The app shrinks it to at most 512 px and keeps it across restarts. Times out after 60 seconds.
+
+| Parameter | Type | Notes |
+|---|---|---|
+| `path` | string, required | Relative path on the VM, such as `workspace/avatar.png`, up to 4 MiB |
+| `state` | string | `idle`, `listening`, `thinking` or `speaking` (`working` and `talking` also work), for an animated GIF, APNG or WebP played in that state. Leave it out for a still picture |
+
+Returns `installed`, plus `width`, `height` and `byte_count` for a still picture, or `state` and `frames` for an animation. Animations are kept at up to 48 frames of 96 px. A state with no animation of its own plays `idle`. Errors: `invalid_state`, `invalid_path`, `not_connected`, `file_too_large`, `file_unavailable` (with `http_status`), `read_failed`, `not_an_image`, `save_failed`. A failure leaves the current picture in place.
+
+### `display.clear_avatar`
+
+Removes the picture. Takes no parameters.
+
+### `display.draw_file`
+
+Shows an image file from the VM in a panel above the chat, where a tap opens it across the screen. It is not kept in the chat history. Times out after 60 seconds.
+
+Unlike the SDK's firmware there is no `display.draw_url`: fetching an address Muse supplies would give it a way to reach new hosts, including on the local network. Muse can save a picture on its VM and draw that file.
+
+| Parameter | Type | Notes |
+|---|---|---|
+| `path` | string, required | Relative path on the VM, up to 4 MiB |
+
+Returns `drawn`, `width` and `height`. Errors: `invalid_path`, `not_connected`, `file_too_large`, `file_unavailable` (with `http_status`), `read_failed`, `not_an_image`.
+
+### `display.clear_image`
+
+Removes the image. Takes no parameters.
+
 ### `display.set_brightness`
 
 | Parameter | Type | Notes |
@@ -82,6 +113,16 @@ Speaks text with the system voice.
 | `text` | string, required | Up to 1000 bytes |
 
 Returns `accepted`, `speaking` and `speech_id` as soon as speech starts. It does not wait for the end. Errors: `invalid_text`, `busy`, `audio_session_failed`.
+
+### `voice.configure`
+
+Sets how loud `audio.speak` is, kept across restarts. The device's volume buttons still apply on top, because iOS gives apps no way to set the system volume.
+
+| Parameter | Type | Notes |
+|---|---|---|
+| `volume` | integer | 0 to 100. Without it, the command reports the current volume |
+
+Returns `volume`. Errors: `invalid_volume`.
 
 ### `voice.record`
 

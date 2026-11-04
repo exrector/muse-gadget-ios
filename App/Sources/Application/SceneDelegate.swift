@@ -13,6 +13,11 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               let appDelegate = UIApplication.shared.delegate as? AppDelegate else { return }
 
         let window = UIWindow(windowScene: windowScene)
+        // Solid on purpose, like the app's other bars: older devices struggle with blur.
+        let tabBar = UITabBarAppearance()
+        tabBar.configureWithOpaqueBackground()
+        UITabBar.appearance().standardAppearance = tabBar
+        UITabBar.appearance().scrollEdgeAppearance = tabBar
         window.rootViewController = UIHostingController(
             rootView: MuseAppView(environment: appDelegate.environment)
         )

@@ -8,6 +8,7 @@ final class AppEnvironment {
     let grants: MuseGrantStore
     let approvals: MuseApprovalCenter
     let shortcuts: MuseShortcutsBridge
+    let vmImages: MuseVMImageService
     let commands: IOSCommandRegistry
     let pairing: PairingCoordinator
     let runtime: MuseRuntime
@@ -24,14 +25,23 @@ final class AppEnvironment {
         let approvals = MuseApprovalCenter()
         let shortcuts = MuseShortcutsBridge(grants: grants, approvals: approvals)
         let lan = MuseLANServices(permissions: permissions, grants: grants, approvals: approvals)
+        let vmImages = MuseVMImageService()
         let commands = IOSCommandRegistry.defaultRegistry(
             nativeServices: nativeServices,
             shortcuts: shortcuts,
             grants: grants,
-            lan: lan
+            lan: lan,
+            images: vmImages
         )
         let pairing = PairingCoordinator(identity: identity, credentials: credentialStore)
         let runtime = MuseRuntime(identity: identity, commands: commands, credentialStore: credentialStore)
+        vmImages.readVMFile = { [weak runtime] path, maxBytes, completion in
+            guard let runtime else {
+                completion(.failure(MuseRuntimeError.notConnected))
+                return
+            }
+            runtime.readVMFile(path: path, maxBytes: maxBytes, completion: completion)
+        }
 
         self.identity = identity
         chatPeers = MuseChatPeerSync(serviceName: identity.nodeID)
@@ -41,6 +51,7 @@ final class AppEnvironment {
         self.grants = grants
         self.approvals = approvals
         self.shortcuts = shortcuts
+        self.vmImages = vmImages
         self.commands = commands
         self.pairing = pairing
         self.runtime = runtime
