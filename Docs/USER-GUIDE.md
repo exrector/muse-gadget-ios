@@ -48,7 +48,6 @@ Ask Muse in the chat, or from your main phone. If you have several gadgets, say 
 | Ask for | What happens |
 |---|---|
 | A caption or a card | Text appears on the gadget's screen |
-| Your avatar | In Settings, tap **Muse avatar**. Muse sends its animations, and your other gadgets fetch them by themselves when they connect |
 | Show a picture | Muse saves it on its VM and it appears above the chat. Tap to enlarge it, or × to close it |
 | Say something aloud | The gadget speaks through its speaker |
 | Vibrate | iPhone vibrates. iPads have no vibration motor and report that |
@@ -65,6 +64,17 @@ Ask Muse in the chat, or from your main phone. If you have several gadgets, say 
 Some of these have not been confirmed on a real device yet. See [what has been tested](PROTOCOL-STATUS.md).
 
 **The gadget has to be open on screen.** iOS suspends apps in the background, so the camera, microphone, sensors and everything else stop answering once you leave the app. **Keep Screen Awake** in Settings is on by default for this reason, and a stand with a charger suits this well.
+
+### Muse's avatar and name
+
+A new gadget shows a plain mark and the name «Muse». They do not arrive by themselves the first time, because Muse has to send them:
+
+1. Open the app on the gadget, wait for **Connected**, and keep it on screen.
+2. Open **Settings** (the gear button) and tap **Muse avatar**. This sends Muse a request in the chat, which you can read.
+3. Muse sets its name and sends an animation for each of idle, listening, thinking and speaking. If it has no animation for one, it draws it, which can take several minutes.
+4. The still picture appears first. The animations start after the gadget has prepared them once, which takes a few minutes and needs the app on screen. From then on they play without Muse.
+
+You only do this on one gadget. Muse also keeps a list on its VM, and your other gadgets fetch from it when they connect, as long as Muse wrote that list. New movements arrive the same way. **Remove Avatar** in Settings removes it from that gadget only, and it stays removed until Muse sets one again.
 
 ### Apple Shortcuts
 
@@ -92,10 +102,10 @@ The gear button opens **Settings**: under the avatar on an iPad, and in the head
 |---|---|
 | **Permissions** | Shows what iOS has allowed, with a link to system settings |
 | **Approved for Muse** | Lists shortcuts and network devices you allowed. Tap **Remove** to withdraw one |
-| **Muse avatar** | Asks Muse to draw its avatar in the chat |
+| **Muse avatar** | Asks Muse to set its name and avatar. See [Muse's avatar and name](#muses-avatar-and-name) |
 | **This device** | Battery and free space |
 | **Screen brightness**, **Speech volume** | Screen brightness and how loud Muse speaks |
-| **Voice recording** | Tap or hold for voice notes |
+| **Voice recording** | Tap or hold for voice notes, and **Confirm before sending** to add a send button instead of sending as soon as you finish |
 | **Chat history over Wi-Fi** | Direct sync between gadgets. Off by default, and still being tested |
 | **Chat history in iCloud** | Sync through iCloud. On by default |
 | **Keep Screen Awake** | Keeps the screen on while paired |

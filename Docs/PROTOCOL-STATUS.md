@@ -24,6 +24,7 @@
 | `GET /identity` | Refused on iPad (6th generation), 2026-11-04: HTTP 403, `route not allowed for this credential's scopes`, while chat on the same session works. The name stays «Muse» | A 200 with the agent's name |
 | `display.set_avatar` | Verified on iPad (6th generation), iPadOS 17.7.11, 2026-11-04: Muse saved a PNG, the VM file was read over the Noise session, and the picture stayed in the chat header after a reinstall | The same on iPhone 6s |
 | Avatar animations by state | Verified on iPad (6th generation), 2026-11-04: Muse's four animated WebP files, 720 and 960 px at 24 fps, become H.264 videos on the device, about 100 s each, and the idle video plays beside the chat. iPhone 6s reported installed by Muse | The avatar visibly changing while Muse thinks and speaks; smoothness and build time on iPhone 6s |
+| `display.set_name` | Implemented, awaiting live check | The name appears beside the avatar and stays after a restart |
 | Avatar list on the VM (`avatars.json`) | Unit tests only | A second gadget fetching the animations without a chat message |
 | Pinned card through a restart | Verified on iPad (6th generation), 2026-11-04: a running timer card stayed on screen and kept counting after reinstalling | The same on iPhone 6s |
 | `display.draw_file` | Verified on iPad (6th generation), 2026-11-04: `drawn: true`, image shown above the chat | The same on iPhone 6s |

@@ -133,6 +133,11 @@ final class MuseAppModel: ObservableObject {
     @Published var voiceRecordMode: MuseVoiceRecordMode {
         didSet { UserDefaults.standard.set(voiceRecordMode.rawValue, forKey: Self.voiceRecordModeKey) }
     }
+    /// With this on, a finished recording waits for the user to send it or throw it away.
+    @Published var confirmsVoiceNotes = UserDefaults.standard.bool(forKey: "confirmsVoiceNotes") {
+        didSet { UserDefaults.standard.set(confirmsVoiceNotes, forKey: "confirmsVoiceNotes") }
+    }
+    @Published var pendingVoiceNote: MusePendingVoiceNote?
     @Published var voiceHint: String?
     @Published var isCloudSyncEnabled: Bool {
         didSet {
@@ -150,7 +155,7 @@ final class MuseAppModel: ObservableObject {
     @Published var card: MuseCard? = MuseCard.loadPinned() {
         didSet { MuseCard.savePinned(card) }
     }
-    @Published var agentIdentity: MuseAgentIdentity?
+    @Published var agentIdentity = MuseAgentName.saved.map(MuseAgentIdentity.init(name:))
     @Published var agentAvatar: Data?
     @Published var avatarFiles: [String: URL] = [:]
     @Published var avatarOneShot: String?
@@ -269,6 +274,13 @@ final class MuseAppModel: ObservableObject {
         }
         environment.runtime.onAgentIdentity = { [weak self] identity in
             self?.agentIdentity = identity
+        }
+        NotificationCenter.default.addObserver(
+            forName: .museAgentNameChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            if let name = note.object as? String { self?.agentIdentity = MuseAgentIdentity(name: name) }
         }
         environment.runtime.onCommandFinished = { [weak self] command, succeeded in
             self?.showToast(for: command, succeeded: succeeded)
@@ -608,6 +620,7 @@ final class MuseAppModel: ObservableObject {
     }
 
     private func startVoiceRecording() {
+        pendingVoiceNote = nil
         isRecordingVoice = true
         recordingSeconds = 0
         recordingTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
@@ -633,9 +646,24 @@ final class MuseAppModel: ObservableObject {
             if voiceRecordMode == .hold { showVoiceHint(PalL10n.text("Удерживайте кнопку, чтобы говорить")) }
             return
         }
-        chatItems.append(MuseChatItem(author: .user, text: PalL10n.format("voice.note_format", max(durationMS / 1_000, 1))))
+        let note = MusePendingVoiceNote(wav: wav, seconds: max(durationMS / 1_000, 1))
+        if confirmsVoiceNotes {
+            pendingVoiceNote = note
+        } else {
+            send(note)
+        }
+    }
+
+    func sendPendingVoiceNote() {
+        guard let note = pendingVoiceNote, canSendToMuse else { return }
+        pendingVoiceNote = nil
+        send(note)
+    }
+
+    private func send(_ note: MusePendingVoiceNote) {
+        chatItems.append(MuseChatItem(author: .user, text: PalL10n.format("voice.note_format", note.seconds)))
         beginRequest()
-        environment.runtime.sendVoiceNote(wav: wav) { [weak self] result in
+        environment.runtime.sendVoiceNote(wav: note.wav) { [weak self] result in
             self?.finishRequest(result)
         }
     }
@@ -1426,6 +1454,11 @@ enum MuseDeviceSummary {
     }
 }
 
+struct MusePendingVoiceNote {
+    let wav: Data
+    let seconds: Int
+}
+
 private struct MuseMainTabs: View {
     @ObservedObject var model: MuseAppModel
 
@@ -1680,6 +1713,34 @@ private struct MuseChatView: View {
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 15)
+                    .frame(minHeight: 46)
+                    .background(MuseTheme.elevated)
+                    .clipShape(Capsule())
+                } else if let note = model.pendingVoiceNote {
+                    HStack(spacing: 10) {
+                        Button { model.pendingVoiceNote = nil } label: {
+                            Image(systemName: "trash")
+                                .font(.headline)
+                                .frame(width: 40, height: 44)
+                        }
+                        .accessibilityLabel(PalL10n.text("Удалить заметку"))
+                        Text(PalL10n.format("voice.note_format", note.seconds))
+                            .font(.subheadline.monospacedDigit())
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                        Spacer(minLength: 0)
+                        Button(action: model.sendPendingVoiceNote) {
+                            Text(PalL10n.key("Отправить"))
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 14)
+                                .frame(minHeight: 36)
+                                .background(MuseTheme.accent)
+                                .clipShape(Capsule())
+                        }
+                        .disabled(!model.canSendToMuse)
+                    }
+                    .padding(.trailing, 6)
                     .frame(minHeight: 46)
                     .background(MuseTheme.elevated)
                     .clipShape(Capsule())
@@ -2335,6 +2396,11 @@ private struct MuseSettingsView: View {
                         selection: $model.voiceRecordMode,
                         isDisabled: model.isRecordingVoice
                     )
+                    SettingsToggleRow(
+                        title: "Подтверждать отправку",
+                        detail: PalL10n.text("Записанная заметка уйдёт только после кнопки «Отправить». Её можно и удалить"),
+                        isOn: $model.confirmsVoiceNotes
+                    )
                     Divider().overlay(MuseTheme.stroke)
                     SettingsToggleRow(
                         title: "История чата по Wi-Fi",
@@ -2430,7 +2496,7 @@ private struct MuseSettingsView: View {
 
     private var avatarDetail: String {
         if model.avatarRequested { return "Запрос отправлен, ответ придёт в чат" }
-        return model.agentAvatar == nil ? "Нажмите, и Muse пришлёт его сюда" : "Нажмите, чтобы обновить"
+        return model.agentAvatar == nil ? "Нажмите, и Muse поставит имя и аватар" : "Нажмите, чтобы обновить"
     }
 
     private var sensorAccessSummary: String {

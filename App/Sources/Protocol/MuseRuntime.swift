@@ -160,6 +160,30 @@ struct MuseAgentIdentity: Equatable {
     }
 }
 
+/// The name Muse gave itself, kept on the device. /identity refuses this gadget's credential, so
+/// Muse sets it by command instead, or through its list on the VM.
+enum MuseAgentName {
+    private static let key = "agentName"
+
+    static var saved: String? { UserDefaults.standard.string(forKey: key) }
+
+    /// Returns false for a name that is empty, too long for the header, or more than one line.
+    @discardableResult
+    static func save(_ raw: String) -> Bool {
+        let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name.count <= 40, !name.contains(where: \.isNewline) else { return false }
+        UserDefaults.standard.set(name, forKey: key)
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .museAgentNameChanged, object: name)
+        }
+        return true
+    }
+}
+
+extension Notification.Name {
+    static let museAgentNameChanged = Notification.Name("MuseGadgetLegacy.agentNameChanged")
+}
+
 enum MuseVMFileError: Error {
     case status(Int)
     case tooLarge

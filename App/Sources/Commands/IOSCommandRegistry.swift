@@ -206,7 +206,7 @@ final class IOSCommandRegistry {
 
         registry.register(CommandDefinition(
             name: "display.set_avatar",
-            summary: "Set this gadget's picture of you from an image file on your VM. Draw your own avatar from your profile as a square PNG or JPEG, save it on the VM, then call this. The device keeps the image across restarts and shows it beside your name in its chat. To make it move, call this once per state with an animated GIF, APNG or WebP of your avatar in that state. List your files in workspace/pal-again/avatars.json as {\"animations\":{\"idle\":{\"path\":\"workspace/idle.webp\",\"bytes\":123}}}: every gadget reads that list when it connects and fetches what is new by itself.",
+            summary: "Set this gadget's picture of you from an image file on your VM. Draw your own avatar from your profile as a square PNG or JPEG, save it on the VM, then call this. The device keeps the image across restarts and shows it beside your name in its chat. To make it move, call this once per state with an animated GIF, APNG or WebP of your avatar in that state. List your name and files in workspace/pal-again/avatars.json as {\"name\":\"Your name\",\"animations\":{\"idle\":{\"path\":\"workspace/idle.webp\",\"bytes\":123}}}: every gadget reads that list when it connects and fetches what is new by itself.",
             parameters: ["path": [
                 "type": "string",
                 "description": "Path of the image file on this VM, relative, as the VM's file API takes it, such as workspace/avatar.png. Keep the original size and frame rate. At most 32 MiB."
@@ -222,6 +222,18 @@ final class IOSCommandRegistry {
                 state: arguments["state"] as? String,
                 completion: completion
             )
+        }
+
+        registry.register(CommandDefinition(
+            name: "display.set_name",
+            summary: "Set the name shown beside your avatar on this gadget. Use your own name in Muse. The device keeps it across restarts.",
+            parameters: ["name": ["type": "string", "description": "Your name, one line of up to 40 characters."]]
+        )) { arguments, completion in
+            guard MuseAgentName.save(arguments["name"] as? String ?? "") else {
+                completion(CommandResult(success: false, value: ["error": "invalid_name"]))
+                return
+            }
+            completion(CommandResult(success: true, value: ["name": MuseAgentName.saved ?? ""]))
         }
 
         registry.register(CommandDefinition(

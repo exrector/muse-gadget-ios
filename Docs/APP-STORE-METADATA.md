@@ -23,6 +23,7 @@ Pal Again turns a compatible iOS or iPadOS device into a friendly AI companion f
 
 MAKE OLD DEVICES SMART AGAIN
 
+• A living avatar with your assistant's own face and name, moving as it listens, thinks and speaks
 • Text chat with streamed responses
 • Voice messages and spoken replies
 • Camera and photo sharing
@@ -34,6 +35,8 @@ MAKE OLD DEVICES SMART AGAIN
 SIMPLE, GUIDED SETUP
 
 Pal Again explains every step in plain language. You remain in control of Bluetooth, local-network, camera, microphone, location and motion permissions. Protected features stay unavailable until you explicitly grant access.
+
+After pairing, open Settings and tap Muse avatar: your assistant sends its own avatar and name to the device. Your other gadgets can then fetch them by themselves.
 
 To pair the app, you need your own Muse Gadget SDK token and access to Muse Developer Mode on another signed-in device. Pal Again never includes or shares a common SDK token.
 
@@ -61,6 +64,7 @@ Pal Again превращает совместимое устройство с iO
 
 MAKE OLD DEVICES SMART AGAIN
 
+• Живой аватар с лицом и именем вашего ассистента: двигается, когда слушает, думает и говорит
 • Текстовый чат с потоковыми ответами
 • Голосовые сообщения и озвучивание ответов
 • Камера и отправка фотографий
@@ -72,6 +76,8 @@ MAKE OLD DEVICES SMART AGAIN
 ПРОСТАЯ ПОШАГОВАЯ НАСТРОЙКА
 
 Pal Again объясняет каждый шаг понятным языком. Вы сами управляете разрешениями Bluetooth, локальной сети, камеры, микрофона, геопозиции и движения. Защищённые функции недоступны, пока вы явно не разрешите их использование.
+
+После создания пары откройте настройки и нажмите «Аватар Muse»: ассистент сам пришлёт на устройство свой аватар и имя. Остальные ваши гаджеты затем смогут забрать их сами.
 
 Для создания пары необходимы ваш собственный Muse Gadget SDK Token и доступ к режиму разработчика Muse на другом устройстве, где выполнен вход в аккаунт. Pal Again не содержит общего SDK Token и не передаёт его другим пользователям.
 

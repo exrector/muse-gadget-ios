@@ -333,7 +333,7 @@ final class MuseVMImageService {
         let fingerprint: String
     }
 
-    /// `{"animations": {"idle": {"path": "workspace/idle.webp", "bytes": 123}, ...}}`. Anything in
+    /// `{"name": "Muse", "animations": {"idle": {"path": "workspace/idle.webp", "bytes": 123}, ...}}`. Anything in
     /// an entry can change, and a change means a new file. Bad entries are left out.
     static func parseManifest(_ data: Data) -> [ManifestEntry]? {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -358,6 +358,10 @@ final class MuseVMImageService {
             guard case .success(let data) = result, let entries = Self.parseManifest(data) else {
                 Self.logger.info("No avatar list on the VM")
                 return
+            }
+            if let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let name = root["name"] as? String {
+                MuseAgentName.save(name)
             }
             let pending = entries.filter { self.store.fingerprint(of: $0.name) != $0.fingerprint }
             Self.logger.info("Avatar list: \(entries.count, privacy: .public) entries, \(pending.count, privacy: .public) new")

@@ -223,7 +223,7 @@
 "Запрос отправлен, ответ придёт в чат" = "Request sent, the reply comes to the chat";
 "Нажмите, и Muse нарисует его в чате" = "Tap, and Muse draws it from the chat";
 "Нажмите, чтобы нарисовать заново" = "Tap to draw it again";
-"avatar.request_format" = "Put your avatar on the screen of the gadget “%@”. For each of the states idle, listening, thinking and speaking, take the animated version of your avatar from your Muse profile at its original size and frame rate, without shrinking it: GIF, APNG or WebP, a file of up to 32 MB. Save the files on your VM and call display.set_avatar on this device for each, with path and state. List them in workspace/pal-again/avatars.json as {\"animations\":{\"idle\":{\"path\":\"workspace/idle.webp\",\"bytes\":123}}}, so your other gadgets fetch them by themselves. Only draw what is missing. In your reply, give each file's real size, frame count and duration. If there are no animations at all, call display.set_avatar with a still picture and no state, and say so.";
+"avatar.request_format" = "Put your avatar and name on the screen of the gadget “%@”. Call display.set_name on this device with your name in Muse. For each of the states idle, listening, thinking and speaking, take the animated version of your avatar from your Muse profile at its original size and frame rate, without shrinking it: GIF, APNG or WebP, a file of up to 32 MB. Save the files on your VM and call display.set_avatar on this device for each, with path and state. Write your name and the files to workspace/pal-again/avatars.json as {\"name\":\"Name\",\"animations\":{\"idle\":{\"path\":\"workspace/idle.webp\",\"bytes\":123}}}, so your other gadgets fetch them by themselves. Only draw what is missing. In your reply, give each file's real size, frame count and duration. If there are no animations at all, call display.set_avatar with a still picture and no state, and say so.";
 "command.done_format" = "%@: done";
 "command.failed_format" = "%@: failed";
 "device.battery_format" = "Battery %d%%";
@@ -246,3 +246,7 @@
 "Закрыть" = "Close";
 "Нажмите, и Muse пришлёт его сюда" = "Tap, and Muse sends it here";
 "Нажмите, чтобы обновить" = "Tap to update";
+"Нажмите, и Muse поставит имя и аватар" = "Tap, and Muse sets its name and avatar";
+"Подтверждать отправку" = "Confirm before sending";
+"Записанная заметка уйдёт только после кнопки «Отправить». Её можно и удалить" = "A recorded note goes only when you tap Send. You can also delete it";
+"Удалить заметку" = "Delete Note";

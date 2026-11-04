@@ -822,6 +822,17 @@ final class MuseGadgetLegacyTests: XCTestCase {
         XCTAssertNil(MuseCard.loadPinned())
     }
 
+    func testAgentNameIsKeptAndBadNamesAreRefused() {
+        let previous = UserDefaults.standard.string(forKey: "agentName")
+        defer { UserDefaults.standard.set(previous, forKey: "agentName") }
+        XCTAssertTrue(MuseAgentName.save("  Kotoboba \n"))
+        XCTAssertEqual(MuseAgentName.saved, "Kotoboba")
+        XCTAssertFalse(MuseAgentName.save("   "))
+        XCTAssertFalse(MuseAgentName.save("two\nlines"))
+        XCTAssertFalse(MuseAgentName.save(String(repeating: "a", count: 41)))
+        XCTAssertEqual(MuseAgentName.saved, "Kotoboba")
+    }
+
     func testManifestKeepsGoodEntriesAndDropsUnsafeOnes() throws {
         let entries = try XCTUnwrap(MuseVMImageService.parseManifest(Data(#"""
         {"animations": {

@@ -11,6 +11,7 @@ An open-source Muse community gadget that turns an older iPhone or iPad into a s
 ## What it does
 
 - **Chat with Muse** from the gadget by text, photo or voice note, with history that stays on the device.
+- **A living avatar** with Muse's own face and name, moving as it listens, thinks and speaks. After pairing, tap **Muse avatar** in Settings: see the [user guide](Docs/USER-GUIDE.md#muses-avatar-and-name).
 - **Guided setup** in five steps, so nobody needs a terminal to pair a device.
 - **Device features Muse can use:** screen captions and cards, speech, vibration, flashlight, brightness, camera, location, motion sensors and device health.
 - **Apple Shortcuts:** Muse can run shortcuts you allow, which reaches the Home app, reminders, messages and more.
@@ -53,7 +54,7 @@ The core works on the devices below, but much of it is new and long-running stab
 | Partly verified | iCloud sync (iPad to iPhone only), Apple Shortcuts (simple shortcuts, without checking a returned result) |
 | Built, not yet verified on a device | Camera, location, motion, speech and flashlight commands, brightness, screen cards, local network commands, hold-to-record |
 | Built, off by default | Encrypted chat sync directly between gadgets over Wi-Fi, for devices on different Apple IDs |
-| Not built yet | Spoken replies, realtime voice, avatar, photo sync, an SSH client, WebSocket, MQTT, UDP and SSDP for local devices |
+| Not built yet | Spoken replies, realtime voice, photo sync, an SSH client, WebSocket, MQTT, UDP and SSDP for local devices |
 
 **The app has to stay on screen.** iOS suspends apps in the background, so the gadget answers only while open. It keeps the screen awake by default.
 

@@ -6,7 +6,7 @@ The set is an explicit allowlist, defined in [`IOSCommandRegistry.swift`](../App
 
 ## General rules
 
-- **Visible only.** Everything except `device.health`, `display.set_caption`, `display.set_avatar`, `display.play_avatar`, `display.clear_avatar`, `display.draw_file`, `display.clear_image`, `voice.configure`, `shortcuts.list` and an already approved `lan.request` fails with `foreground_required` when the app is not on screen.
+- **Visible only.** Everything except `device.health`, `display.set_caption`, `display.set_avatar`, `display.set_name`, `display.play_avatar`, `display.clear_avatar`, `display.draw_file`, `display.clear_image`, `voice.configure`, `shortcuts.list` and an already approved `lan.request` fails with `foreground_required` when the app is not on screen.
 - **No remote permission prompts.** A command that needs an iOS permission fails with `permission_required` until the user has granted it in the app.
 - **On-screen approval.** Each new shortcut name and each new local host and port needs a tap on the device. Waiting for it can take up to 20 seconds.
 - **Timeouts.** A command answers `command_timeout` after 30 seconds, unless noted below.
@@ -56,7 +56,17 @@ Sets the picture shown beside Muse's name in the chat, from an image file on the
 
 Returns `installed`, plus `width`, `height` and `byte_count` for a still picture, or `state`, `frames`, `width`, `height` and `duration_ms` for an animation. The device turns each animation into an H.264 video once, in the background, and plays that from then on, so no later step needs Muse. A state with no animation of its own plays `idle`. Errors: `invalid_state`, `invalid_path`, `not_connected`, `file_too_large`, `file_unavailable` (with `http_status`), `read_failed`, `not_an_image`, `save_failed`. A failure leaves the current picture in place.
 
-Muse can also list its files in `workspace/pal-again/avatars.json` on the VM, as `{"animations":{"idle":{"path":"workspace/idle.webp","bytes":123}}}`. Each gadget reads the list when it connects and fetches what is new, so a new movement or a new gadget needs no chat message. After the user removes the avatar in Settings, the list is ignored until Muse sets one again.
+Muse can also list its files in `workspace/pal-again/avatars.json` on the VM, as `{"name":"Its name","animations":{"idle":{"path":"workspace/idle.webp","bytes":123}}}`. Each gadget reads the list when it connects and fetches what is new, so a new movement or a new gadget needs no chat message. After the user removes the avatar in Settings, the list is ignored until Muse sets one again.
+
+### `display.set_name`
+
+Sets the name shown beside the avatar, kept across restarts. Without it the app shows «Muse», because `GET /identity` is refused for this gadget's credential.
+
+| Parameter | Type | Notes |
+|---|---|---|
+| `name` | string, required | One line, up to 40 characters |
+
+Returns `name`. Errors: `invalid_name`.
 
 ### `display.play_avatar`
 
