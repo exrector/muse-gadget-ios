@@ -4,9 +4,9 @@
 
 > **Make Old Devices Smart Again.**
 
-An unofficial, open-source Muse community gadget that turns an older iPhone or iPad into a screen, microphone, speaker, camera and sensor companion for Muse, with a chat you can type or talk into.
+An open-source Muse community gadget that turns an older iPhone or iPad into a screen, microphone, speaker, camera and sensor companion for Muse, with a chat you can type or talk into.
 
-> This is an independent community project. It is not made by, endorsed by, or supported by Meta. Muse Gadget SDK tokens are governed separately by the [Muse Gadget SDK Token Terms](https://gadgets.muse.ai/sdk-terms).
+> This is an independent open-source community project. Muse and related marks belong to their respective owners. Muse Gadget SDK tokens are governed separately by the [Muse Gadget SDK Token Terms](https://gadgets.muse.ai/sdk-terms).
 
 ## What it does
 
@@ -30,13 +30,16 @@ iOS has no shell, so unlike the Linux gadget there is no `system.run`. Muse gets
 | [Command reference](Docs/COMMANDS.md) | What Muse can call, with parameters and errors |
 | [Protocol status](Docs/PROTOCOL-STATUS.md) | What has been verified, and how |
 | [Security](SECURITY.md) | Secrets, command boundaries and pairing limits |
+| [Testing](Docs/TESTING.md) | Join the beta and report device-specific results |
+| [Contributing](CONTRIBUTING.md) | Help improve Pal Again |
+| [Privacy policy](PRIVACY.md) | What stays local and what is sent when you use Muse |
 
 ## Requirements
 
 - iPhone or iPad with iOS or iPadOS 15 or newer, as the gadget.
 - A different phone with the Muse app. A phone running Muse cannot be its own gadget, because it does not see its own Bluetooth signal.
 - An SDK Token from [gadgets.muse.ai](https://gadgets.muse.ai/settings/sdk-tokens). One token can serve several gadgets.
-- A Mac with Xcode to build the app, which is not on the App Store.
+- During the beta, a Mac with Xcode is required to build and install the app. The App Store link will be added here when the public listing is live.
 
 ## Current status
 
@@ -79,4 +82,10 @@ git clone --recurse-submodules https://github.com/exrector/muse-gadget-ios.git
 ## License
 
 Apache License 2.0. See `LICENSE` and `NOTICE`. Upstream source retains its own notices. Muse service and SDK token access are subject to Meta's separate terms.
+
+## App Store price and support
+
+Pal Again will cost **$1** on the App Store. Each user supplies their own Muse Gadget SDK Token; the purchase does not sell access to Muse. The price covers a ready-to-use build, Apple signing and App Store delivery, and helps fund independent development, compatibility testing on older devices and the Apple Developer Program, which costs about $100 per year.
+
+The source remains public so anyone can inspect it, contribute improvements or build it themselves. Buying the App Store version is the simplest way to install Pal Again and directly support continued development.
 

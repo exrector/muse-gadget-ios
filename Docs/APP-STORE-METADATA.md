@@ -39,9 +39,9 @@ To pair the app, you need your own Muse Gadget SDK token and access to Muse Deve
 
 ONE PURCHASE, CONTINUED DEVELOPMENT
 
-Pal Again is a one-time paid download with no subscription and no advertising. Revenue from each purchase helps fund independent development, compatibility testing on older hardware, bug fixes and future features. Thank you for helping keep useful devices in service and supporting the next version of Pal Again.
+Pal Again costs $1 as a one-time paid download with no subscription and no advertising. The price pays for the ready-to-use build, Apple signing and App Store delivery, and helps fund independent development, compatibility testing on older hardware, bug fixes, future features and the Apple Developer Program, which costs about $100 per year. Thank you for helping keep useful devices in service and supporting the next version of Pal Again.
 
-Pal Again is an independent, open-source community application. It is not made by, endorsed by or supported by Meta or Apple. Muse service availability and SDK token access are governed by their respective terms.
+Pal Again is an independent, open-source community application. Muse and related marks belong to their respective owners. Muse service availability and SDK token access are governed by their respective terms.
 
 ### Keywords
 
@@ -77,9 +77,9 @@ Pal Again объясняет каждый шаг понятным языком. 
 
 ОДНА ПОКУПКА — ДАЛЬНЕЙШЕЕ РАЗВИТИЕ
 
-Pal Again приобретается один раз: без подписки и рекламы. Доход от каждой покупки помогает финансировать независимую разработку, тестирование на старых устройствах, исправление ошибок и создание новых функций. Спасибо, что помогаете сохранять полезные устройства в работе и поддерживаете следующие версии Pal Again.
+Pal Again стоит $1 и приобретается один раз: без подписки и рекламы. Цена оплачивает готовую сборку, подпись Apple и доставку через App Store, а также помогает финансировать независимую разработку, тестирование на старых устройствах, исправление ошибок, новые функции и Apple Developer Program стоимостью около $100 в год. Спасибо, что помогаете сохранять полезные устройства в работе и поддерживаете следующие версии Pal Again.
 
-Pal Again — независимое приложение сообщества с открытым исходным кодом. Оно не создано, не одобрено и не поддерживается Meta или Apple. Доступность сервиса Muse и SDK Token регулируется соответствующими условиями.
+Pal Again — независимое приложение сообщества с открытым исходным кодом. Muse и связанные товарные знаки принадлежат их правообладателям. Доступность сервиса Muse и SDK Token регулируется соответствующими условиями.
 
 ### Keywords
 
