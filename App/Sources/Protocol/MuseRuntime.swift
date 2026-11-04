@@ -603,11 +603,11 @@ final class MuseRuntime: NSObject {
         registerID = UUID().uuidString.lowercased()
         let params: [String: Any] = [
             "node_id": identity.nodeID,
-            "display_name": UIDevice.current.name,
+            "display_name": identity.displayName,
             "platform": "ios",
             "version": MuseAppVersion.current,
             "device_family": "homehub",
-            "model_id": "iphone",
+            "model_id": UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone",
             "is_wakeup_supported": false,
             "commands_v2": commands.commandSpecs
         ]

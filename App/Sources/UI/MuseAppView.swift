@@ -477,7 +477,7 @@ final class MuseAppModel: ObservableObject {
 
     func requestAvatar() {
         avatarRequested = true
-        sendChat(PalL10n.format("avatar.request_format", UIDevice.current.name))
+        sendChat(PalL10n.format("avatar.request_format", environment.identity.displayName))
     }
 
     /// What the avatar should be doing now. A movement Muse asked for wins until it has played.

@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import UIKit
 
 struct DeviceIdentity: Codable, Equatable {
     let mac: String
@@ -11,6 +12,17 @@ struct DeviceIdentity: Codable, Equatable {
     var nodeID: String { "homelink-\(suffix)" }
     var deviceID: String { "hatch-link:\(mac)" }
     var bluetoothName: String { "MuseGadget\(suffix.uppercased())" }
+
+    /// The name Muse shows. Since iOS 16 an app is told little more than "iPhone" or "iPad", so two
+    /// such devices would look the same without something of their own added.
+    func displayName(deviceName: String, model: String) -> String {
+        guard deviceName == model || deviceName.hasPrefix(model + " (") else { return deviceName }
+        return "\(deviceName) \(suffix.suffix(4).uppercased())"
+    }
+
+    var displayName: String {
+        displayName(deviceName: UIDevice.current.name, model: UIDevice.current.model)
+    }
 }
 
 final class DeviceIdentityStore {

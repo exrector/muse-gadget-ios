@@ -61,7 +61,7 @@ final class AppEnvironment {
         vmImages.buildAvatarVideos()
         runtime.onRegistered = { vmImages.syncFromVM() }
         vmImages.askMuseForAvatar = {
-            runtime.sendChat(PalL10n.format("avatar.request_format", UIDevice.current.name)) { _ in }
+            runtime.sendChat(PalL10n.format("avatar.request_format", identity.displayName)) { _ in }
         }
         // A build stopped by the app leaving the screen goes on from where it was.
         NotificationCenter.default.addObserver(

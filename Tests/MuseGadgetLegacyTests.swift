@@ -1064,6 +1064,42 @@ final class MuseGadgetLegacyTests: XCTestCase {
         XCTAssertNil(store.load())
     }
 
+    func testDisplayNameTellsApartDevicesThatAreOnlyGivenTheirModel() {
+        let identity = DeviceIdentity(mac: "02:11:22:aa:bb:cc")
+        XCTAssertEqual(identity.displayName(deviceName: "iPhone", model: "iPhone"), "iPhone BBCC")
+        XCTAssertEqual(identity.displayName(deviceName: "iPad", model: "iPad"), "iPad BBCC")
+        XCTAssertEqual(
+            identity.displayName(deviceName: "iPad (6th generation)", model: "iPad"),
+            "iPad (6th generation) BBCC"
+        )
+        XCTAssertEqual(identity.displayName(deviceName: "Kitchen iPhone", model: "iPhone"), "Kitchen iPhone")
+    }
+
+    func testAvatarPlayerKeepsStatesReadyAndOnlyTheLastNamedMovement() {
+        let names = MuseAvatarState.allCases.map(\.rawValue) + (1...28).map { "move\($0)" }
+        let files = Dictionary(uniqueKeysWithValues: names.map {
+            ($0, FileManager.default.temporaryDirectory.appendingPathComponent("\($0).mp4"))
+        })
+        let states = Set(MuseAvatarState.allCases.map(\.rawValue))
+        let view = MuseAvatarPlayerView()
+        let version = UUID()
+
+        view.update(files: files, name: "idle", version: version)
+        XCTAssertEqual(view.preparedMovements, states)
+
+        view.update(files: files, name: "move1", version: version)
+        XCTAssertEqual(view.preparedMovements, states.union(["move1"]))
+
+        view.update(files: files, name: "move2", version: version)
+        XCTAssertEqual(view.preparedMovements, states.union(["move2"]))
+
+        view.update(files: files, name: "speaking", version: version)
+        XCTAssertEqual(view.preparedMovements, states.union(["move2"]))
+
+        view.update(files: files, name: "unknown", version: version)
+        XCTAssertEqual(view.preparedMovements, states.union(["move2"]))
+    }
+
     func testAvatarStoreRemovesAnInterruptedBuildAndKeepsFinishedVideos() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

@@ -17,6 +17,7 @@
 | Spoken replies and realtime voice | Planned | Actual bidirectional user-visible delivery |
 | Companion avatar | Product UI, not a Link payload | The SDK's ESP32 avatar is a local renderer with idle/listening/thinking/speaking/error states; Muse does not send an avatar image or avatar metadata in `link.register` |
 | Second gadget on the same SDK token | Verified 2026-11-03: Muse sees iPhone 6s and iPad (6th generation) as two devices on one token | — |
+| Telling apart devices that report only their model | Unit tests for the name: one that is just the model gets four characters of the device's own suffix. iPad (6th generation), 2026-11-05: shows as connected with a build that registers `model_id: "ipad"` | The new name and model as Muse sees them; two iPhones on iOS 16 or later |
 | Haptics on iPhone 6s and older | Verified on iPhone 6s, iOS 15.8.8, 2026-11-03: `haptics.impact` vibrates through `kSystemSoundID_Vibrate` | An earlier attempt was not felt, cause not established |
 | Haptics on iPad | Not supported by the hardware; returns `haptics_unavailable` | — |
 | Flashlight | By the owner's report, 2026-11-04: `torch.set` works on iPhone 6s and returns `torch_unavailable` on iPad (6th generation), which has no flash | — |
