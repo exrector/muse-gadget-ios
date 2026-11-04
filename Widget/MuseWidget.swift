@@ -66,6 +66,7 @@ private struct MuseWidgetCardView: View {
     let date: Date
     var titleFont = Font.headline
     var timerFont = Font.title.weight(.semibold)
+    var bodyColor = Color.secondary
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -86,7 +87,7 @@ private struct MuseWidgetCardView: View {
             if !card.body.isEmpty {
                 Text(verbatim: card.body)
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(bodyColor)
                     .lineLimit(4)
             }
         }
@@ -213,22 +214,26 @@ struct MuseWidgetView: View {
         .padding(padding)
     }
 
+    /// Square like the picture, so the picture takes all of it and no background shows around it.
     private var large: some View {
-        VStack(spacing: 10) {
-            MuseWidgetAvatar(image: entry.avatar)
-                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        ZStack(alignment: .bottomLeading) {
+            GeometryReader { geometry in
+                MuseWidgetAvatar(image: entry.avatar, fills: true)
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .clipped()
+            }
+            LinearGradient(colors: [.clear, .black.opacity(0.7)], startPoint: .center, endPoint: .bottom)
             VStack(alignment: .leading, spacing: 6) {
                 Text(verbatim: name)
                     .font(.title3.weight(.semibold))
                     .lineLimit(1)
                 if let card = entry.content.card {
-                    MuseWidgetCardView(card: card, date: entry.date)
+                    MuseWidgetCardView(card: card, date: entry.date, bodyColor: .white.opacity(0.85))
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .foregroundColor(.white)
+            .padding(14)
         }
-        .padding(14)
     }
 }
 
