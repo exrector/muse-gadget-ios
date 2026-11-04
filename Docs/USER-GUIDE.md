@@ -56,7 +56,7 @@ Ask Muse in the chat, or from your main phone. If you have several gadgets, say 
 | Take a photo | The rear camera takes a small photo |
 | Where is it | Reports its location |
 | Motion | Reports a single reading from the motion sensors |
-| Battery and free space | Reports device health |
+| Battery and system version | Reports device health |
 | Run a shortcut | Runs an Apple Shortcut by name |
 | Find devices on my network | Lists devices that announce themselves on your Wi-Fi |
 | Talk to a device on my network | Sends one web request to a device on your network |

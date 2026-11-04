@@ -2934,8 +2934,8 @@ private extension AppPermission {
         switch self {
         case .bluetooth: return PalL10n.text("Найти устройство во время создания пары")
         case .localNetwork: return PalL10n.text("Обнаруживать сервисы Muse рядом")
-        case .camera: return PalL10n.text("Сделать фото только по вашей команде")
-        case .microphone: return PalL10n.text("Записать голосовую заметку")
+        case .camera: return PalL10n.text("Отправлять фото и снимать для Muse, пока приложение открыто")
+        case .microphone: return PalL10n.text("Записывать заметки и голос для Muse, пока приложение открыто")
         case .location: return PalL10n.text("Определить Wi‑Fi и выполнять команды геопозиции")
         case .motion: return PalL10n.text("Использовать акселерометр и движение")
         }

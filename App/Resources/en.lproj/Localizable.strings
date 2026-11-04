@@ -77,6 +77,8 @@
 "Ждём регистрации в Muse VM" = "Waiting for Muse VM registration";
 "Остановить и отправить" = "Stop and send";
 "Записать голосовую заметку" = "Record a voice note";
+"Отправлять фото и снимать для Muse, пока приложение открыто" = "Send photos, and take them for Muse while the app is open";
+"Записывать заметки и голос для Muse, пока приложение открыто" = "Record voice notes, and record for Muse while the app is open";
 "Удерживайте, чтобы записать голосовую заметку" = "Hold to record a voice note";
 "Экран" = "Display";
 "Показывает подписи и карточки Muse" = "Shows Muse captions and cards";
@@ -155,6 +157,8 @@
 "Обнаруживать сервисы Muse рядом" = "Discover nearby Muse services";
 "Сделать фото только по вашей команде" = "Take a photo only on your command";
 "Записать голосовую заметку" = "Record a voice note";
+"Отправлять фото и снимать для Muse, пока приложение открыто" = "Send photos, and take them for Muse while the app is open";
+"Записывать заметки и голос для Muse, пока приложение открыто" = "Record voice notes, and record for Muse while the app is open";
 "Определить Wi‑Fi и выполнять команды геопозиции" = "Identify Wi-Fi and handle location commands";
 "Использовать акселерометр и движение" = "Use the accelerometer and motion sensors";
 "Не запрошено" = "Not Requested";

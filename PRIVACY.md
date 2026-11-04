@@ -15,11 +15,11 @@ You can clear local chat history, disable synchronization, revoke permissions, r
 
 ## Data sent when you use Muse
 
-Pal Again sends data only when it is needed for a feature you choose or a Muse command you approve. Depending on what you use, this can include:
+Pal Again sends data when you use a feature, or when your paired Muse sends a command. Once you have granted an iOS permission, Muse can use it while the app is open on screen, with no further confirmation for each use. A new Apple Shortcut or local-network target always needs a tap on the device. Depending on what you use, this can include:
 
 - chat messages and Muse responses;
-- photos or camera captures you choose to send;
-- voice recordings you choose to send;
+- photos and voice notes you send;
+- camera captures and short voice recordings requested by Muse;
 - device information requested by supported commands, such as location, motion, battery state or local-network results.
 
 This information is sent to Muse services through the authenticated gadget connection. Muse's handling of information is governed by its own privacy policy and terms.

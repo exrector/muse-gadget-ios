@@ -21,7 +21,7 @@ Give an older iPhone or iPad a new job as a gadget for your Muse: chat, voice, c
 
 ## Keywords
 
-`muse,gadget,sdk,ai,assistant,companion,old,iphone,ipad,reuse,voice,chat,avatar,widget,open source`
+`gadget,sdk,ai,assistant,companion,old,device,reuse,voice,chat,avatar,widget,open source,legacy`
 
 ## Description
 
@@ -53,7 +53,7 @@ Confirmed on iPhone 6s with iOS 15.8.8 and iPad (6th generation) with iPadOS 17.
 
 YOUR DATA
 
-Pal Again has no account, advertising, analytics or server of its own. Like a physical gadget built with the SDK, it talks directly to your Muse, and data goes there only when you or Muse use a feature. A physical gadget has its camera, microphone and sensors built in. Here iOS asks your permission first, and each feature stays off until you allow it. Your token is kept in the iOS Keychain.
+Pal Again has no account, advertising, analytics or server of its own. Like a physical gadget built with the SDK, it talks directly to your Muse, and data goes there only when you or Muse use a feature. A physical gadget has its camera, microphone and sensors built in. Here iOS asks your permission first, and each feature stays off until you allow it. After that, your Muse can use it while the app is open on screen. Your token is kept in the iOS Keychain.
 
 WHY IT COSTS SOMETHING
 
@@ -77,7 +77,7 @@ The SDK includes clients for ESP32 and Linux. This app is the same kind of clien
 https://github.com/exrector/muse-gadget-ios
 
 WHY THERE IS NO DEMO ACCOUNT
-Pairing needs a Muse Gadget SDK Token, which belongs to a personal Muse account, so we cannot share one. Anyone with Muse can create their own at gadgets.muse.ai. Pairing also needs a second phone with the Muse app and Developer Mode. Without pairing, you can review the guided setup and its explanations of each permission. We can send a video of the whole flow on request.
+Pairing needs a Muse Gadget SDK Token. It is personal to one Muse account, and its terms do not allow sharing it (https://gadgets.muse.ai/sdk-terms), so we cannot provide one. Anyone with Muse can create their own at gadgets.muse.ai. Pairing also needs a second phone with the Muse app and Developer Mode. Without pairing, you can review the guided setup and its explanations of each permission. We can send a video of the whole flow on request.
 
 PERMISSIONS
 Each one is asked for when it is first needed, and the app keeps working if it is denied.
