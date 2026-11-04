@@ -1870,6 +1870,7 @@ private struct MuseAvatarSidePanel: View {
             MuseAvatarFace(model: model, markSize: 120)
                 .aspectRatio(1, contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .frame(maxWidth: .infinity)
             HStack(alignment: .top) {
                 MuseAvatarNameAndStatus(model: model)
                 Spacer(minLength: 8)
