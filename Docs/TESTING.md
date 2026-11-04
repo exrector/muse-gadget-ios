@@ -1,6 +1,6 @@
 # Test Pal Again
 
-Pal Again is being tested on real older Apple devices before its public App Store release. The current confirmed baseline is iPhone 6s on iOS 15.8.8 and iPad (6th generation) on iPadOS 17.7.11.
+Pal Again is being tested on real older Apple devices before its public App Store release. The current confirmed baseline is iPhone 6s on iOS 15.8.8 and iPad (6th generation) on iPadOS 17.7.11. These are the oldest devices we have, not a known limit. The app can be installed on iOS or iPadOS 15 or newer, and a report from any other device, working or not, lets us add it to the description.
 
 ## Join the beta
 

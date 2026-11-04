@@ -100,15 +100,72 @@ struct MuseWidgetView: View {
     private var name: String { entry.content.name ?? "Muse" }
 
     var body: some View {
-        switch family {
-        case .systemSmall:
-            small
-        case .systemMedium:
-            sideBySide(padding: 12, nameFont: .headline)
-        case .systemLarge:
-            large
-        default:
-            sideBySide(padding: 20, nameFont: .title2.weight(.semibold))
+        if #available(iOS 16.0, *), family == .accessoryCircular {
+            lockScreenCircle
+        } else if #available(iOS 16.0, *), family == .accessoryRectangular {
+            lockScreenRectangle
+        } else if #available(iOS 16.0, *), family == .accessoryInline {
+            lockScreenLine
+        } else {
+            switch family {
+            case .systemSmall:
+                small
+            case .systemMedium:
+                sideBySide(padding: 12, nameFont: .headline)
+            case .systemLarge:
+                large
+            default:
+                sideBySide(padding: 20, nameFont: .title2.weight(.semibold))
+            }
+        }
+    }
+
+    private var runningTimerEnd: Date? {
+        guard let end = entry.content.card?.endsAt, end > entry.date else { return nil }
+        return end
+    }
+
+    @available(iOS 16.0, *)
+    private var lockScreenCircle: some View {
+        ZStack {
+            AccessoryWidgetBackground()
+            if let avatar = entry.avatar {
+                Image(uiImage: avatar)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                Image(systemName: "sparkles")
+            }
+        }
+        .clipShape(Circle())
+    }
+
+    /// A card can be private, so it stays hidden while the device is locked if the person asks for that.
+    private var lockScreenRectangle: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(verbatim: name)
+                .font(.headline)
+                .lineLimit(1)
+            Group {
+                if let end = runningTimerEnd {
+                    Text(end, style: .timer)
+                        .monospacedDigit()
+                } else if let title = entry.content.card?.title {
+                    Text(verbatim: title)
+                        .lineLimit(2)
+                }
+            }
+            .privacySensitive()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var lockScreenLine: some View {
+        if let end = runningTimerEnd {
+            Text(end, style: .timer)
+        } else {
+            Text(verbatim: name)
         }
     }
 
@@ -176,23 +233,43 @@ struct MuseWidgetView: View {
 }
 
 private struct MuseWidgetBackground: ViewModifier {
+    @Environment(\.widgetFamily) private var family
+
+    private var onLockScreen: Bool {
+        guard #available(iOS 16.0, *) else { return false }
+        return [.accessoryCircular, .accessoryRectangular, .accessoryInline].contains(family)
+    }
+
+    private var color: Color {
+        onLockScreen ? .clear : Color(UIColor.secondarySystemBackground)
+    }
+
     func body(content: Content) -> some View {
         if #available(iOS 17.0, *) {
-            content.containerBackground(for: .widget) { Color(UIColor.secondarySystemBackground) }
+            content.containerBackground(for: .widget) { color }
         } else {
-            content.background(Color(UIColor.secondarySystemBackground))
+            content.background(color)
         }
     }
 }
 
 struct MuseAvatarWidget: Widget {
+    /// Everything iOS has for a phone or tablet. It offers only what the device can show.
+    private var families: [WidgetFamily] {
+        var families: [WidgetFamily] = [.systemSmall, .systemMedium, .systemLarge, .systemExtraLarge]
+        if #available(iOS 16.0, *) {
+            families += [.accessoryCircular, .accessoryRectangular, .accessoryInline]
+        }
+        return families
+    }
+
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "MuseAvatarWidget", provider: MuseWidgetProvider()) { entry in
             MuseWidgetView(entry: entry).modifier(MuseWidgetBackground())
         }
         .configurationDisplayName(Text(verbatim: "Pal Again"))
         .description(Text("Аватар, имя и карточка Muse."))
-        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .systemExtraLarge])
+        .supportedFamilies(families)
         .contentMarginsDisabled()
     }
 }

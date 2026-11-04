@@ -41,7 +41,7 @@ After pairing, your assistant's own avatar and name arrive by themselves, on thi
 
 To pair the app, you need your own Muse Gadget SDK token and access to Muse Developer Mode on another signed-in device. Pal Again never includes or shares a common SDK token.
 
-Requires iOS or iPadOS 15 or later. Tested on iPhone 6s with iOS 15.8.8 and iPad (6th generation) with iPadOS 17.7.11. The app answers Muse while it is open on screen.
+Confirmed on iPhone 6s with iOS 15.8.8 and iPad (6th generation) with iPadOS 17.7.11, the oldest devices we have to test on. It can be installed on iOS or iPadOS 15 or later, so other devices may work, but they have not been tested. Results from other devices are welcome on the project's GitHub page. The app answers Muse while it is open on screen.
 
 ONE PURCHASE, CONTINUED DEVELOPMENT
 

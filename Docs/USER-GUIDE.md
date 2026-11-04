@@ -8,7 +8,7 @@ The app is not on the App Store yet. To install it, you need to [build it yourse
 
 ## What you need
 
-- **A gadget:** an iPhone or iPad with iOS or iPadOS 15 or newer and Bluetooth, such as an iPhone 6s.
+- **A gadget:** an iPhone or iPad with Bluetooth. Confirmed so far on iPhone 6s with iOS 15.8.8 and iPad (6th generation) with iPadOS 17.7.11, the oldest devices we have to test on. The app can be installed on iOS or iPadOS 15 or newer, so you can try other devices. Whether it works or not, please tell us in [GitHub Issues](https://github.com/exrector/muse-gadget-ios/issues) with the device model and system version, and we will add it.
 - **A main phone** with the Muse app, signed in to your Muse account. This has to be a different device: a phone running the Muse app cannot add itself as a gadget, because it does not see its own Bluetooth signal.
 - **An SDK Token** from [gadgets.muse.ai](https://gadgets.muse.ai/settings/sdk-tokens), under Account > SDK tokens. It looks like `mgst_…`. Read the [SDK token terms](https://gadgets.muse.ai/sdk-terms) before you use it.
 
@@ -67,7 +67,7 @@ Some of these have not been confirmed on a real device yet. See [what has been t
 
 ### Home screen widget
 
-Touch and hold an empty spot on the home screen, tap **+**, and choose **Pal Again**. Pick a size and tap **Add Widget**. Every size your device offers is there.
+Touch and hold an empty spot on the home screen, tap **+**, and choose **Pal Again**. Pick a size and tap **Add Widget**. Every size your device offers is there. On iPhone with iOS 16 or newer and iPad with iPadOS 17 or newer, you can also add it to the lock screen.
 
 The widget shows Muse's picture, its name and the current card, and a timer on a card keeps counting. Tapping it opens the app. The picture does not move, because iOS does not let widgets play video. The widget shows what the app last gave it, and it does not keep the app awake or connected.
 

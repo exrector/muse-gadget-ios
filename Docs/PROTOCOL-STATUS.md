@@ -51,7 +51,7 @@ iOS suspends an app soon after it leaves the screen, which ends its connection t
 | Silent audio in the background | Not tried | Not used: background audio is meant for sound the person hears |
 | Constant location updates | Not tried | Not used: drains the battery and shows a system indicator |
 | Push notifications | Not available | Muse's server sends this app none |
-| Home screen widget | Runs as a separate process with no connection to Muse, so it does not keep the app awake | In use, to show the last picture, name and card. Simulator: small, medium and large drawn with a running timer on iOS 18.6. On real devices it has not been added to a home screen yet |
+| Home screen widget | Runs as a separate process with no connection to Muse, so it does not keep the app awake | In use, to show the last picture, name and card. Simulator: small, medium and large drawn with a running timer on iOS 18.6. By the owner's report, 2026-11-05: visible on iPhone 6s and iPad (6th generation). Lock screen sizes and the largest iPad size have not been looked at |
 
 While the app is in the background, commands that must be visible still fail with `foreground_required`, as described in [COMMANDS.md](COMMANDS.md).
 
