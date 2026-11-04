@@ -350,7 +350,7 @@ enum MuseHapticRoute: Equatable {
         return major >= 9 ? .impactGenerator : .systemVibration
     }
 
-    private static var machineIdentifier: String {
+    static var machineIdentifier: String {
         if let simulated = ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] { return simulated }
         var system = utsname()
         uname(&system)

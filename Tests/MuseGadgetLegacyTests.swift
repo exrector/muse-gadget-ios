@@ -1100,6 +1100,23 @@ final class MuseGadgetLegacyTests: XCTestCase {
         XCTAssertEqual(view.preparedMovements, states.union(["move2"]))
     }
 
+    func testProblemReportHoldsTheLogAndDeviceButNothingElse() {
+        let report = MuseProblemReport.text(
+            appVersion: "1.0",
+            system: "iOS 15.8.8",
+            model: "iPhone8,1",
+            connection: "Registered",
+            log: ["Connecting to Muse VM", "Registered with Muse"]
+        )
+        XCTAssertTrue(report.contains("Pal Again 1.0"))
+        XCTAssertTrue(report.contains("iOS 15.8.8"))
+        XCTAssertTrue(report.contains("iPhone8,1"))
+        XCTAssertTrue(report.contains("Connecting to Muse VM\nRegistered with Muse"))
+        XCTAssertTrue(MuseProblemReport.text(
+            appVersion: "1.0", system: "", model: "", connection: "", log: []
+        ).contains("(empty)"))
+    }
+
     func testWidgetContentCarriesTheCardAndWhenItsTimerEnds() throws {
         let shownAt = Date(timeIntervalSince1970: 1000)
         let card = MuseCard(title: "Tea", body: "Steeping", kind: .timer, durationSeconds: 300, shownAt: shownAt)

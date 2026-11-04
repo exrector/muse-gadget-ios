@@ -40,6 +40,10 @@
 | `lan.discover`, `lan.request` | Implemented, awaiting live check | Real devices listed; an approved device answers a real request |
 | WebSocket, MQTT, UDP, SSDP, SSH on the local network | Not implemented | — |
 
+## Sending a report
+
+**Send a Report** in Settings: unit tests for its text, and the Settings button seen in a simulator. Sending from a real device with a mail account has not been tried.
+
 ## Working in the background
 
 iOS suspends an app soon after it leaves the screen, which ends its connection to Muse. The SDK has no answer to this, because ESP32 and Linux gadgets are simply always on. Measured on iPad (6th generation), iPadOS 17.7.11, on charge, 2026-11-05, with the screen on and nobody touching the device. Each run is one measurement, and "connected" means pings to the VM were answered.

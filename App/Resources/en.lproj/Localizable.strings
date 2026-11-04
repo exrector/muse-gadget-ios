@@ -119,6 +119,8 @@
 "История чата по Wi-Fi" = "Chat history over Wi-Fi";
 "История чата в iCloud" = "Chat history in iCloud";
 "Не гасить экран" = "Keep Screen Awake";
+"Отправить отчёт" = "Send a Report";
+"Письмо на %@ с журналом подключения, версией и моделью устройства. Вы увидите его до отправки. Чат и токены в него не входят." = "An email to %@ with the connection log, app version and device model. You see it before it is sent. Your chat and tokens are never included.";
 "Аватар, имя и карточка Muse." = "Muse's avatar, name and card.";
 "Камера, микрофон и датчики отвечают Muse, только пока приложение на экране." = "Camera, microphone, and sensors respond to Muse only while the app is on screen.";
 "Диагностика" = "Diagnostics";
@@ -149,12 +151,10 @@
 "Потребуется снова добавить устройство в приложении Muse. SDK Token останется в Связке ключей." = "You will need to add this device in Muse again. Your SDK Token will remain in Keychain.";
 "Убрать" = "Remove";
 "Bluetooth" = "Bluetooth";
-"Распознавание речи" = "Speech Recognition";
 "Найти устройство во время создания пары" = "Find this device during pairing";
 "Обнаруживать сервисы Muse рядом" = "Discover nearby Muse services";
 "Сделать фото только по вашей команде" = "Take a photo only on your command";
 "Записать голосовую заметку" = "Record a voice note";
-"Превратить речь в текст" = "Turn speech into text";
 "Определить Wi‑Fi и выполнять команды геопозиции" = "Identify Wi-Fi and handle location commands";
 "Использовать акселерометр и движение" = "Use the accelerometer and motion sensors";
 "Не запрошено" = "Not Requested";

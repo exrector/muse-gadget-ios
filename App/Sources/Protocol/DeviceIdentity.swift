@@ -1,6 +1,5 @@
 import Foundation
 import Security
-import UIKit
 
 struct DeviceIdentity: Codable, Equatable {
     let mac: String
@@ -18,10 +17,6 @@ struct DeviceIdentity: Codable, Equatable {
     func displayName(deviceName: String, model: String) -> String {
         guard deviceName == model || deviceName.hasPrefix(model + " (") else { return deviceName }
         return "\(deviceName) \(suffix.suffix(4).uppercased())"
-    }
-
-    var displayName: String {
-        displayName(deviceName: UIDevice.current.name, model: UIDevice.current.model)
     }
 }
 

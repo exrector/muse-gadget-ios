@@ -2,6 +2,12 @@ import Foundation
 import os
 import UIKit
 
+extension DeviceIdentity {
+    var displayName: String {
+        displayName(deviceName: UIDevice.current.name, model: UIDevice.current.model)
+    }
+}
+
 /// iOS suspends an app moments after it leaves the screen. This asks for the extra time iOS allows,
 /// about 30 seconds, so a quick look at another app does not drop the connection.
 final class MuseBackgroundGrace {

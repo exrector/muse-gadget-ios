@@ -26,7 +26,7 @@ This information is sent to Muse services through the authenticated gadget conne
 
 ## Permissions
 
-Bluetooth and Local Network access support pairing and discovery. Camera, microphone, speech recognition, location and motion access are requested separately and can be denied or revoked in iOS Settings. Pal Again continues to expose only the features allowed by the permissions you grant.
+Bluetooth and Local Network access support pairing and discovery. Camera, microphone, location and motion access are requested separately and can be denied or revoked in iOS Settings. Pal Again continues to expose only the features allowed by the permissions you grant.
 
 ## Local network and Shortcuts
 
@@ -34,7 +34,7 @@ Pal Again asks before permanently allowing a Muse-requested Apple Shortcut or a 
 
 ## Contact and deletion requests
 
-Pal Again has no developer-operated account database. For questions, bug reports or privacy requests, open an issue in the [public repository](https://github.com/exrector/muse-gadget-ios/issues). Do not include SDK Tokens, pairing credentials, private messages, photos or other secrets in an issue.
+Pal Again has no developer-operated account database. For questions, bug reports or privacy requests, write to support@exrector.com or open an issue in the [public repository](https://github.com/exrector/muse-gadget-ios/issues). **Send a Report** in Settings opens an email with the connection log, app version and device model, which you can read before sending. It never includes your chat or tokens. Do not include SDK Tokens, pairing credentials, private messages, photos or other secrets in an issue.
 
 ---
 
@@ -46,4 +46,4 @@ Pal Again — независимый клиент с открытым исход
 
 SDK Token и данные пары хранятся в iOS Keychain. История чата и настройки остаются на устройстве; при включённой синхронизации текст чата хранится в вашем личном iCloud. Фото, голос, сообщения и запрошенные данные устройства передаются Muse только при использовании соответствующей функции. Разрешения можно отозвать в настройках iOS, а историю, синхронизацию и пару — удалить в настройках Pal Again.
 
-Вопросы и запросы можно оставить в [Issues репозитория](https://github.com/exrector/muse-gadget-ios/issues), не публикуя токены, данные пары, личные сообщения, фотографии и другие секреты.
+Вопросы и запросы можно отправить на support@exrector.com или оставить в [Issues репозитория](https://github.com/exrector/muse-gadget-ios/issues), не публикуя токены, данные пары, личные сообщения, фотографии и другие секреты.

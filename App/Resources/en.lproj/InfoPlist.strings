@@ -1,9 +1,7 @@
 "CFBundleDisplayName" = "Pal Again";
 "NSBluetoothAlwaysUsageDescription" = "Bluetooth is used only while pairing this device as a Muse community gadget.";
-"NSBluetoothPeripheralUsageDescription" = "Bluetooth is used only while pairing this device as a Muse community gadget.";
 "NSCameraUsageDescription" = "Camera access lets you explicitly send a photo to your paired Muse.";
-"NSLocalNetworkUsageDescription" = "Local network access lets this iPhone discover and communicate with Muse gadgets and nearby companion services.";
+"NSLocalNetworkUsageDescription" = "Local network access lets this device discover and communicate with Muse gadgets and nearby companion services.";
 "NSLocationWhenInUseUsageDescription" = "Location is used during pairing to identify the current Wi-Fi network, and shared only after an explicit command.";
 "NSMicrophoneUsageDescription" = "Microphone access lets you record a voice message for your paired Muse.";
 "NSMotionUsageDescription" = "Motion access lets Muse read a limited snapshot of this device’s sensors after you grant permission.";
-"NSSpeechRecognitionUsageDescription" = "Speech recognition can create a local draft before you send it.";

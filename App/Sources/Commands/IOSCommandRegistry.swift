@@ -91,15 +91,11 @@ final class IOSCommandRegistry {
         )) { _, completion in
             UIDevice.current.isBatteryMonitoringEnabled = true
             let battery = UIDevice.current.batteryLevel
-            let fileValues = try? FileManager.default.attributesOfFileSystem(forPath: NSHomeDirectory())
-            let free = fileValues?[.systemFreeSize] as? NSNumber
             completion(CommandResult(success: true, value: [
                 "system": UIDevice.current.systemName,
                 "system_version": UIDevice.current.systemVersion,
                 "model": UIDevice.current.model,
-                "battery_percent": battery < 0 ? NSNull() : Int(battery * 100),
-                "free_bytes": free?.int64Value ?? 0,
-                "uptime_seconds": Int(ProcessInfo.processInfo.systemUptime)
+                "battery_percent": battery < 0 ? NSNull() : Int(battery * 100)
             ]))
         }
 

@@ -38,7 +38,7 @@ A command that is not registered is simply not visible to Muse, so it has no err
 
 ### `device.health`
 
-Reports `system`, `system_version`, `model`, `battery_percent`, `free_bytes` and `uptime_seconds`.
+Reports `system`, `system_version`, `model` and `battery_percent`.
 
 ### `display.set_caption`
 

@@ -2268,15 +2268,49 @@ private struct ChatBubble: View {
     }
 }
 
+/// The studio's mark, the same in every Cognitive Labs app: the mark is twice the type size.
+private struct CognitiveLabsLockup: View {
+    private let size: CGFloat = 15
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(verbatim: "COGNITIVE").kerning(0.5)
+            Image("cognitiveMark")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: size * 2, height: size * 2)
+            Text(verbatim: "LABS").kerning(0.5)
+        }
+        .font(.custom("HelveticaNeue-Medium", size: size))
+        .foregroundColor(.primary)
+        .accessibilityElement()
+        .accessibilityLabel(Text(verbatim: "Cognitive Labs"))
+    }
+}
+
 private struct MuseSettingsView: View {
     @ObservedObject var model: MuseAppModel
     @State private var showForgetConfirmation = false
     @State private var showClearHistoryConfirmation = false
     @State private var showAbout = false
+    @State private var showReport = false
+
+    private var reportText: String {
+        MuseProblemReport.text(
+            appVersion: MuseAppVersion.current,
+            system: "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)",
+            model: MuseHapticRoute.machineIdentifier,
+            connection: model.runtimeState.shortTitle,
+            log: model.diagnostics
+        )
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                CognitiveLabsLockup()
+                    .frame(maxWidth: .infinity)
                 StepIntro(
                     eyebrow: "Устройство",
                     title: "Настройки",
@@ -2475,6 +2509,15 @@ private struct MuseSettingsView: View {
                     .padding(.top, 12)
                 }
                 .museCard()
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Button("Отправить отчёт") { showReport = true }
+                        .buttonStyle(MuseSecondaryButtonStyle())
+                    Text("Письмо на \(MuseProblemReport.address) с журналом подключения, версией и моделью устройства. Вы увидите его до отправки. Чат и токены в него не входят.")
+                        .font(.caption)
+                        .foregroundColor(MuseTheme.secondary)
+                }
+                .sheet(isPresented: $showReport) { MuseReportSheet(body_: reportText) }
 
                 Button("Очистить историю чата", role: .destructive) { showClearHistoryConfirmation = true }
                     .buttonStyle(MuseSecondaryButtonStyle(destructive: true))
@@ -2882,7 +2925,6 @@ private extension AppPermission {
         case .localNetwork: return PalL10n.text("Локальная сеть")
         case .camera: return PalL10n.text("Камера")
         case .microphone: return PalL10n.text("Микрофон")
-        case .speechRecognition: return PalL10n.text("Распознавание речи")
         case .location: return PalL10n.text("Геопозиция")
         case .motion: return PalL10n.text("Датчики движения")
         }
@@ -2894,7 +2936,6 @@ private extension AppPermission {
         case .localNetwork: return PalL10n.text("Обнаруживать сервисы Muse рядом")
         case .camera: return PalL10n.text("Сделать фото только по вашей команде")
         case .microphone: return PalL10n.text("Записать голосовую заметку")
-        case .speechRecognition: return PalL10n.text("Превратить речь в текст")
         case .location: return PalL10n.text("Определить Wi‑Fi и выполнять команды геопозиции")
         case .motion: return PalL10n.text("Использовать акселерометр и движение")
         }
@@ -2906,7 +2947,6 @@ private extension AppPermission {
         case .localNetwork: return "network"
         case .camera: return "camera.fill"
         case .microphone: return "mic.fill"
-        case .speechRecognition: return "waveform"
         case .location: return "location.fill"
         case .motion: return "gyroscope"
         }

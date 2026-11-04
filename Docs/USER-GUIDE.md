@@ -71,6 +71,10 @@ Touch and hold an empty spot on the home screen, tap **+**, and choose **Pal Aga
 
 The widget shows Muse's picture, its name and the current card, and a timer on a card keeps counting. Tapping it opens the app. The picture does not move, because iOS does not let widgets play video. The widget shows what the app last gave it, and it does not keep the app awake or connected.
 
+### If something goes wrong
+
+**Send a Report** in Settings opens an email to support@exrector.com with the connection log, app version and device model. You can read it before sending, and it never includes your chat or tokens. If the device has no mail account, you can send it through another app.
+
 ### Muse's avatar and name
 
 There is nothing to do. When a gadget first connects, it shows a plain mark and the name «Muse» while it asks Muse for its avatar and name by itself. That request goes to your Muse chat once. The avatar and name then appear, usually within a few minutes, and the avatar moves as Muse listens, thinks and speaks.

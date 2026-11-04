@@ -5,14 +5,12 @@ import CoreMotion
 import dnssd
 import Foundation
 import Network
-import Speech
 
 enum AppPermission: CaseIterable, Hashable {
     case bluetooth
     case localNetwork
     case camera
     case microphone
-    case speechRecognition
     case location
     case motion
 
@@ -22,7 +20,6 @@ enum AppPermission: CaseIterable, Hashable {
         case .localNetwork: return "Local network"
         case .camera: return "Camera"
         case .microphone: return "Microphone"
-        case .speechRecognition: return "Speech recognition"
         case .location: return "Location while in use"
         case .motion: return "Motion sensors"
         }
@@ -78,14 +75,6 @@ final class PermissionCenter: NSObject {
             return map(AVCaptureDevice.authorizationStatus(for: .video))
         case .microphone:
             return map(AVAudioSession.sharedInstance().recordPermission)
-        case .speechRecognition:
-            switch SFSpeechRecognizer.authorizationStatus() {
-            case .authorized: return .granted
-            case .denied: return .denied
-            case .restricted: return .restricted
-            case .notDetermined: return .notDetermined
-            @unknown default: return .unavailable
-            }
         case .location:
             let value: CLAuthorizationStatus
             if #available(iOS 14.0, *) { value = locationManager.authorizationStatus }
@@ -123,10 +112,6 @@ final class PermissionCenter: NSObject {
             }
         case .microphone:
             AVAudioSession.sharedInstance().requestRecordPermission { _ in
-                DispatchQueue.main.async { completion(self.status(for: permission)) }
-            }
-        case .speechRecognition:
-            SFSpeechRecognizer.requestAuthorization { _ in
                 DispatchQueue.main.async { completion(self.status(for: permission)) }
             }
         case .location:

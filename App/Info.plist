@@ -31,6 +31,8 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSAppTransportSecurity</key>
@@ -39,8 +41,6 @@
 		<true/>
 	</dict>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>Bluetooth is used only while pairing this device as a Muse community gadget.</string>
-	<key>NSBluetoothPeripheralUsageDescription</key>
 	<string>Bluetooth is used only while pairing this device as a Muse community gadget.</string>
 	<key>NSBonjourServices</key>
 	<array>
@@ -61,15 +61,13 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Camera access lets you explicitly send a photo to your paired Muse.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Local network access lets this iPhone discover and communicate with Muse gadgets and companion services nearby.</string>
+	<string>Local network access lets this device discover and communicate with Muse gadgets and companion services nearby.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Location is used while pairing to identify the current Wi-Fi network, and shared only after an explicit command.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Microphone access lets you record a voice message for your paired Muse.</string>
 	<key>NSMotionUsageDescription</key>
 	<string>Motion access lets Muse use a bounded snapshot of this device's motion sensors after you grant permission.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Speech recognition can create a local draft before you send it.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -87,11 +85,6 @@
 			</array>
 		</dict>
 	</dict>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>bluetooth-peripheral</string>
-		<string>audio</string>
-	</array>
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>UILaunchScreen</key>

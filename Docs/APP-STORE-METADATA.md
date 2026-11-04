@@ -1,106 +1,100 @@
 # Pal Again — App Store metadata
 
-## Brand
+The App Store listing starts in English. A Russian listing can follow in a later version.
 
-- **App name:** Pal Again
-- **Tagline:** Make Old Devices Smart Again.
-- **Subtitle:** AI for your older devices
-- **Positioning:** Give an older iPhone or iPad a useful second life as a screen, microphone, speaker, camera and sensor companion for Muse.
+## App Store Connect fields
 
-The exact price is configured in App Store Connect and must not be hard-coded in public metadata because storefront prices and taxes vary by region.
+| Field | Value |
+|---|---|
+| Name | Pal Again |
+| Subtitle | COGNITIVE LABS |
+| Category | Utilities, then Productivity |
+| Copyright | Cognitive Labs |
+| Support URL | https://exrector.com/apps/support.html#palagain |
+| Marketing URL | https://github.com/exrector/muse-gadget-ios |
+| Privacy policy URL | https://exrector.com/apps/palagain/privacy.html |
+| Support email | support@exrector.com |
 
-## English localization
+## Promotional text
 
-### Promotional text
+Give an older iPhone or iPad a new job as a gadget for your Muse: chat, voice, camera, sensors and a living avatar. Open source, with no subscription or ads.
 
-Turn an older iPhone or iPad into a friendly AI companion with text and voice chat, camera, speaker and sensors—without subscriptions or ads.
+## Keywords
 
-### Description
+`muse,gadget,sdk,ai,assistant,companion,old,iphone,ipad,reuse,voice,chat,avatar,widget,open source`
 
-Give an older iPhone or iPad a useful second life.
+## Description
 
-Pal Again turns a compatible iOS or iPadOS device into a friendly AI companion for Muse. Chat by text or voice, share photos, use the speaker, camera and sensors, and make carefully limited device actions available to your assistant.
+Pal Again gives an older iPhone or iPad a new job: a gadget for your Muse, with a screen, microphone, speaker, camera and sensors.
 
-MAKE OLD DEVICES SMART AGAIN
+WHAT THIS APP IS
 
-• A living avatar with your assistant's own face and name, moving as it listens, thinks and speaks
-• A home screen widget in every size your device offers, with your assistant's picture, name and current card
-• Text chat with streamed responses
-• Voice messages and spoken replies
-• Camera and photo sharing
-• Speaker, location and motion features with your permission
-• Local-network discovery for supported companion services
-• An explicit command allowlist—no shell access, arbitrary file access or hidden automation
-• Credentials stored securely in the iOS Keychain
+Muse can work with physical gadgets, and the open-source Muse Gadget SDK defines how they connect. The SDK includes clients for ESP32 boards and for Linux. Pal Again is an independent implementation of the same protocol for iOS and iPadOS: it pairs the same way, connects the same way and answers the same kind of commands. The gadget is a device you already own, with no soldering and no terminal.
 
-SIMPLE, GUIDED SETUP
+Pal Again is a client. Your assistant, your account and your conversations live with Muse. The app gives your assistant a place on your device to see, hear and speak.
 
-Pal Again explains every step in plain language. You remain in control of Bluetooth, local-network, camera, microphone, location and motion permissions. Protected features stay unavailable until you explicitly grant access.
+WHAT IT DOES
 
-After pairing, your assistant's own avatar and name arrive by themselves, on this device and your others.
+• An avatar with your assistant's own face and name, moving as it listens, thinks and speaks
+• Text chat, photos and voice notes
+• Speech through the device's speaker
+• Cards and captions on screen, and widgets in every size your device offers
+• Commands Muse can use: camera, location, motion sensors, vibration, flashlight, screen brightness and device status
+• Apple Shortcuts and local-network devices, each allowed by a tap on the device
+• An explicit list of commands. iOS has no shell, so Muse cannot run arbitrary code or read arbitrary files
 
-To pair the app, you need your own Muse Gadget SDK token and access to Muse Developer Mode on another signed-in device. Pal Again never includes or shares a common SDK token.
+WHAT YOU NEED
 
-Confirmed on iPhone 6s with iOS 15.8.8 and iPad (6th generation) with iPadOS 17.7.11, the oldest devices we have to test on. It can be installed on iOS or iPadOS 15 or later, so other devices may work, but they have not been tested. Results from other devices are welcome on the project's GitHub page. The app answers Muse while it is open on screen.
+• A different phone with the Muse app and Developer Mode. A phone running Muse cannot be its own gadget
+• Your own SDK Token from gadgets.muse.ai. Pal Again does not include one
+• The app open on screen. iOS suspends apps in the background, so the connection lasts about half a minute after you leave, and comes back by itself when you return. A stand and a charger suit it well
 
-ONE PURCHASE, CONTINUED DEVELOPMENT
+Confirmed on iPhone 6s with iOS 15.8.8 and iPad (6th generation) with iPadOS 17.7.11, the oldest devices we have to test on. It can be installed on iOS or iPadOS 15 or later, so other devices may work, but they have not been tested. We would love to hear how yours does.
 
-Pal Again costs $1 as a one-time paid download with no subscription and no advertising. The price pays for the ready-to-use build, Apple signing and App Store delivery, and helps fund independent development, compatibility testing on older hardware, bug fixes, future features and the Apple Developer Program, which costs about $100 per year. Thank you for helping keep useful devices in service and supporting the next version of Pal Again.
+YOUR DATA
 
-Pal Again is an independent, open-source community application. Muse and related marks belong to their respective owners. Muse service availability and SDK token access are governed by their respective terms.
+Pal Again has no account, advertising, analytics or server of its own. Like a physical gadget built with the SDK, it talks directly to your Muse, and data goes there only when you or Muse use a feature. A physical gadget has its camera, microphone and sensors built in. Here iOS asks your permission first, and each feature stays off until you allow it. Your token is kept in the iOS Keychain.
 
-### Keywords
+WHY IT COSTS SOMETHING
 
-`ai,assistant,companion,legacy,voice,chat,camera,sensors,reuse,revive`
+This is a one-time purchase, with no subscription, advertising or in-app purchases. The code is open source and free: anyone can build it from GitHub and sign it with their own developer certificate. The price is for the ready-to-install version. It covers the Apple Developer membership, signed builds and App Store delivery, testing on older hardware, and continued work on fixes and new features.
 
-## Russian localization
+OPEN SOURCE AND SUPPORT
 
-### Promotional text
+Pal Again: github.com/exrector/muse-gadget-ios
+Muse Gadget SDK: github.com/facebookincubator/muse-gadget-sdk
 
-Превратите старый iPhone или iPad в дружелюбного AI-компаньона с чатом, голосом, камерой, динамиком и сенсорами — без подписки и рекламы.
+Found a bug? Use Send a Report in Settings, or write to support@exrector.com.
 
-### Description
+Pal Again is an independent community project. Muse and related marks belong to their respective owners.
 
-Подарите старому iPhone или iPad полезную вторую жизнь.
+## App Review notes
 
-Pal Again превращает совместимое устройство с iOS или iPadOS в дружелюбного AI-компаньона для Muse. Общайтесь текстом и голосом, отправляйте фотографии, используйте динамик, камеру и сенсоры, а также предоставляйте ассистенту строго ограниченный набор действий устройства.
+Pal Again is an iOS and iPadOS implementation of the open-source Muse Gadget SDK:
+https://github.com/facebookincubator/muse-gadget-sdk
 
-MAKE OLD DEVICES SMART AGAIN
+The SDK includes clients for ESP32 and Linux. This app is the same kind of client, written natively for iOS, and its source is public:
+https://github.com/exrector/muse-gadget-ios
 
-• Живой аватар с лицом и именем вашего ассистента: двигается, когда слушает, думает и говорит
-• Текстовый чат с потоковыми ответами
-• Голосовые сообщения и озвучивание ответов
-• Камера и отправка фотографий
-• Динамик, геопозиция и датчики движения — только с вашего разрешения
-• Поиск поддерживаемых сервисов в локальной сети
-• Явный список разрешённых команд — без shell, произвольного доступа к файлам и скрытой автоматизации
-• Безопасное хранение учётных данных в iOS Keychain
+WHY THERE IS NO DEMO ACCOUNT
+Pairing needs a Muse Gadget SDK Token, which belongs to a personal Muse account, so we cannot share one. Anyone with Muse can create their own at gadgets.muse.ai. Pairing also needs a second phone with the Muse app and Developer Mode. Without pairing, you can review the guided setup and its explanations of each permission. We can send a video of the whole flow on request.
 
-ПРОСТАЯ ПОШАГОВАЯ НАСТРОЙКА
+PERMISSIONS
+Each one is asked for when it is first needed, and the app keeps working if it is denied.
+- Bluetooth: pairing only.
+- Local network: finding devices and sending requests the person allows.
+- Camera and microphone: photos and voice notes the person sends, and commands from Muse while the app is open.
+- Location: identifying the Wi-Fi network during pairing, and commands from Muse while the app is open.
+- Motion: a short sensor reading on request from Muse.
 
-Pal Again объясняет каждый шаг понятным языком. Вы сами управляете разрешениями Bluetooth, локальной сети, камеры, микрофона, геопозиции и движения. Защищённые функции недоступны, пока вы явно не разрешите их использование.
+BACKGROUND
+The app declares no background modes and works only while it is open.
 
-После создания пары аватар и имя вашего ассистента появятся сами, и на этом устройстве, и на остальных.
+ENCRYPTION
+The app uses standard algorithms through Apple's CryptoKit and system TLS, and contains no proprietary encryption.
 
-Для создания пары необходимы ваш собственный Muse Gadget SDK Token и доступ к режиму разработчика Muse на другом устройстве, где выполнен вход в аккаунт. Pal Again не содержит общего SDK Token и не передаёт его другим пользователям.
-
-ОДНА ПОКУПКА — ДАЛЬНЕЙШЕЕ РАЗВИТИЕ
-
-Pal Again стоит $1 и приобретается один раз: без подписки и рекламы. Цена оплачивает готовую сборку, подпись Apple и доставку через App Store, а также помогает финансировать независимую разработку, тестирование на старых устройствах, исправление ошибок, новые функции и Apple Developer Program стоимостью около $100 в год. Спасибо, что помогаете сохранять полезные устройства в работе и поддерживаете следующие версии Pal Again.
-
-Pal Again — независимое приложение сообщества с открытым исходным кодом. Muse и связанные товарные знаки принадлежат их правообладателям. Доступность сервиса Muse и SDK Token регулируется соответствующими условиями.
-
-### Keywords
-
-`ассистент,компаньон,голос,чат,камера,сенсоры`
-
-## App Review notes checklist
-
-- Explain that this is a one-time paid download with no in-app purchases, subscription or advertising.
-- Provide App Review with a valid temporary Muse test account/token or a fully functional review mode; never commit review credentials to Git.
-- Describe the pairing flow and identify Muse as the external AI service used for core functionality.
-- List the physical devices and OS versions tested before submission.
-- Provide working support and privacy-policy URLs before review.
+PURCHASES
+Paid download. There are no in-app purchases, subscriptions, advertising or analytics.
 
 ## Xcode mapping
 
