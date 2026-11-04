@@ -24,6 +24,7 @@ Pal Again turns a compatible iOS or iPadOS device into a friendly AI companion f
 MAKE OLD DEVICES SMART AGAIN
 
 • A living avatar with your assistant's own face and name, moving as it listens, thinks and speaks
+• A home screen widget in every size your device offers, with your assistant's picture, name and current card
 • Text chat with streamed responses
 • Voice messages and spoken replies
 • Camera and photo sharing
@@ -39,6 +40,8 @@ Pal Again explains every step in plain language. You remain in control of Blueto
 After pairing, your assistant's own avatar and name arrive by themselves, on this device and your others.
 
 To pair the app, you need your own Muse Gadget SDK token and access to Muse Developer Mode on another signed-in device. Pal Again never includes or shares a common SDK token.
+
+Requires iOS or iPadOS 15 or later. Tested on iPhone 6s with iOS 15.8.8 and iPad (6th generation) with iPadOS 17.7.11. The app answers Muse while it is open on screen.
 
 ONE PURCHASE, CONTINUED DEVELOPMENT
 

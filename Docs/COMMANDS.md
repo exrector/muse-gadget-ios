@@ -14,6 +14,26 @@ The set is an explicit allowlist, defined in [`IOSCommandRegistry.swift`](../App
 
 A failed command has `ok: false` and a short code in `error`.
 
+## SDK commands on iOS
+
+The official SDK writes its commands for ESP32 and Linux gadgets. This is what happens to each of them here. Commands this table leaves out, such as `display.set_brightness`, `torch.set` or `shortcuts.run`, are this app's own, which the SDK allows.
+
+| SDK command | Group | On iOS |
+|---|---|---|
+| `camera.capture`, `device.health`, `voice.configure`, `display.draw_file` | Has an iOS equivalent | Registered under the same name |
+| `device.discover` | Has an iOS equivalent | `lan.discover`, through Bonjour only |
+| `display.show_animation` | Has an iOS equivalent | `display.clear_image`, under another name |
+| `sensors.read` (air quality, temperature) | No such hardware | Not registered |
+| `device.ota` | Firmware for ESP32 | Not registered, and never will be: the gadget also must not register with the family `link` |
+| `ble.*` | Not built | Not registered, and would need a decision of its own |
+| `system.run`, `file.read`, `file.write` | Made for a computer | Forbidden by this project's rules. `shortcuts.run` and `lan.request` cover the same needs |
+| `display.draw_url` | Has a substitute | Not registered on purpose: a remote command must not make the device reach a new address. Muse saves the file on the VM and uses `display.draw_file` |
+| `device.list_vms`, `device.set_vm`, `device.reset_vm`, `device.unpair` | Managing the device | Not registered. Removal from Muse arrives as the `link.unpaired` event |
+
+A command that is not registered is simply not visible to Muse, so it has no error to return. `unavailable`-style errors come only from registered commands on a device missing the hardware, such as `torch.set` returning `torch_unavailable` on an iPad with no flash.
+
+`musegadget doctor` is not one of these commands. It is a local check run in a Linux terminal, and iOS has no counterpart to it.
+
 ## Device and display
 
 ### `device.health`

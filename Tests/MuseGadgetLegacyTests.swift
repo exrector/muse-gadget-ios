@@ -1100,6 +1100,21 @@ final class MuseGadgetLegacyTests: XCTestCase {
         XCTAssertEqual(view.preparedMovements, states.union(["move2"]))
     }
 
+    func testWidgetContentCarriesTheCardAndWhenItsTimerEnds() throws {
+        let shownAt = Date(timeIntervalSince1970: 1000)
+        let card = MuseCard(title: "Tea", body: "Steeping", kind: .timer, durationSeconds: 300, shownAt: shownAt)
+        let content = MuseWidgetPublisher.content(name: "Companion", card: card)
+        XCTAssertEqual(content.name, "Companion")
+        XCTAssertEqual(content.card?.title, "Tea")
+        XCTAssertEqual(content.card?.endsAt, shownAt.addingTimeInterval(300))
+
+        let decoded = try JSONDecoder().decode(MuseWidgetContent.self, from: JSONEncoder().encode(content))
+        XCTAssertEqual(decoded, content)
+
+        XCTAssertNil(MuseWidgetPublisher.content(name: nil, card: nil).card)
+        XCTAssertNil(MuseWidgetPublisher.content(name: nil, card: MuseCard(title: "Note", body: "")).card?.endsAt)
+    }
+
     func testAvatarStoreRemovesAnInterruptedBuildAndKeepsFinishedVideos() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

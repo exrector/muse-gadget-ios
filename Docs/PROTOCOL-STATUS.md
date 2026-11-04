@@ -40,3 +40,18 @@
 | `lan.discover`, `lan.request` | Implemented, awaiting live check | Real devices listed; an approved device answers a real request |
 | WebSocket, MQTT, UDP, SSDP, SSH on the local network | Not implemented | — |
 
+## Working in the background
+
+iOS suspends an app soon after it leaves the screen, which ends its connection to Muse. The SDK has no answer to this, because ESP32 and Linux gadgets are simply always on. Measured on iPad (6th generation), iPadOS 17.7.11, on charge, 2026-11-05, with the screen on and nobody touching the device. Each run is one measurement, and "connected" means pings to the VM were answered.
+
+| Way of staying connected | Result | Status |
+|---|---|---|
+| Background time from iOS | The time ran out 32 s after leaving the screen, the last ping was answered at about 20 s, and the app was suspended at 37 s. Back on screen, it registered again in about 5 s | In use |
+| Picture in Picture with the avatar | The window closed by itself about 5 s after leaving the screen, cause not established. The playback session stayed active, and the app was never suspended: connected for 10 min 18 s and 3 min 9 s, when each run ended on purpose | Removed: a window that lasts seconds is no use, and what kept the app running was playback with no sound |
+| Silent audio in the background | Not tried | Not used: background audio is meant for sound the person hears |
+| Constant location updates | Not tried | Not used: drains the battery and shows a system indicator |
+| Push notifications | Not available | Muse's server sends this app none |
+| Home screen widget | Runs as a separate process with no connection to Muse, so it does not keep the app awake | In use, to show the last picture, name and card. Simulator: small, medium and large drawn with a running timer on iOS 18.6. On real devices it has not been added to a home screen yet |
+
+While the app is in the background, commands that must be visible still fail with `foreground_required`, as described in [COMMANDS.md](COMMANDS.md).
+

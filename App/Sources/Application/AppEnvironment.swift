@@ -1,5 +1,45 @@
 import Foundation
+import os
 import UIKit
+
+/// iOS suspends an app moments after it leaves the screen. This asks for the extra time iOS allows,
+/// about 30 seconds, so a quick look at another app does not drop the connection.
+final class MuseBackgroundGrace {
+    private var task = UIBackgroundTaskIdentifier.invalid
+    private var observers: [NSObjectProtocol] = []
+    private let logger = Logger(subsystem: "com.exrector.MuseGadgetLegacy", category: "background")
+
+    init() {
+        let center = NotificationCenter.default
+        observers = [
+            center.addObserver(
+                forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+            ) { [weak self] _ in self?.begin() },
+            center.addObserver(
+                forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
+            ) { [weak self] _ in self?.end() }
+        ]
+    }
+
+    deinit {
+        observers.forEach(NotificationCenter.default.removeObserver)
+    }
+
+    private func begin() {
+        guard task == .invalid else { return }
+        task = UIApplication.shared.beginBackgroundTask(withName: "MuseConnection") { [weak self] in
+            self?.logger.info("Background time ran out")
+            self?.end()
+        }
+        logger.info("Left the screen")
+    }
+
+    private func end() {
+        guard task != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(task)
+        task = .invalid
+    }
+}
 
 final class AppEnvironment {
     let identity: DeviceIdentity
@@ -16,6 +56,7 @@ final class AppEnvironment {
     let chatStore = MuseChatStore()
     let chatCloud = MuseChatCloudSync()
     let chatPeers: MuseChatPeerSync
+    private let backgroundGrace = MuseBackgroundGrace()
 
     init() {
         let identity = DeviceIdentityStore().loadOrCreate()

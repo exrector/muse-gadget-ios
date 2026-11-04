@@ -63,7 +63,13 @@ Ask Muse in the chat, or from your main phone. If you have several gadgets, say 
 
 Some of these have not been confirmed on a real device yet. See [what has been tested](PROTOCOL-STATUS.md).
 
-**The gadget has to be open on screen.** iOS suspends apps in the background, so the camera, microphone, sensors and everything else stop answering once you leave the app. **Keep Screen Awake** in Settings is on by default for this reason, and a stand with a charger suits this well.
+**The gadget has to be open on screen.** iOS suspends apps in the background, so the camera, microphone, sensors and everything else stop answering once you leave the app. **Keep Screen Awake** in Settings is on by default for this reason, and a stand with a charger suits this well. A quick look at another app is fine: the connection lasts about half a minute, and the app reconnects by itself when you come back.
+
+### Home screen widget
+
+Touch and hold an empty spot on the home screen, tap **+**, and choose **Pal Again**. Pick a size and tap **Add Widget**. Every size your device offers is there.
+
+The widget shows Muse's picture, its name and the current card, and a timer on a card keeps counting. Tapping it opens the app. The picture does not move, because iOS does not let widgets play video. The widget shows what the app last gave it, and it does not keep the app awake or connected.
 
 ### Muse's avatar and name
 

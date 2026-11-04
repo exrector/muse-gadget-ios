@@ -153,10 +153,17 @@ final class MuseAppModel: ObservableObject {
     @Published var museActivity: String?
     @Published var approvalPrompt: MuseApprovalPrompt?
     @Published var card: MuseCard? = MuseCard.loadPinned() {
-        didSet { MuseCard.savePinned(card) }
+        didSet {
+            MuseCard.savePinned(card)
+            publishWidget()
+        }
     }
-    @Published var agentIdentity = MuseAgentName.saved.map(MuseAgentIdentity.init(name:))
-    @Published var agentAvatar: Data?
+    @Published var agentIdentity = MuseAgentName.saved.map(MuseAgentIdentity.init(name:)) {
+        didSet { publishWidget() }
+    }
+    @Published var agentAvatar: Data? {
+        didSet { MuseWidgetPublisher.publishAvatar(agentAvatar) }
+    }
     @Published var avatarFiles: [String: URL] = [:]
     @Published var avatarOneShot: String?
     @Published var avatarsPreparing = 0
@@ -349,6 +356,8 @@ final class MuseAppModel: ObservableObject {
             }
         }
         applyIdleTimerPolicy()
+        publishWidget()
+        MuseWidgetPublisher.publishAvatar(environment.vmImages.currentAvatar())
         for name in [UIApplication.didEnterBackgroundNotification, UIApplication.willTerminateNotification] {
             NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 self?.environment.chatStore.flush()
@@ -782,6 +791,10 @@ final class MuseAppModel: ObservableObject {
                 finishWaitingForReply()
             }
         }
+    }
+
+    private func publishWidget() {
+        MuseWidgetPublisher.publish(name: agentIdentity?.name, card: card)
     }
 
     private func applyIdleTimerPolicy() {
