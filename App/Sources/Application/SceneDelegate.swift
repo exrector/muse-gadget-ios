@@ -13,6 +13,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               let appDelegate = UIApplication.shared.delegate as? AppDelegate else { return }
 
         let window = UIWindow(windowScene: windowScene)
+        // iOS 15's TextEditor has no other way to drop its white background.
+        UITextView.appearance().backgroundColor = .clear
         // Solid on purpose, like the app's other bars: older devices struggle with blur.
         let tabBar = UITabBarAppearance()
         tabBar.configureWithOpaqueBackground()

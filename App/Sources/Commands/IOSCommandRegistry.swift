@@ -206,14 +206,14 @@ final class IOSCommandRegistry {
 
         registry.register(CommandDefinition(
             name: "display.set_avatar",
-            summary: "Set this gadget's picture of you from an image file on your VM. Draw your own avatar from your profile as a square PNG or JPEG, save it on the VM, then call this. The device keeps the image across restarts and shows it beside your name in its chat. To make it move, call this once per state with an animated GIF, APNG or WebP of your avatar in that state.",
+            summary: "Set this gadget's picture of you from an image file on your VM. Draw your own avatar from your profile as a square PNG or JPEG, save it on the VM, then call this. The device keeps the image across restarts and shows it beside your name in its chat. To make it move, call this once per state with an animated GIF, APNG or WebP of your avatar in that state. List your files in workspace/pal-again/avatars.json as {\"animations\":{\"idle\":{\"path\":\"workspace/idle.webp\",\"bytes\":123}}}: every gadget reads that list when it connects and fetches what is new by itself.",
             parameters: ["path": [
                 "type": "string",
                 "description": "Path of the image file on this VM, relative, as the VM's file API takes it, such as workspace/avatar.png. Keep the original size and frame rate. At most 32 MiB."
             ]],
             optional: ["state": [
                 "type": "string",
-                "description": "Which state this animation is for: idle, listening, thinking or speaking. Leave it out for a still picture."
+                "description": "Which movement this animation is: idle, listening, thinking or speaking, which the device plays by itself, or any other short name you start with display.play_avatar. Leave it out for a still picture."
             ]],
             timeoutMS: 180_000
         )) { arguments, completion in
@@ -222,6 +222,14 @@ final class IOSCommandRegistry {
                 state: arguments["state"] as? String,
                 completion: completion
             )
+        }
+
+        registry.register(CommandDefinition(
+            name: "display.play_avatar",
+            summary: "Play one of the avatar's movements once, such as a reaction you added with display.set_avatar, then go back to what it was doing. An unknown name fails and lists the available ones.",
+            parameters: ["name": ["type": "string", "description": "Name of the movement."]]
+        )) { arguments, completion in
+            images.playAvatar(name: arguments["name"] as? String ?? "", completion: completion)
         }
 
         registry.register(CommandDefinition(

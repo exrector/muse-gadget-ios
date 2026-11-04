@@ -33,7 +33,7 @@ The chat opens when pairing finishes. Wait for **Connected to Muse VM** at the t
 
 ## Chat
 
-The **Muse** tab is the conversation. Messages you send here go into your main Muse chat, marked as coming from this device.
+The chat is the main screen. Messages you send here go into your main Muse chat, marked as coming from this device.
 
 - **Text:** type and tap the arrow. While Muse works, you see a progress line.
 - **Photos:** tap **+**, then **Take Photo** or **Choose from Photos**. Text you have already typed goes with the photo as its caption.
@@ -48,7 +48,7 @@ Ask Muse in the chat, or from your main phone. If you have several gadgets, say 
 | Ask for | What happens |
 |---|---|
 | A caption or a card | Text appears on the gadget's screen |
-| Your avatar | Under Settings, tap **Muse avatar**. Muse draws it in the chat and it appears beside its name |
+| Your avatar | In Settings, tap **Muse avatar**. Muse sends its animations, and your other gadgets fetch them by themselves when they connect |
 | Show a picture | Muse saves it on its VM and it appears above the chat. Tap to enlarge it, or × to close it |
 | Say something aloud | The gadget speaks through its speaker |
 | Vibrate | iPhone vibrates. iPads have no vibration motor and report that |
@@ -86,7 +86,7 @@ Muse can find devices on your Wi-Fi and send them web requests. The [skills in t
 
 ## Settings
 
-The **Настройки** tab has:
+The gear button opens **Settings**: under the avatar on an iPad, and in the header on an iPhone. It has:
 
 | Setting | What it does |
 |---|---|
@@ -103,8 +103,6 @@ The **Настройки** tab has:
 | **Clear Chat History** | Deletes the saved chat |
 | **Replace SDK Token** | Stores a different token |
 | **Remove Muse Pairing** | Removes the pairing, after which you set the gadget up again |
-
-The **Возможности** tab summarizes what the gadget offers.
 
 ## Chat history
 

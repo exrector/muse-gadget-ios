@@ -147,10 +147,14 @@ final class MuseAppModel: ObservableObject {
     @Published var isAwaitingReply = false
     @Published var museActivity: String?
     @Published var approvalPrompt: MuseApprovalPrompt?
-    @Published var card: MuseCard?
+    @Published var card: MuseCard? = MuseCard.loadPinned() {
+        didSet { MuseCard.savePinned(card) }
+    }
     @Published var agentIdentity: MuseAgentIdentity?
     @Published var agentAvatar: Data?
-    @Published var avatarFiles: [MuseAvatarState: URL] = [:]
+    @Published var avatarFiles: [String: URL] = [:]
+    @Published var avatarOneShot: String?
+    @Published var isSettingsOpen = false
     @Published var avatarVersion = UUID()
     @Published var avatarRequested = false
     @Published var drawnImage: UIImage?
@@ -313,6 +317,17 @@ final class MuseAppModel: ObservableObject {
             self.avatarRequested = false
             self.reloadAvatarAnimations()
         }
+        NotificationCenter.default.addObserver(
+            forName: .museAvatarPlay,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let request = note.object as? MuseAvatarPlayRequest else { return }
+            self?.avatarOneShot = request.name
+            DispatchQueue.main.asyncAfter(deadline: .now() + request.duration) {
+                if self?.avatarOneShot == request.name { self?.avatarOneShot = nil }
+            }
+        }
         applyIdleTimerPolicy()
         for name in [UIApplication.didEnterBackgroundNotification, UIApplication.willTerminateNotification] {
             NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
@@ -445,14 +460,19 @@ final class MuseAppModel: ObservableObject {
         sendChat(PalL10n.format("avatar.request_format", UIDevice.current.name))
     }
 
-    var avatarState: MuseAvatarState {
+    /// What the avatar should be doing now. A movement Muse asked for wins until it has played.
+    var avatarAnimationName: String {
+        avatarOneShot ?? avatarState.rawValue
+    }
+
+    private var avatarState: MuseAvatarState {
         if deviceAudio == .speaking { return .speaking }
         if deviceAudio == .listening || isRecordingVoice { return .listening }
         return isAwaitingReply || museActivity != nil ? .thinking : .idle
     }
 
     private func reloadAvatarAnimations() {
-        avatarFiles = environment.vmImages.avatarAnimationFiles()
+        avatarFiles = environment.vmImages.avatarVideoFiles()
         avatarVersion = UUID()
     }
 
@@ -1410,14 +1430,25 @@ private struct MuseMainTabs: View {
     @ObservedObject var model: MuseAppModel
 
     var body: some View {
-        TabView {
+        // Settings cover the chat instead of replacing it, so the draft, the scroll position and the
+        // avatar stay as they were. A tab bar would cost the chat a whole row of an old phone's screen.
+        ZStack {
             NavigationView { MuseChatView(model: model) }
                 .navigationViewStyle(.stack)
-                .tabItem { Label("Muse", systemImage: "message.fill") }
-
-            NavigationView { MuseSettingsView(model: model) }
-                .navigationViewStyle(.stack)
-                .tabItem { Label("Настройки", systemImage: "gearshape.fill") }
+            if model.isSettingsOpen {
+                NavigationView { MuseSettingsView(model: model) }
+                    .navigationViewStyle(.stack)
+                    .background(Color(UIColor.systemBackground))
+                    .overlay(alignment: .topTrailing) {
+                        Button { model.isSettingsOpen = false } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.title)
+                                .foregroundColor(MuseTheme.secondary)
+                                .padding(16)
+                        }
+                        .accessibilityLabel(PalL10n.text("Закрыть"))
+                    }
+            }
         }
         .accentColor(MuseTheme.mint)
         .overlay(alignment: .top) {
@@ -1473,6 +1504,52 @@ private struct MuseDrawnImagePanel: View {
     }
 }
 
+/// Grows with the text up to a limit, then scrolls. iOS 15 has no multi-line TextField, so a hidden
+/// copy of the text sets the height of a TextEditor. Return starts a new line; the arrow sends.
+private struct MuseComposerField: View {
+    @Binding var text: String
+    var isFocused: FocusState<Bool>.Binding
+
+    var body: some View {
+        Text(text.isEmpty ? " " : text + " ")
+            .font(.body)
+            .opacity(0)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 15)
+            .padding(.vertical, 12)
+            .frame(minHeight: 46, maxHeight: 150, alignment: .top)
+            .fixedSize(horizontal: false, vertical: true)
+            .overlay(editor)
+            .overlay(alignment: .topLeading) {
+                if text.isEmpty {
+                    Text(PalL10n.key("Сообщение для Muse"))
+                        .font(.body)
+                        .foregroundColor(MuseTheme.secondary)
+                        .padding(.horizontal, 15)
+                        .padding(.vertical, 12)
+                        .allowsHitTesting(false)
+                }
+            }
+            .background(MuseTheme.elevated)
+            .clipShape(RoundedRectangle(cornerRadius: 23, style: .continuous))
+    }
+
+    @ViewBuilder
+    private var editor: some View {
+        let field = TextEditor(text: $text)
+            .font(.body)
+            .focused(isFocused)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .accessibilityLabel(PalL10n.text("Сообщение для Muse"))
+        if #available(iOS 16.0, *) {
+            field.scrollContentBackground(.hidden)
+        } else {
+            field
+        }
+    }
+}
+
 private struct MuseChatView: View {
     private enum MediaPicker: String, Identifiable {
         case camera, library
@@ -1486,34 +1563,50 @@ private struct MuseChatView: View {
 
     private static let bottomAnchor = "chat-bottom"
 
-    /// Only a full-size iPad held sideways has room. In portrait and on a phone the header holds the face.
-    private func hasSidePanel(_ size: CGSize) -> Bool {
-        UIDevice.current.userInterfaceIdiom == .pad && size.width > size.height && size.width >= 900
+    private enum ScreenLayout {
+        case phone, iPadUpright, iPadSideways
+
+        /// A narrow iPad window has no more room than a phone.
+        init(size: CGSize) {
+            guard UIDevice.current.userInterfaceIdiom == .pad, size.width >= 600 else {
+                self = .phone
+                return
+            }
+            self = size.width > size.height ? .iPadSideways : .iPadUpright
+        }
     }
 
     var body: some View {
         GeometryReader { geometry in
-            HStack(spacing: 0) {
-                if hasSidePanel(geometry.size) {
+            switch ScreenLayout(size: geometry.size) {
+            case .phone:
+                chat(onPhone: true)
+            case .iPadUpright:
+                VStack(spacing: 0) {
+                    MuseAvatarTopBand(model: model)
+                    chat(onPhone: false)
+                }
+            case .iPadSideways:
+                HStack(spacing: 0) {
                     MuseAvatarSidePanel(model: model)
                         .frame(width: geometry.size.width * 0.38)
                     Divider()
+                    chat(onPhone: false)
                 }
-                chat(showsHeader: !hasSidePanel(geometry.size))
             }
         }
     }
 
-    private func chat(showsHeader: Bool) -> some View {
+    private func chat(onPhone: Bool) -> some View {
         VStack(spacing: 0) {
-            if showsHeader {
+            if onPhone {
                 MuseChatHeader(model: model)
             } else {
                 // Keeps the scrolling chat below the status bar, which the header does otherwise.
                 Color.clear.frame(height: 1)
             }
 
-            if let card = model.card {
+            if onPhone, let card = model.card {
                 MuseWidgetCard(card: card) { model.card = nil }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
@@ -1522,7 +1615,7 @@ private struct MuseChatView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
 
-            if let image = model.drawnImage {
+            if onPhone, let image = model.drawnImage {
                 MuseDrawnImagePanel(image: image) { model.drawnImage = nil }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
@@ -1533,7 +1626,7 @@ private struct MuseChatView: View {
             ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 18) {
-                    if !model.caption.isEmpty {
+                    if onPhone, !model.caption.isEmpty {
                         ChatBubble(text: model.caption, isMuse: true)
                     }
 
@@ -1611,15 +1704,8 @@ private struct MuseChatView: View {
                     .disabled(!model.canSendToMuse)
                     .accessibilityLabel("Добавить фото")
 
-                    TextField("Сообщение для Muse", text: $draft)
-                        .focused($isComposerFocused)
-                        .padding(.horizontal, 15)
-                        .frame(minHeight: 46)
-                        .background(MuseTheme.elevated)
-                        .clipShape(Capsule())
+                    MuseComposerField(text: $draft, isFocused: $isComposerFocused)
                         .disabled(model.runtimeState != .registered)
-                        .submitLabel(.send)
-                        .onSubmit(sendDraft)
                 }
 
                 // Stays the same view across recording, or a held press would be cancelled.
@@ -1687,32 +1773,53 @@ private struct MuseChatView: View {
     }
 }
 
-/// Muse's face: its animation by state, else its picture, else the app's mark.
+/// Muse's face: its still picture, with the videos over it as soon as they are ready, or the app's mark.
 private struct MuseAvatarFace: View {
     @ObservedObject var model: MuseAppModel
     let markSize: CGFloat
 
     var body: some View {
-        if model.avatarFiles[.idle] != nil {
-            MuseAvatarPlayer(files: model.avatarFiles, state: model.avatarState, version: model.avatarVersion)
-        } else if let data = model.agentAvatar, let avatar = UIImage(data: data) {
-            Image(uiImage: avatar).resizable().scaledToFit()
-        } else {
-            MuseMark(size: markSize)
+        ZStack {
+            if let data = model.agentAvatar, let avatar = UIImage(data: data) {
+                Image(uiImage: avatar).resizable().scaledToFit()
+            } else if model.avatarFiles.isEmpty {
+                MuseMark(size: markSize)
+            }
+            if !model.avatarFiles.isEmpty {
+                MuseAvatarPlayer(files: model.avatarFiles, name: model.avatarAnimationName, version: model.avatarVersion)
+            }
         }
     }
 }
 
-/// The large face beside the chat on an iPad held sideways.
-private struct MuseAvatarSidePanel: View {
+private struct MuseSettingsButton: View {
+    @ObservedObject var model: MuseAppModel
+    var showsTitle = true
+
+    var body: some View {
+        Button { model.isSettingsOpen = true } label: {
+            if showsTitle {
+                Label(PalL10n.text("Настройки"), systemImage: "gearshape.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, 12)
+                    .frame(minHeight: 44)
+                    .background(MuseTheme.elevated)
+                    .clipShape(Capsule())
+            } else {
+                Image(systemName: "gearshape.fill")
+                    .font(.title3)
+                    .frame(width: 44, height: 44)
+                    .accessibilityLabel(PalL10n.text("Настройки"))
+            }
+        }
+    }
+}
+
+private struct MuseAvatarNameAndStatus: View {
     @ObservedObject var model: MuseAppModel
 
     var body: some View {
-        VStack(spacing: 16) {
-            Spacer(minLength: 0)
-            MuseAvatarFace(model: model, markSize: 120)
-                .aspectRatio(1, contentMode: .fit)
-                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        VStack(alignment: .leading, spacing: 6) {
             Text(model.agentIdentity?.name.isEmpty == false ? model.agentIdentity!.name : "Muse")
                 .font(.title2.weight(.semibold))
                 .lineLimit(1)
@@ -1725,14 +1832,80 @@ private struct MuseAvatarSidePanel: View {
                     .font(.body.weight(.medium))
                     .foregroundColor(MuseTheme.secondary)
                     .lineLimit(2)
-                    .multilineTextAlignment(.center)
             }
-            Spacer(minLength: 0)
         }
-        .padding(20)
-        .frame(maxHeight: .infinity)
-        .background(MuseTheme.bar)
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// What Muse puts on the screen beside the chat: its card, its picture and its caption.
+private struct MuseScreenItems: View {
+    @ObservedObject var model: MuseAppModel
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                if let card = model.card {
+                    MuseWidgetCard(card: card) { model.card = nil }
+                }
+                if let image = model.drawnImage {
+                    MuseDrawnImagePanel(image: image) { model.drawnImage = nil }
+                }
+                if !model.caption.isEmpty {
+                    Text(model.caption)
+                        .font(.body)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+    }
+}
+
+/// An iPad held sideways: the face at the top of a column, with room below for what Muse shows.
+private struct MuseAvatarSidePanel: View {
+    @ObservedObject var model: MuseAppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            MuseAvatarFace(model: model, markSize: 120)
+                .aspectRatio(1, contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            HStack(alignment: .top) {
+                MuseAvatarNameAndStatus(model: model)
+                Spacer(minLength: 8)
+                MuseSettingsButton(model: model)
+            }
+            MuseScreenItems(model: model)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(MuseTheme.bar)
+    }
+}
+
+/// An iPad held upright: the face beside its name and what Muse shows, above the chat.
+private struct MuseAvatarTopBand: View {
+    @ObservedObject var model: MuseAppModel
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 16) {
+            MuseAvatarFace(model: model, markSize: 72)
+                .frame(width: 133, height: 133)
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top) {
+                    MuseAvatarNameAndStatus(model: model)
+                    Spacer(minLength: 8)
+                    MuseSettingsButton(model: model)
+                }
+                MuseScreenItems(model: model)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: 165)
+        .background(MuseTheme.bar)
+        .overlay(alignment: .bottom) { Divider() }
     }
 }
 
@@ -1764,12 +1937,12 @@ private struct MuseChatHeader: View {
                     .scaleEffect(0.8)
                     .accessibilityLabel("Muse отвечает…")
             }
+            MuseSettingsButton(model: model, showsTitle: false)
         }
         .padding(.horizontal, 16)
         .frame(minHeight: 52)
         .background(MuseTheme.bar)
         .overlay(alignment: .bottom) { Divider() }
-        .accessibilityElement(children: .combine)
     }
 }
 

@@ -207,6 +207,7 @@ final class MuseRuntime: NSObject {
     var onChatRecord: (([String: Any]) -> Void)?
     var onAgentIdentity: ((MuseAgentIdentity) -> Void)?
     var onCommandFinished: ((String, Bool) -> Void)?
+    var onRegistered: (() -> Void)?
 
     private let identity: DeviceIdentity
     private let commands: IOSCommandRegistry
@@ -824,6 +825,7 @@ final class MuseRuntime: NSObject {
                 schedulePing()
                 openChatSubscription()
                 fetchAgentIdentity()
+                DispatchQueue.main.async { self.onRegistered?() }
             }
             return
         }

@@ -197,7 +197,26 @@ final class NativeCommandServices {
     }
 }
 
-struct MuseCard: Equatable, Identifiable {
+struct MuseCard: Equatable, Identifiable, Codable {
+    private enum CodingKeys: String, CodingKey {
+        case title, body, kind, durationSeconds, progress, shownAt
+    }
+
+    private static let storageKey = "pinnedCard"
+
+    /// The card outlives the app: what it stands for, such as a timer, goes on running on the VM.
+    static func loadPinned() -> MuseCard? {
+        UserDefaults.standard.data(forKey: storageKey).flatMap { try? JSONDecoder().decode(MuseCard.self, from: $0) }
+    }
+
+    static func savePinned(_ card: MuseCard?) {
+        if let card, let data = try? JSONEncoder().encode(card) {
+            UserDefaults.standard.set(data, forKey: storageKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: storageKey)
+        }
+    }
+
     let id = UUID()
     let title: String
     let body: String
@@ -206,7 +225,7 @@ struct MuseCard: Equatable, Identifiable {
     let progress: Double?
     let shownAt: Date
 
-    enum Kind: String, Equatable {
+    enum Kind: String, Equatable, Codable {
         case info
         case timer
         case progress

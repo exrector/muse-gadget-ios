@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 final class AppEnvironment {
     let identity: DeviceIdentity
@@ -57,6 +58,14 @@ final class AppEnvironment {
         self.runtime = runtime
 
         importStagedSDKTokenIfPresent()
+        vmImages.buildAvatarVideos()
+        runtime.onRegistered = { vmImages.syncFromVM() }
+        // A build stopped by the app leaving the screen goes on from where it was.
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { _ in vmImages.buildAvatarVideos() }
 
         pairing.onCredentialsStored = { credentials in runtime.start(credentials: credentials) }
         runtime.onUnpaired = { pairing.forgetPairing() }

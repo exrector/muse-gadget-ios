@@ -1,3 +1,4 @@
+import AVFoundation
 import ImageIO
 import XCTest
 @testable import MuseGadgetLegacy
@@ -769,50 +770,119 @@ final class MuseGadgetLegacyTests: XCTestCase {
         XCTAssertNil(MuseAvatarAnimationInfo(data: Data("not an image".utf8)))
     }
 
-    func testAvatarClipBuffersBeforePlayingAndStaysInsideItsBudget() throws {
-        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: file) }
-        try sampleGIF(frames: 10).write(to: file)
-
-        // Room for 4 frames of 32 px: a moving window. A target over the file's size is not enlarged.
-        let clip = try XCTUnwrap(MuseAvatarClip(url: file, targetPixelSize: 500, byteBudget: 4 * 32 * 32 * 4))
-        XCTAssertEqual(clip.pixelSize, 32)
-        XCTAssertEqual(clip.capacity, 4)
-        XCTAssertFalse(clip.isBuffered)
-
-        let buffered = expectation(description: "buffered")
-        clip.onBuffered = { buffered.fulfill() }
-        XCTAssertNil(clip.frame(at: 0))
-        wait(for: [buffered], timeout: 10)
-        XCTAssertTrue(clip.isBuffered)
-        XCTAssertNotNil(clip.frame(at: 0))
-        XCTAssertNotNil(clip.frame(at: 3))
-        XCTAssertNil(MuseAvatarClip(url: file.appendingPathExtension("missing"), targetPixelSize: 64, byteBudget: 1024))
+    func testAvatarNamesAcceptMuseVariantsAndNewMovements() {
+        XCTAssertEqual(MuseAvatarState.animationName("working"), "thinking")
+        XCTAssertEqual(MuseAvatarState.animationName("TALKING"), "speaking")
+        XCTAssertEqual(MuseAvatarState.animationName("wag-tail_2"), "wag-tail_2")
+        XCTAssertNil(MuseAvatarState.animationName("../secret"))
+        XCTAssertNil(MuseAvatarState.animationName(""))
+        XCTAssertNil(MuseAvatarState.animationName(String(repeating: "a", count: 33)))
     }
 
-    func testAvatarStateNamesAcceptTheVariantsMuseUses() {
-        XCTAssertEqual(MuseAvatarState(commandValue: "working"), .thinking)
-        XCTAssertEqual(MuseAvatarState(commandValue: "TALKING"), .speaking)
-        XCTAssertNil(MuseAvatarState(commandValue: "dancing"))
-    }
-
-    func testAvatarAnimationsSurviveARestartAndIdleSetsTheStillPicture() throws {
+    func testAnimationBecomesAVideoAssetThatKeepsItsTiming() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = MuseAvatarStore(directory: directory)
-        let gif = try sampleGIF(frames: 2)
+        let gif = try sampleGIF(frames: 4)
 
-        _ = try store.saveAnimation(gif, state: .speaking)
-        XCTAssertNil(store.load())
-        _ = try store.saveAnimation(gif, state: .idle)
+        XCTAssertNotNil(try? store.saveAnimation(gif, name: "wag"))
+        XCTAssertNil(store.load(), "only idle sets the still picture")
+        XCTAssertTrue(store.videoFiles().isEmpty)
+        XCTAssertEqual(store.availableAnimations, ["wag"])
+
+        store.buildMissingVideos()
+        let video = try XCTUnwrap(store.videoFiles()["wag"])
+        let asset = AVURLAsset(url: video)
+        XCTAssertEqual(CMTimeGetSeconds(asset.duration), 2, accuracy: 0.05)
+        XCTAssertEqual(asset.tracks(withMediaType: .video).count, 1)
+        XCTAssertEqual(store.duration(of: "wag") ?? 0, 2, accuracy: 0.01)
+
+        // A new file replaces the old video until its own is built.
+        _ = try store.saveAnimation(gif, name: "wag")
+        XCTAssertTrue(MuseAvatarStore(directory: directory).videoFiles().isEmpty)
+
+        _ = try store.saveAnimation(gif, name: "idle")
         XCTAssertNotNil(store.load())
-
-        let reopened = MuseAvatarStore(directory: directory).animationFiles()
-        XCTAssertEqual(Set(reopened.keys), [.idle, .speaking])
-
         store.clear()
-        XCTAssertTrue(store.animationFiles().isEmpty)
+        XCTAssertTrue(store.availableAnimations.isEmpty)
         XCTAssertNil(store.load())
+    }
+
+    func testPinnedCardSurvivesARestartWithItsTimerStillRunning() throws {
+        let previous = MuseCard.loadPinned()
+        defer { MuseCard.savePinned(previous) }
+        let started = Date(timeIntervalSince1970: 1_000)
+        MuseCard.savePinned(MuseCard(title: "Таймер", body: "1 час", kind: .timer, durationSeconds: 3_600, shownAt: started))
+        let restored = try XCTUnwrap(MuseCard.loadPinned())
+        XCTAssertEqual(restored.title, "Таймер")
+        XCTAssertEqual(restored.kind, .timer)
+        XCTAssertEqual(restored.durationSeconds, 3_600)
+        XCTAssertEqual(restored.shownAt, started)
+        MuseCard.savePinned(nil)
+        XCTAssertNil(MuseCard.loadPinned())
+    }
+
+    func testManifestKeepsGoodEntriesAndDropsUnsafeOnes() throws {
+        let entries = try XCTUnwrap(MuseVMImageService.parseManifest(Data(#"""
+        {"animations": {
+          "idle": {"path": "workspace/idle.webp", "bytes": 5},
+          "working": {"path": "workspace/work.webp"},
+          "wag": {"path": "../secret.webp"},
+          "bad/name": {"path": "workspace/x.webp"}
+        }}
+        """#.utf8)))
+        XCTAssertEqual(entries.map(\.name), ["idle", "thinking"])
+        XCTAssertEqual(entries[0].path, "workspace/idle.webp")
+        XCTAssertNil(MuseVMImageService.parseManifest(Data("not json".utf8)))
+    }
+
+    func testGadgetFetchesNewAnimationsFromTheListOnlyOnce() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            UserDefaults.standard.removeObject(forKey: "avatarSyncOff")
+        }
+        UserDefaults.standard.removeObject(forKey: "avatarSyncOff")
+        let store = MuseAvatarStore(directory: directory)
+        let service = MuseVMImageService(store: store)
+        let gif = try sampleGIF(frames: 2)
+        var bytes = 1
+        var reads: [String] = []
+        service.readVMFile = { path, _, completion in
+            reads.append(path)
+            if path == MuseVMImageService.manifestPath {
+                let list = #"{"animations":{"wag":{"path":"workspace/wag.gif","bytes":\#(bytes)}}}"#
+                completion(.success(Data(list.utf8)))
+            } else {
+                completion(.success(gif))
+            }
+        }
+
+        service.syncFromVM()
+        XCTAssertEqual(reads, [MuseVMImageService.manifestPath, "workspace/wag.gif"])
+        XCTAssertEqual(store.availableAnimations, ["wag"])
+
+        service.syncFromVM()
+        XCTAssertEqual(reads.count, 3, "nothing new, so only the list is read")
+
+        bytes = 2
+        service.syncFromVM()
+        XCTAssertEqual(reads.last, "workspace/wag.gif", "a changed entry is fetched again")
+
+        reads = []
+        service.clearAvatar()
+        service.syncFromVM()
+        XCTAssertTrue(reads.isEmpty, "a removed avatar stays removed")
+    }
+
+    func testPlayingAnUnknownMovementListsTheAvailableOnes() {
+        let service = MuseVMImageService(store: MuseAvatarStore(
+            directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        ))
+        var result: CommandResult?
+        service.playAvatar(name: "dance") { result = $0 }
+        XCTAssertEqual(result?.value["error"] as? String, "unknown_animation")
+        XCTAssertEqual(result?.value["available"] as? [String], [])
     }
 
     func testAvatarCommandRejectsAnUnknownStateBeforeReadingAnything() {
@@ -821,7 +891,7 @@ final class MuseGadgetLegacyTests: XCTestCase {
         ))
         service.readVMFile = { _, _, _ in XCTFail("nothing should be read") }
         var result: CommandResult?
-        service.installAvatar(path: "workspace/a.gif", state: "dancing") { result = $0 }
+        service.installAvatar(path: "workspace/a.gif", state: "not/a/name") { result = $0 }
         XCTAssertEqual(result?.value["error"] as? String, "invalid_state")
     }
 

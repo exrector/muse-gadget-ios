@@ -6,7 +6,7 @@ The set is an explicit allowlist, defined in [`IOSCommandRegistry.swift`](../App
 
 ## General rules
 
-- **Visible only.** Everything except `device.health`, `display.set_caption`, `display.set_avatar`, `display.clear_avatar`, `display.draw_file`, `display.clear_image`, `voice.configure`, `shortcuts.list` and an already approved `lan.request` fails with `foreground_required` when the app is not on screen.
+- **Visible only.** Everything except `device.health`, `display.set_caption`, `display.set_avatar`, `display.play_avatar`, `display.clear_avatar`, `display.draw_file`, `display.clear_image`, `voice.configure`, `shortcuts.list` and an already approved `lan.request` fails with `foreground_required` when the app is not on screen.
 - **No remote permission prompts.** A command that needs an iOS permission fails with `permission_required` until the user has granted it in the app.
 - **On-screen approval.** Each new shortcut name and each new local host and port needs a tap on the device. Waiting for it can take up to 20 seconds.
 - **Timeouts.** A command answers `command_timeout` after 30 seconds, unless noted below.
@@ -32,7 +32,7 @@ Errors: `invalid_text`.
 
 ### `display.show_card`
 
-Shows a dismissible card at the top of the chat, replacing any current card.
+Shows a dismissible card, replacing any current card, so there is only ever one. It stays through restarts and reinstalls over the app, with its timer still counting, until it is cleared. On an iPad it sits beside or below Muse's avatar, and on a phone at the top of the chat.
 
 | Parameter | Type | Notes |
 |---|---|---|
@@ -52,9 +52,21 @@ Sets the picture shown beside Muse's name in the chat, from an image file on the
 | Parameter | Type | Notes |
 |---|---|---|
 | `path` | string, required | Relative path on the VM, such as `workspace/avatar.png`, up to 32 MiB |
-| `state` | string | `idle`, `listening`, `thinking` or `speaking` (`working` and `talking` also work), for an animated GIF, APNG or WebP played in that state. Leave it out for a still picture |
+| `state` | string | The movement, for an animated GIF, APNG or WebP. The device plays `idle`, `listening`, `thinking` and `speaking` by itself (`working` and `talking` also work). Any other short name is a movement for `display.play_avatar`. Leave it out for a still picture |
 
-Returns `installed`, plus `width`, `height` and `byte_count` for a still picture, or `state`, `frames`, `width`, `height` and `duration_ms` for an animation. Animations are stored as sent and decoded at the size they take on screen, with the next frames buffered in the background. A state with no animation of its own plays `idle`. Errors: `invalid_state`, `invalid_path`, `not_connected`, `file_too_large`, `file_unavailable` (with `http_status`), `read_failed`, `not_an_image`, `save_failed`. A failure leaves the current picture in place.
+Returns `installed`, plus `width`, `height` and `byte_count` for a still picture, or `state`, `frames`, `width`, `height` and `duration_ms` for an animation. The device turns each animation into an H.264 video once, in the background, and plays that from then on, so no later step needs Muse. A state with no animation of its own plays `idle`. Errors: `invalid_state`, `invalid_path`, `not_connected`, `file_too_large`, `file_unavailable` (with `http_status`), `read_failed`, `not_an_image`, `save_failed`. A failure leaves the current picture in place.
+
+Muse can also list its files in `workspace/pal-again/avatars.json` on the VM, as `{"animations":{"idle":{"path":"workspace/idle.webp","bytes":123}}}`. Each gadget reads the list when it connects and fetches what is new, so a new movement or a new gadget needs no chat message. After the user removes the avatar in Settings, the list is ignored until Muse sets one again.
+
+### `display.play_avatar`
+
+Plays one movement once, then the avatar goes back to what it was doing.
+
+| Parameter | Type | Notes |
+|---|---|---|
+| `name` | string, required | A name given to `display.set_avatar` |
+
+Returns `playing` and `duration_ms`. Errors: `unknown_animation`, with `available`, the movements that are ready.
 
 ### `display.clear_avatar`
 
