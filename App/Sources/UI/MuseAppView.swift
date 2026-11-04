@@ -150,7 +150,8 @@ final class MuseAppModel: ObservableObject {
     @Published var card: MuseCard?
     @Published var agentIdentity: MuseAgentIdentity?
     @Published var agentAvatar: Data?
-    @Published var avatarAnimations: [MuseAvatarState: MuseAvatarAnimation] = [:]
+    @Published var avatarFiles: [MuseAvatarState: URL] = [:]
+    @Published var avatarVersion = UUID()
     @Published var avatarRequested = false
     @Published var drawnImage: UIImage?
     @Published var deviceAudio: MuseDeviceAudio?
@@ -444,26 +445,28 @@ final class MuseAppModel: ObservableObject {
         sendChat(PalL10n.format("avatar.request_format", UIDevice.current.name))
     }
 
-    /// The state's own animation, or the idle one while it has none.
-    var currentAvatarAnimation: MuseAvatarAnimation? {
-        let state: MuseAvatarState
-        if deviceAudio == .speaking {
-            state = .speaking
-        } else if deviceAudio == .listening || isRecordingVoice {
-            state = .listening
-        } else if isAwaitingReply || museActivity != nil {
-            state = .thinking
-        } else {
-            state = .idle
-        }
-        return avatarAnimations[state] ?? avatarAnimations[.idle]
+    var avatarState: MuseAvatarState {
+        if deviceAudio == .speaking { return .speaking }
+        if deviceAudio == .listening || isRecordingVoice { return .listening }
+        return isAwaitingReply || museActivity != nil ? .thinking : .idle
     }
 
     private func reloadAvatarAnimations() {
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let animations = self?.environment.vmImages.avatarAnimations() else { return }
-            DispatchQueue.main.async { self?.avatarAnimations = animations }
+        avatarFiles = environment.vmImages.avatarAnimationFiles()
+        avatarVersion = UUID()
+    }
+
+    var chatStatus: String {
+        switch deviceAudio {
+        case .speaking: return PalL10n.text("Говорит")
+        case .listening: return PalL10n.text("Слушает")
+        case nil: break
         }
+        if isRecordingVoice { return PalL10n.text("Слушает") }
+        if let activity = museActivity, !activity.isEmpty { return activity }
+        return runtimeState == .registered
+            ? PalL10n.text("Подключено")
+            : runtimeState.shortTitle
     }
 
     func clearAvatar() {
@@ -1483,9 +1486,32 @@ private struct MuseChatView: View {
 
     private static let bottomAnchor = "chat-bottom"
 
+    /// Only a full-size iPad held sideways has room. In portrait and on a phone the header holds the face.
+    private func hasSidePanel(_ size: CGSize) -> Bool {
+        UIDevice.current.userInterfaceIdiom == .pad && size.width > size.height && size.width >= 900
+    }
+
     var body: some View {
+        GeometryReader { geometry in
+            HStack(spacing: 0) {
+                if hasSidePanel(geometry.size) {
+                    MuseAvatarSidePanel(model: model)
+                        .frame(width: geometry.size.width * 0.38)
+                    Divider()
+                }
+                chat(showsHeader: !hasSidePanel(geometry.size))
+            }
+        }
+    }
+
+    private func chat(showsHeader: Bool) -> some View {
         VStack(spacing: 0) {
-            MuseChatHeader(model: model)
+            if showsHeader {
+                MuseChatHeader(model: model)
+            } else {
+                // Keeps the scrolling chat below the status bar, which the header does otherwise.
+                Color.clear.frame(height: 1)
+            }
 
             if let card = model.card {
                 MuseWidgetCard(card: card) { model.card = nil }
@@ -1661,69 +1687,63 @@ private struct MuseChatView: View {
     }
 }
 
-/// UIImageView plays frames with far less work than redrawing a SwiftUI view on a timer.
-private struct MuseAvatarAnimationView: UIViewRepresentable {
-    let animation: MuseAvatarAnimation
+/// Muse's face: its animation by state, else its picture, else the app's mark.
+private struct MuseAvatarFace: View {
+    @ObservedObject var model: MuseAppModel
+    let markSize: CGFloat
 
-    final class Coordinator {
-        var shown: UUID?
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    func makeUIView(context: Context) -> UIImageView {
-        let view = UIImageView()
-        view.contentMode = .scaleAspectFill
-        view.clipsToBounds = true
-        view.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        view.setContentHuggingPriority(.defaultLow, for: .vertical)
-        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        view.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
-        return view
-    }
-
-    func updateUIView(_ view: UIImageView, context: Context) {
-        if context.coordinator.shown != animation.id {
-            context.coordinator.shown = animation.id
-            view.stopAnimating()
-            view.image = animation.frames.first
-            view.animationImages = animation.frames.count > 1 ? animation.frames : nil
-            view.animationDuration = animation.duration
+    var body: some View {
+        if model.avatarFiles[.idle] != nil {
+            MuseAvatarPlayer(files: model.avatarFiles, state: model.avatarState, version: model.avatarVersion)
+        } else if let data = model.agentAvatar, let avatar = UIImage(data: data) {
+            Image(uiImage: avatar).resizable().scaledToFit()
+        } else {
+            MuseMark(size: markSize)
         }
-        if view.animationImages != nil, !view.isAnimating { view.startAnimating() }
+    }
+}
+
+/// The large face beside the chat on an iPad held sideways.
+private struct MuseAvatarSidePanel: View {
+    @ObservedObject var model: MuseAppModel
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Spacer(minLength: 0)
+            MuseAvatarFace(model: model, markSize: 120)
+                .aspectRatio(1, contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            Text(model.agentIdentity?.name.isEmpty == false ? model.agentIdentity!.name : "Muse")
+                .font(.title2.weight(.semibold))
+                .lineLimit(1)
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(model.runtimeState == .registered ? MuseTheme.mint : Color.orange)
+                    .frame(width: 9, height: 9)
+                    .accessibilityHidden(true)
+                Text(model.chatStatus)
+                    .font(.body.weight(.medium))
+                    .foregroundColor(MuseTheme.secondary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(20)
+        .frame(maxHeight: .infinity)
+        .background(MuseTheme.bar)
+        .accessibilityElement(children: .combine)
     }
 }
 
 private struct MuseChatHeader: View {
     @ObservedObject var model: MuseAppModel
 
-    private var status: String {
-        switch model.deviceAudio {
-        case .speaking: return PalL10n.text("Говорит")
-        case .listening: return PalL10n.text("Слушает")
-        case nil: break
-        }
-        if model.isRecordingVoice { return PalL10n.text("Слушает") }
-        if let activity = model.museActivity, !activity.isEmpty { return activity }
-        return model.runtimeState == .registered
-            ? PalL10n.text("Подключено")
-            : model.runtimeState.shortTitle
-    }
+    private var status: String { model.chatStatus }
 
     var body: some View {
         HStack(spacing: 10) {
-            Group {
-                if let animation = model.currentAvatarAnimation {
-                    MuseAvatarAnimationView(animation: animation)
-                } else if let data = model.agentAvatar,
-                   let avatar = UIImage(data: data) {
-                    Image(uiImage: avatar)
-                        .resizable()
-                        .scaledToFill()
-                } else {
-                    MuseMark(size: 34)
-                }
-            }
+            MuseAvatarFace(model: model, markSize: 34)
             .frame(width: 44, height: 44)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             Text(model.agentIdentity?.name.isEmpty == false ? model.agentIdentity!.name : "Muse")

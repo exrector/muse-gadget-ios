@@ -47,14 +47,14 @@ Removes the card. Takes no parameters.
 
 ### `display.set_avatar`
 
-Sets the picture shown beside Muse's name in the chat, from an image file on the VM. Muse has no route for reading an agent's avatar, so it draws the picture itself and saves it first. The app shrinks it to at most 512 px and keeps it across restarts. Times out after 60 seconds.
+Sets the picture shown beside Muse's name in the chat, from an image file on the VM. Muse has no route for reading an agent's avatar, so it draws the picture itself and saves it first. The app keeps it across restarts, a still picture at up to 1024 px. Times out after 180 seconds.
 
 | Parameter | Type | Notes |
 |---|---|---|
-| `path` | string, required | Relative path on the VM, such as `workspace/avatar.png`, up to 4 MiB |
+| `path` | string, required | Relative path on the VM, such as `workspace/avatar.png`, up to 32 MiB |
 | `state` | string | `idle`, `listening`, `thinking` or `speaking` (`working` and `talking` also work), for an animated GIF, APNG or WebP played in that state. Leave it out for a still picture |
 
-Returns `installed`, plus `width`, `height` and `byte_count` for a still picture, or `state` and `frames` for an animation. Animations are kept at up to 48 frames of 96 px. A state with no animation of its own plays `idle`. Errors: `invalid_state`, `invalid_path`, `not_connected`, `file_too_large`, `file_unavailable` (with `http_status`), `read_failed`, `not_an_image`, `save_failed`. A failure leaves the current picture in place.
+Returns `installed`, plus `width`, `height` and `byte_count` for a still picture, or `state`, `frames`, `width`, `height` and `duration_ms` for an animation. Animations are stored as sent and decoded at the size they take on screen, with the next frames buffered in the background. A state with no animation of its own plays `idle`. Errors: `invalid_state`, `invalid_path`, `not_connected`, `file_too_large`, `file_unavailable` (with `http_status`), `read_failed`, `not_an_image`, `save_failed`. A failure leaves the current picture in place.
 
 ### `display.clear_avatar`
 
@@ -62,13 +62,13 @@ Removes the picture. Takes no parameters.
 
 ### `display.draw_file`
 
-Shows an image file from the VM in a panel above the chat, where a tap opens it across the screen. It is not kept in the chat history. Times out after 60 seconds.
+Shows an image file from the VM in a panel above the chat, where a tap opens it across the screen. It is not kept in the chat history. Times out after 180 seconds.
 
 Unlike the SDK's firmware there is no `display.draw_url`: fetching an address Muse supplies would give it a way to reach new hosts, including on the local network. Muse can save a picture on its VM and draw that file.
 
 | Parameter | Type | Notes |
 |---|---|---|
-| `path` | string, required | Relative path on the VM, up to 4 MiB |
+| `path` | string, required | Relative path on the VM, up to 32 MiB |
 
 Returns `drawn`, `width` and `height`. Errors: `invalid_path`, `not_connected`, `file_too_large`, `file_unavailable` (with `http_status`), `read_failed`, `not_an_image`.
 

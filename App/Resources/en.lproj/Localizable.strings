@@ -223,7 +223,7 @@
 "Запрос отправлен, ответ придёт в чат" = "Request sent, the reply comes to the chat";
 "Нажмите, и Muse нарисует его в чате" = "Tap, and Muse draws it from the chat";
 "Нажмите, чтобы нарисовать заново" = "Tap to draw it again";
-"avatar.request_format" = "Put your avatar on the screen of the gadget “%@”. For each of the states idle, listening, thinking and speaking, take the animated version of your avatar from your Muse profile: GIF, APNG or WebP, square, up to 256×256 and 4 MB. Save the files on your VM and call display.set_avatar on this device for each, with path and state. Only draw what is missing. If there are no animations at all, call display.set_avatar with a still picture and no state, and say so.";
+"avatar.request_format" = "Put your avatar on the screen of the gadget “%@”. For each of the states idle, listening, thinking and speaking, take the animated version of your avatar from your Muse profile at its original size and frame rate, without shrinking it: GIF, APNG or WebP, a file of up to 32 MB. Save the files on your VM and call display.set_avatar on this device for each, with path and state. Only draw what is missing. In your reply, give each file's real size, frame count and duration. If there are no animations at all, call display.set_avatar with a still picture and no state, and say so.";
 "command.done_format" = "%@: done";
 "command.failed_format" = "%@: failed";
 "device.battery_format" = "Battery %d%%";

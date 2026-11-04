@@ -30,35 +30,29 @@ enum MuseAvatarState: String, CaseIterable {
     }
 }
 
-/// One state's frames, decoded small: the avatar is a small view and an old phone has little memory.
-struct MuseAvatarAnimation: Equatable {
-    static let maxPixelSize = 96
-    static let maxFrames = 48
+/// What an animation file holds, read without decoding its frames.
+struct MuseAvatarAnimationInfo {
+    let delays: [TimeInterval]
+    let pixelWidth: Int
+    let pixelHeight: Int
 
-    let id = UUID()
-    let frames: [UIImage]
-    let duration: TimeInterval
+    var duration: TimeInterval { delays.reduce(0, +) }
 
-    static func == (left: MuseAvatarAnimation, right: MuseAvatarAnimation) -> Bool { left.id == right.id }
-
-    /// Reads GIF, APNG and animated WebP. Nil when the data holds no image at all.
-    static func decode(_ data: Data) -> MuseAvatarAnimation? {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+    /// Accepts GIF, APNG and animated WebP. Nil when the source holds no image at all.
+    init?(source: CGImageSource) {
         let count = CGImageSourceGetCount(source)
-        guard count > 0 else { return nil }
-        let step = max(1, Int((Double(count) / Double(maxFrames)).rounded(.up)))
-        var frames: [UIImage] = []
-        for index in stride(from: 0, to: count, by: step) {
-            guard let image = CGImageSourceCreateThumbnailAtIndex(source, index, [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
-            ] as CFDictionary) else { continue }
-            frames.append(UIImage(cgImage: image))
-        }
-        guard !frames.isEmpty else { return nil }
-        let duration = (0..<count).reduce(0.0) { $0 + frameDelay(source, at: $1) }
-        return MuseAvatarAnimation(frames: frames, duration: duration)
+        guard count > 0,
+              let first = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = first[kCGImagePropertyPixelWidth] as? Int,
+              let height = first[kCGImagePropertyPixelHeight] as? Int else { return nil }
+        delays = (0..<count).map { Self.frameDelay(source, at: $0) }
+        pixelWidth = width
+        pixelHeight = height
+    }
+
+    init?(data: Data) {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        self.init(source: source)
     }
 
     private static func frameDelay(_ source: CGImageSource, at index: Int) -> TimeInterval {
@@ -85,7 +79,7 @@ final class MuseAvatarStore {
         case saveFailed
     }
 
-    static let maxPixelSize = 512
+    static let maxPixelSize = 1024
 
     private let directory: URL
     private var file: URL { directory.appendingPathComponent("avatar.png") }
@@ -124,8 +118,8 @@ final class MuseAvatarStore {
 
     /// Stores the original bytes, which are decoded on launch. The idle animation's first frame
     /// also becomes the still picture.
-    func saveAnimation(_ data: Data, state: MuseAvatarState) throws -> MuseAvatarAnimation {
-        guard let animation = MuseAvatarAnimation.decode(data) else { throw Failure.notAnImage }
+    func saveAnimation(_ data: Data, state: MuseAvatarState) throws -> MuseAvatarAnimationInfo {
+        guard let info = MuseAvatarAnimationInfo(data: data) else { throw Failure.notAnImage }
         if state == .idle { _ = try save(imageData: data) }
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -137,18 +131,15 @@ final class MuseAvatarStore {
         } catch {
             throw Failure.saveFailed
         }
-        return animation
+        return info
     }
 
-    func loadAnimations() -> [MuseAvatarState: MuseAvatarAnimation] {
-        var animations: [MuseAvatarState: MuseAvatarAnimation] = [:]
-        for state in MuseAvatarState.allCases {
-            if let data = try? Data(contentsOf: animationFile(state)),
-               let animation = MuseAvatarAnimation.decode(data) {
-                animations[state] = animation
-            }
+    func animationFiles() -> [MuseAvatarState: URL] {
+        var files: [MuseAvatarState: URL] = [:]
+        for state in MuseAvatarState.allCases where FileManager.default.fileExists(atPath: animationFile(state).path) {
+            files[state] = animationFile(state)
         }
-        return animations
+        return files
     }
 
     func clear() {
@@ -161,7 +152,7 @@ final class MuseAvatarStore {
 final class MuseVMImageService {
     typealias FileReader = (String, Int, @escaping (Result<Data, Error>) -> Void) -> Void
 
-    static let maxFileBytes = 4 * 1024 * 1024
+    static let maxFileBytes = 32 * 1024 * 1024
     static let maxDrawnPixelSize = 1600
 
     /// Set once the runtime exists; the command registry has to be built before it.
@@ -185,8 +176,8 @@ final class MuseVMImageService {
             .allSatisfy { !$0.isEmpty && $0 != "." && $0 != ".." }
     }
 
-    func avatarAnimations() -> [MuseAvatarState: MuseAvatarAnimation] {
-        store.loadAnimations()
+    func avatarAnimationFiles() -> [MuseAvatarState: URL] {
+        store.animationFiles()
     }
 
     func installAvatar(path: String, state: String? = nil, completion: @escaping (CommandResult) -> Void) {
@@ -197,12 +188,15 @@ final class MuseVMImageService {
             }
             read(path: path, completion: completion) { [store] data in
                 do {
-                    let animation = try store.saveAnimation(data, state: avatarState)
+                    let info = try store.saveAnimation(data, state: avatarState)
                     Self.post(.museAvatarChanged, nil)
                     completion(CommandResult(success: true, value: [
                         "installed": true,
                         "state": avatarState.rawValue,
-                        "frames": animation.frames.count
+                        "frames": info.delays.count,
+                        "width": info.pixelWidth,
+                        "height": info.pixelHeight,
+                        "duration_ms": Int(info.duration * 1000)
                     ]))
                 } catch MuseAvatarStore.Failure.notAnImage {
                     completion(CommandResult(success: false, value: ["error": "not_an_image"]))

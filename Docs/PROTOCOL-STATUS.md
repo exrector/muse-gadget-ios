@@ -23,7 +23,7 @@
 | Brightness, card | Implemented, awaiting live check | Visible change on the device from a real invoke |
 | `GET /identity` | Refused on iPad (6th generation), 2026-11-04: HTTP 403, `route not allowed for this credential's scopes`, while chat on the same session works. The name stays «Muse» | A 200 with the agent's name |
 | `display.set_avatar` | Verified on iPad (6th generation), iPadOS 17.7.11, 2026-11-04: Muse saved a PNG, the VM file was read over the Noise session, and the picture stayed in the chat header after a reinstall | The same on iPhone 6s |
-| Avatar animations by state | Verified on iPad (6th generation), 2026-11-04: Muse installed four animated WebP files, and the idle animation plays in the chat header | The avatar visibly changing while Muse thinks and speaks; the same on iPhone 6s |
+| Avatar animations by state | Verified on iPad (6th generation), 2026-11-04: Muse installed four animated WebP files at their original size, 720 and 960 px at 24 fps, and the idle animation plays in a large panel beside the chat, with about 50 ms to decode a frame at 698 px | The avatar visibly changing while Muse thinks and speaks; the same on iPhone 6s |
 | `display.draw_file` | Verified on iPad (6th generation), 2026-11-04: `drawn: true`, image shown above the chat | The same on iPhone 6s |
 | `audio.speak` | Verified on iPad (6th generation), 2026-11-04, by the owner's report | The same on iPhone 6s |
 | `voice.configure` | Implemented, awaiting live check | `audio.speak` is quieter at a lower volume |

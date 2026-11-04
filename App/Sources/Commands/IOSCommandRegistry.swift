@@ -209,13 +209,13 @@ final class IOSCommandRegistry {
             summary: "Set this gadget's picture of you from an image file on your VM. Draw your own avatar from your profile as a square PNG or JPEG, save it on the VM, then call this. The device keeps the image across restarts and shows it beside your name in its chat. To make it move, call this once per state with an animated GIF, APNG or WebP of your avatar in that state.",
             parameters: ["path": [
                 "type": "string",
-                "description": "Path of the image file on this VM, relative, as the VM's file API takes it, such as workspace/avatar.png. At most 4 MiB."
+                "description": "Path of the image file on this VM, relative, as the VM's file API takes it, such as workspace/avatar.png. Keep the original size and frame rate. At most 32 MiB."
             ]],
             optional: ["state": [
                 "type": "string",
                 "description": "Which state this animation is for: idle, listening, thinking or speaking. Leave it out for a still picture."
             ]],
-            timeoutMS: 60_000
+            timeoutMS: 180_000
         )) { arguments, completion in
             images.installAvatar(
                 path: arguments["path"] as? String ?? "",
@@ -238,9 +238,9 @@ final class IOSCommandRegistry {
             summary: "Show an image file from your VM above the gadget's chat. The device reads the file over its connection to the VM, so the file need not be on the internet: to show a picture from the web, save it on the VM first. Replies when the image is on screen. It stays until the user closes it or you call display.clear_image.",
             parameters: ["path": [
                 "type": "string",
-                "description": "Path of the image file on this VM, relative, as the VM's file API takes it, such as workspace/picture.jpg. At most 4 MiB."
+                "description": "Path of the image file on this VM, relative, as the VM's file API takes it, such as workspace/picture.jpg. At most 32 MiB."
             ]],
-            timeoutMS: 60_000
+            timeoutMS: 180_000
         )) { arguments, completion in
             images.draw(path: arguments["path"] as? String ?? "", completion: completion)
         }

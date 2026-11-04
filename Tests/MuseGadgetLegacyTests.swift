@@ -761,15 +761,33 @@ final class MuseGadgetLegacyTests: XCTestCase {
         return output as Data
     }
 
-    func testAvatarAnimationKeepsTimingAndLimitsFrames() throws {
-        let short = try XCTUnwrap(MuseAvatarAnimation.decode(try sampleGIF(frames: 3)))
-        XCTAssertEqual(short.frames.count, 3)
-        XCTAssertEqual(short.duration, 1.5, accuracy: 0.01)
+    func testAnimationInfoReportsTheFilesRealSizeAndTiming() throws {
+        let info = try XCTUnwrap(MuseAvatarAnimationInfo(data: try sampleGIF(frames: 100)))
+        XCTAssertEqual(info.delays.count, 100)
+        XCTAssertEqual(info.duration, 50, accuracy: 0.1)
+        XCTAssertEqual(info.pixelWidth, 32)
+        XCTAssertNil(MuseAvatarAnimationInfo(data: Data("not an image".utf8)))
+    }
 
-        let long = try XCTUnwrap(MuseAvatarAnimation.decode(try sampleGIF(frames: 100)))
-        XCTAssertLessThanOrEqual(long.frames.count, MuseAvatarAnimation.maxFrames)
-        XCTAssertEqual(long.duration, 50, accuracy: 0.1)
-        XCTAssertNil(MuseAvatarAnimation.decode(Data("not an image".utf8)))
+    func testAvatarClipBuffersBeforePlayingAndStaysInsideItsBudget() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: file) }
+        try sampleGIF(frames: 10).write(to: file)
+
+        // Room for 4 frames of 32 px: a moving window. A target over the file's size is not enlarged.
+        let clip = try XCTUnwrap(MuseAvatarClip(url: file, targetPixelSize: 500, byteBudget: 4 * 32 * 32 * 4))
+        XCTAssertEqual(clip.pixelSize, 32)
+        XCTAssertEqual(clip.capacity, 4)
+        XCTAssertFalse(clip.isBuffered)
+
+        let buffered = expectation(description: "buffered")
+        clip.onBuffered = { buffered.fulfill() }
+        XCTAssertNil(clip.frame(at: 0))
+        wait(for: [buffered], timeout: 10)
+        XCTAssertTrue(clip.isBuffered)
+        XCTAssertNotNil(clip.frame(at: 0))
+        XCTAssertNotNil(clip.frame(at: 3))
+        XCTAssertNil(MuseAvatarClip(url: file.appendingPathExtension("missing"), targetPixelSize: 64, byteBudget: 1024))
     }
 
     func testAvatarStateNamesAcceptTheVariantsMuseUses() {
@@ -789,12 +807,11 @@ final class MuseGadgetLegacyTests: XCTestCase {
         _ = try store.saveAnimation(gif, state: .idle)
         XCTAssertNotNil(store.load())
 
-        let reopened = MuseAvatarStore(directory: directory).loadAnimations()
+        let reopened = MuseAvatarStore(directory: directory).animationFiles()
         XCTAssertEqual(Set(reopened.keys), [.idle, .speaking])
-        XCTAssertEqual(reopened[.idle]?.frames.count, 2)
 
         store.clear()
-        XCTAssertTrue(store.loadAnimations().isEmpty)
+        XCTAssertTrue(store.animationFiles().isEmpty)
         XCTAssertNil(store.load())
     }
 
