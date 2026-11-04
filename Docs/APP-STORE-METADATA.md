@@ -36,7 +36,7 @@ SIMPLE, GUIDED SETUP
 
 Pal Again explains every step in plain language. You remain in control of Bluetooth, local-network, camera, microphone, location and motion permissions. Protected features stay unavailable until you explicitly grant access.
 
-After pairing, open Settings and tap Muse avatar: your assistant sends its own avatar and name to the device. Your other gadgets can then fetch them by themselves.
+After pairing, your assistant's own avatar and name arrive by themselves, on this device and your others.
 
 To pair the app, you need your own Muse Gadget SDK token and access to Muse Developer Mode on another signed-in device. Pal Again never includes or shares a common SDK token.
 
@@ -77,7 +77,7 @@ MAKE OLD DEVICES SMART AGAIN
 
 Pal Again объясняет каждый шаг понятным языком. Вы сами управляете разрешениями Bluetooth, локальной сети, камеры, микрофона, геопозиции и движения. Защищённые функции недоступны, пока вы явно не разрешите их использование.
 
-После создания пары откройте настройки и нажмите «Аватар Muse»: ассистент сам пришлёт на устройство свой аватар и имя. Остальные ваши гаджеты затем смогут забрать их сами.
+После создания пары аватар и имя вашего ассистента появятся сами, и на этом устройстве, и на остальных.
 
 Для создания пары необходимы ваш собственный Muse Gadget SDK Token и доступ к режиму разработчика Muse на другом устройстве, где выполнен вход в аккаунт. Pal Again не содержит общего SDK Token и не передаёт его другим пользователям.
 

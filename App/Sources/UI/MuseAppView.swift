@@ -159,6 +159,7 @@ final class MuseAppModel: ObservableObject {
     @Published var agentAvatar: Data?
     @Published var avatarFiles: [String: URL] = [:]
     @Published var avatarOneShot: String?
+    @Published var avatarsPreparing = 0
     @Published var isSettingsOpen = false
     @Published var avatarVersion = UUID()
     @Published var avatarRequested = false
@@ -328,6 +329,13 @@ final class MuseAppModel: ObservableObject {
             self.agentAvatar = self.environment.vmImages.currentAvatar()
             self.avatarRequested = false
             self.reloadAvatarAnimations()
+        }
+        NotificationCenter.default.addObserver(
+            forName: .museAvatarPreparing,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            self?.avatarsPreparing = note.object as? Int ?? 0
         }
         NotificationCenter.default.addObserver(
             forName: .museAvatarPlay,
@@ -1976,24 +1984,36 @@ private struct MuseChatHeader: View {
 
     private var status: String { model.chatStatus }
 
+    /// Being connected needs no words. Anything else that is going on gets a small line under the name.
+    private var showsStatusLine: Bool {
+        status != PalL10n.text("Подключено")
+    }
+
     var body: some View {
         HStack(spacing: 10) {
             MuseAvatarFace(model: model, markSize: 34)
             .frame(width: 44, height: 44)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            Text(model.agentIdentity?.name.isEmpty == false ? model.agentIdentity!.name : "Muse")
-                .font(.headline)
-                .lineLimit(1)
+            // The dot alone says connected, which leaves a small screen's width to the name.
             Circle()
                 .fill(model.runtimeState == .registered ? MuseTheme.mint : Color.orange)
-                .frame(width: 7, height: 7)
-                .accessibilityHidden(true)
-            Text(status)
-                .font(.subheadline.weight(.medium))
-                .foregroundColor(MuseTheme.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
-            Spacer(minLength: 0)
+                .frame(width: 12, height: 12)
+                .accessibilityLabel(model.chatStatus)
+            // The status is offset rather than stacked, so the name stays put when it comes and goes.
+            ZStack(alignment: .leading) {
+                Text(model.agentIdentity?.name.isEmpty == false ? model.agentIdentity!.name : "Muse")
+                    .font(.headline)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                if showsStatusLine {
+                    Text(status)
+                        .font(.caption2.weight(.medium))
+                        .foregroundColor(MuseTheme.secondary)
+                        .lineLimit(1)
+                        .offset(y: 17)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
             if model.isAwaitingReply {
                 ProgressView()
                     .scaleEffect(0.8)
@@ -2279,8 +2299,8 @@ private struct MuseSettingsView: View {
                     Button(action: model.requestAvatar) {
                         CapabilitySettingsRow(
                             icon: "person.crop.circle.fill",
-                            title: "Аватар Muse",
-                            detail: PalL10n.text(avatarDetail),
+                            title: "Имя и аватар Muse",
+                            detail: avatarDetail,
                             tint: model.agentAvatar == nil ? MuseTheme.blue : MuseTheme.mint
                         )
                     }
@@ -2495,8 +2515,9 @@ private struct MuseSettingsView: View {
     }
 
     private var avatarDetail: String {
-        if model.avatarRequested { return "Запрос отправлен, ответ придёт в чат" }
-        return model.agentAvatar == nil ? "Нажмите, и Muse поставит имя и аватар" : "Нажмите, чтобы обновить"
+        if model.avatarsPreparing > 0 { return PalL10n.format("avatar.preparing_format", model.avatarsPreparing) }
+        if model.avatarRequested { return PalL10n.text("Запрос отправлен, ответ придёт в чат") }
+        return PalL10n.text(model.agentAvatar == nil ? "Нажмите, и Muse поставит имя и аватар" : "Нажмите, чтобы обновить")
     }
 
     private var sensorAccessSummary: String {

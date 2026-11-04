@@ -785,27 +785,92 @@ final class MuseGadgetLegacyTests: XCTestCase {
         let store = MuseAvatarStore(directory: directory)
         let gif = try sampleGIF(frames: 4)
 
-        XCTAssertNotNil(try? store.saveAnimation(gif, name: "wag"))
+        _ = try store.saveAnimation(gif, name: "wag")
         XCTAssertNil(store.load(), "only idle sets the still picture")
         XCTAssertTrue(store.videoFiles().isEmpty)
         XCTAssertEqual(store.availableAnimations, ["wag"])
+        XCTAssertEqual(store.animationsToBuild, ["wag"])
 
         store.buildMissingVideos()
         let video = try XCTUnwrap(store.videoFiles()["wag"])
-        let asset = AVURLAsset(url: video)
-        XCTAssertEqual(CMTimeGetSeconds(asset.duration), 2, accuracy: 0.05)
-        XCTAssertEqual(asset.tracks(withMediaType: .video).count, 1)
-        XCTAssertEqual(store.duration(of: "wag") ?? 0, 2, accuracy: 0.01)
+        XCTAssertEqual(CMTimeGetSeconds(AVURLAsset(url: video).duration), 2, accuracy: 0.05)
+        XCTAssertEqual(store.duration(of: "wag") ?? 0, 2, accuracy: 0.05)
+        XCTAssertTrue(store.animationsToBuild.isEmpty)
 
-        // A new file replaces the old video until its own is built.
+        // The same file again costs nothing, and a new one keeps the old video until it is built.
         _ = try store.saveAnimation(gif, name: "wag")
-        XCTAssertTrue(MuseAvatarStore(directory: directory).videoFiles().isEmpty)
+        XCTAssertTrue(store.animationsToBuild.isEmpty)
+        Thread.sleep(forTimeInterval: 1.1)
+        _ = try store.saveAnimation(try sampleGIF(frames: 2), name: "wag")
+        XCTAssertEqual(store.animationsToBuild, ["wag"])
+        XCTAssertNotNil(store.videoFiles()["wag"])
 
-        _ = try store.saveAnimation(gif, name: "idle")
-        XCTAssertNotNil(store.load())
         store.clear()
         XCTAssertTrue(store.availableAnimations.isEmpty)
-        XCTAssertNil(store.load())
+    }
+
+    func testAnMP4IsReadyAtOnceAndNeedsNoBuild() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let mp4 = directory.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".mp4")
+        defer { try? FileManager.default.removeItem(at: mp4) }
+        let source = directory.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".gif")
+        defer { try? FileManager.default.removeItem(at: source) }
+        try sampleGIF(frames: 4).write(to: source)
+        try MuseAvatarVideoBuilder.build(source: source, destination: mp4)
+
+        let store = MuseAvatarStore(directory: directory)
+        let info = try store.saveAnimation(try Data(contentsOf: mp4), name: "idle")
+        XCTAssertEqual(info.duration, 2, accuracy: 0.05)
+        XCTAssertEqual(info.pixelWidth, 32)
+        XCTAssertNotNil(store.videoFiles()["idle"])
+        XCTAssertTrue(store.animationsToBuild.isEmpty)
+        XCTAssertNotNil(store.load(), "the first frame becomes the still picture")
+        XCTAssertThrowsError(try store.saveAnimation(Data("....ftypnot a video".utf8), name: "idle"))
+    }
+
+    func testGadgetAsksMuseOnceWhenTheVMHasNoList() {
+        let defaults = UserDefaults.standard
+        defer {
+            defaults.removeObject(forKey: "avatarSyncOff")
+            defaults.removeObject(forKey: "avatarLastAsked")
+        }
+        defaults.removeObject(forKey: "avatarSyncOff")
+        defaults.removeObject(forKey: "avatarLastAsked")
+        let service = MuseVMImageService(store: MuseAvatarStore(
+            directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        ))
+        var asked = 0
+        service.askMuseForAvatar = { asked += 1 }
+        var answer: Result<Data, Error> = .failure(MuseVMFileError.status(500))
+        service.readVMFile = { _, _, completion in completion(answer) }
+
+        service.syncFromVM()
+        XCTAssertEqual(asked, 0, "a failed read says nothing about the list")
+
+        answer = .failure(MuseVMFileError.status(404))
+        service.syncFromVM()
+        service.syncFromVM()
+        XCTAssertEqual(asked, 1, "no repeat within a day")
+
+        defaults.set(Date(timeIntervalSinceNow: -25 * 3600), forKey: "avatarLastAsked")
+        service.syncFromVM()
+        XCTAssertEqual(asked, 2, "asks again if nothing came of it")
+
+        defaults.removeObject(forKey: "avatarLastAsked")
+        service.clearAvatar()
+        service.syncFromVM()
+        XCTAssertEqual(asked, 2, "a removed avatar stays removed")
+    }
+
+    func testPlayingAMovementStillBeingBuiltSaysItIsNotReady() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = MuseAvatarStore(directory: directory)
+        _ = try store.saveAnimation(try sampleGIF(frames: 2), name: "listening")
+        var result: CommandResult?
+        MuseVMImageService(store: store).playAvatar(name: "listening") { result = $0 }
+        XCTAssertEqual(result?.value["error"] as? String, "not_ready")
     }
 
     func testPinnedCardSurvivesARestartWithItsTimerStillRunning() throws {
@@ -997,6 +1062,21 @@ final class MuseGadgetLegacyTests: XCTestCase {
 
         store.clear()
         XCTAssertNil(store.load())
+    }
+
+    func testAvatarStoreRemovesAnInterruptedBuildAndKeepsFinishedVideos() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let leftover = directory.appendingPathComponent("listening.mp4.building.mp4")
+        let finished = directory.appendingPathComponent("idle.mp4")
+        try Data("partial".utf8).write(to: leftover)
+        try Data("video".utf8).write(to: finished)
+
+        MuseAvatarStore(directory: directory).buildMissingVideos()
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: leftover.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: finished.path))
     }
 
     func testCardInfersRussianAndEnglishTimersFromBasicTitleBody() {

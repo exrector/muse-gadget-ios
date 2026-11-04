@@ -60,12 +60,18 @@ final class AppEnvironment {
         importStagedSDKTokenIfPresent()
         vmImages.buildAvatarVideos()
         runtime.onRegistered = { vmImages.syncFromVM() }
+        vmImages.askMuseForAvatar = {
+            runtime.sendChat(PalL10n.format("avatar.request_format", UIDevice.current.name)) { _ in }
+        }
         // A build stopped by the app leaving the screen goes on from where it was.
         NotificationCenter.default.addObserver(
             forName: UIApplication.didBecomeActiveNotification,
             object: nil,
             queue: .main
-        ) { _ in vmImages.buildAvatarVideos() }
+        ) { _ in
+            vmImages.buildAvatarVideos()
+            vmImages.syncFromVM()
+        }
 
         pairing.onCredentialsStored = { credentials in runtime.start(credentials: credentials) }
         runtime.onUnpaired = { pairing.forgetPairing() }

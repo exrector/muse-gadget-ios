@@ -11,7 +11,7 @@ An open-source Muse community gadget that turns an older iPhone or iPad into a s
 ## What it does
 
 - **Chat with Muse** from the gadget by text, photo or voice note, with history that stays on the device.
-- **A living avatar** with Muse's own face and name, moving as it listens, thinks and speaks. After pairing, tap **Muse avatar** in Settings: see the [user guide](Docs/USER-GUIDE.md#muses-avatar-and-name).
+- **A living avatar** with Muse's own face and name, moving as it listens, thinks and speaks. They arrive by themselves after pairing: see the [user guide](Docs/USER-GUIDE.md#muses-avatar-and-name).
 - **Guided setup** in five steps, so nobody needs a terminal to pair a device.
 - **Device features Muse can use:** screen captions and cards, speech, vibration, flashlight, brightness, camera, location, motion sensors and device health.
 - **Apple Shortcuts:** Muse can run shortcuts you allow, which reaches the Home app, reminders, messages and more.

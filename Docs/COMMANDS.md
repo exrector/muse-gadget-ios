@@ -52,11 +52,13 @@ Sets the picture shown beside Muse's name in the chat, from an image file on the
 | Parameter | Type | Notes |
 |---|---|---|
 | `path` | string, required | Relative path on the VM, such as `workspace/avatar.png`, up to 32 MiB |
-| `state` | string | The movement, for an animated GIF, APNG or WebP. The device plays `idle`, `listening`, `thinking` and `speaking` by itself (`working` and `talking` also work). Any other short name is a movement for `display.play_avatar`. Leave it out for a still picture |
+| `state` | string | The movement, for a video of it. An MP4 with H.264 plays at once. GIF, APNG and WebP also work, but are first turned into video on the device, which can take many minutes and needs the app on screen. The device plays `idle`, `listening`, `thinking` and `speaking` by itself (`working` and `talking` also work). Any other short name is a movement for `display.play_avatar`. Leave it out for a still picture |
 
-Returns `installed`, plus `width`, `height` and `byte_count` for a still picture, or `state`, `frames`, `width`, `height` and `duration_ms` for an animation. The device turns each animation into an H.264 video once, in the background, and plays that from then on, so no later step needs Muse. A state with no animation of its own plays `idle`. Errors: `invalid_state`, `invalid_path`, `not_connected`, `file_too_large`, `file_unavailable` (with `http_status`), `read_failed`, `not_an_image`, `save_failed`. A failure leaves the current picture in place.
+Returns `installed`, plus `width`, `height` and `byte_count` for a still picture, or `state`, `frames`, `width`, `height` and `duration_ms` for an animation. `ready` says whether the movement can already play. The old video keeps playing until a new one is ready, and no later step needs Muse. A state with no animation of its own plays `idle`. Errors: `invalid_state`, `invalid_path`, `not_connected`, `file_too_large`, `file_unavailable` (with `http_status`), `read_failed`, `not_an_image`, `save_failed`. A failure leaves the current picture in place.
 
-Muse can also list its files in `workspace/pal-again/avatars.json` on the VM, as `{"name":"Its name","animations":{"idle":{"path":"workspace/idle.webp","bytes":123}}}`. Each gadget reads the list when it connects and fetches what is new, so a new movement or a new gadget needs no chat message. After the user removes the avatar in Settings, the list is ignored until Muse sets one again.
+Muse can also list its files in `workspace/pal-again/avatars.json` on the VM, as `{"name":"Its name","animations":{"idle":{"path":"workspace/idle.mp4","bytes":123}}}`. Each gadget reads the list when it connects and fetches what is new, so a new movement or a new gadget needs no chat message. After the user removes the avatar in Settings, the list is ignored until Muse sets one again.
+
+When a gadget connects and the VM has no such list, it asks Muse to set up its avatar and name, once a day at most, with nothing shown in the gadget's chat. The request is in Muse's main chat.
 
 ### `display.set_name`
 
@@ -76,7 +78,7 @@ Plays one movement once, then the avatar goes back to what it was doing.
 |---|---|---|
 | `name` | string, required | A name given to `display.set_avatar` |
 
-Returns `playing` and `duration_ms`. Errors: `unknown_animation`, with `available`, the movements that are ready.
+Returns `playing` and `duration_ms`. Errors: `unknown_animation`, or `not_ready` for one whose video is still being built, both with `available`, the movements that are ready.
 
 ### `display.clear_avatar`
 

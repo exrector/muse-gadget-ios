@@ -12,9 +12,10 @@
 "settings.sensor_access_format" = "Разрешено: %d из 3";
 "settings.approved_count_format" = "Подтверждено: %d";
 "about.version_format" = "Версия %@ (%@)";
-"avatar.request_format" = "Поставь свой аватар и имя на экран гаджета «%@». Вызови на этом устройстве display.set_name со своим именем в Muse. Для каждого состояния idle, listening, thinking и speaking возьми анимированный вариант своего аватара из профиля Muse в исходном размере и с исходной частотой кадров, ничего не уменьшай: GIF, APNG или WebP, файл до 32 МБ. Сохрани файлы на своей VM и для каждого вызови на этом устройстве display.set_avatar с path и state. Запиши имя и список файлов в workspace/pal-again/avatars.json в виде {\"name\":\"Имя\",\"animations\":{\"idle\":{\"path\":\"workspace/idle.webp\",\"bytes\":123}}}: по нему остальные гаджеты заберут всё сами. Рисуй заново только то, чего нет. В ответе напиши реальный размер, число кадров и длительность каждого файла. Если анимаций нет совсем, вызови display.set_avatar с неподвижной картинкой без state и скажи об этом.";
+"avatar.request_format" = "Пожалуйста, поставь на этот гаджет («%@») своё имя и аватар с анимациями. Как это сделать, написано в описании команд display.set_name и display.set_avatar. Ответь одной короткой фразой.";
 "command.done_format" = "%@: готово";
 "command.failed_format" = "%@: не удалось";
 "device.battery_format" = "Заряд %d %%";
 "device.battery_charging_format" = "Заряд %d %%, заряжается";
 "device.free_format" = "свободно %@";
+"avatar.preparing_format" = "Готовится анимаций: %d. Держите приложение на экране";

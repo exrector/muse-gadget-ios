@@ -67,14 +67,11 @@ Some of these have not been confirmed on a real device yet. See [what has been t
 
 ### Muse's avatar and name
 
-A new gadget shows a plain mark and the name «Muse». They do not arrive by themselves the first time, because Muse has to send them:
+There is nothing to do. When a gadget first connects, it shows a plain mark and the name «Muse» while it asks Muse for its avatar and name by itself. That request goes to your Muse chat once. The avatar and name then appear, usually within a few minutes, and the avatar moves as Muse listens, thinks and speaks.
 
-1. Open the app on the gadget, wait for **Connected**, and keep it on screen.
-2. Open **Settings** (the gear button) and tap **Muse avatar**. This sends Muse a request in the chat, which you can read.
-3. Muse sets its name and sends an animation for each of idle, listening, thinking and speaking. If it has no animation for one, it draws it, which can take several minutes.
-4. The still picture appears first. The animations start after the gadget has prepared them once, which takes a few minutes and needs the app on screen. From then on they play without Muse.
+Your other gadgets fetch the same files from a list Muse keeps on its VM when they connect, and new movements arrive the same way. Once a file has arrived, it plays without Muse.
 
-You only do this on one gadget. Muse also keeps a list on its VM, and your other gadgets fetch from it when they connect, as long as Muse wrote that list. New movements arrive the same way. **Remove Avatar** in Settings removes it from that gadget only, and it stays removed until Muse sets one again.
+To update it by hand, tap **Muse name and avatar** in Settings. **Remove Avatar** removes it from that gadget only, and it stays removed until you ask again.
 
 ### Apple Shortcuts
 
@@ -102,7 +99,7 @@ The gear button opens **Settings**: under the avatar on an iPad, and in the head
 |---|---|
 | **Permissions** | Shows what iOS has allowed, with a link to system settings |
 | **Approved for Muse** | Lists shortcuts and network devices you allowed. Tap **Remove** to withdraw one |
-| **Muse avatar** | Asks Muse to set its name and avatar. See [Muse's avatar and name](#muses-avatar-and-name) |
+| **Muse name and avatar** | Asks Muse to update them. They normally arrive by themselves, see [Muse's avatar and name](#muses-avatar-and-name) |
 | **This device** | Battery and free space |
 | **Screen brightness**, **Speech volume** | Screen brightness and how loud Muse speaks |
 | **Voice recording** | Tap or hold for voice notes, and **Confirm before sending** to add a send button instead of sending as soon as you finish |

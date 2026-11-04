@@ -53,6 +53,7 @@ enum MuseAvatarVideoBuilder {
 
         let temporary = destination.appendingPathExtension("building.mp4")
         try? FileManager.default.removeItem(at: temporary)
+        defer { try? FileManager.default.removeItem(at: temporary) }
         let writer = try AVAssetWriter(outputURL: temporary, fileType: .mp4)
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264,
@@ -142,6 +143,19 @@ struct MuseAvatarAnimationInfo {
         self.init(source: source)
     }
 
+    /// Reads a video file. Nil when it has no video the device can play.
+    init?(videoAt url: URL) {
+        let asset = AVURLAsset(url: url)
+        guard asset.isPlayable, let track = asset.tracks(withMediaType: .video).first else { return nil }
+        let duration = CMTimeGetSeconds(asset.duration)
+        guard duration > 0 else { return nil }
+        let size = track.naturalSize.applying(track.preferredTransform)
+        let frames = max(1, Int((duration * Double(max(track.nominalFrameRate, 1))).rounded()))
+        delays = Array(repeating: duration / Double(frames), count: frames)
+        pixelWidth = Int(abs(size.width))
+        pixelHeight = Int(abs(size.height))
+    }
+
     private static func frameDelay(_ source: CGImageSource, at index: Int) -> TimeInterval {
         let properties = CGImageSourceCopyPropertiesAtIndex(source, index, nil) as? [CFString: Any]
         let keys: [(CFString, CFString, CFString)] = [
@@ -207,20 +221,40 @@ final class MuseAvatarStore {
         directory.appendingPathComponent("\(name).mp4")
     }
 
-    private var animationNames: [String] {
-        let files = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
-        return files.filter { $0.hasSuffix(".animation") }.map { String($0.dropLast(".animation".count)) }.sorted()
+    private func modified(_ url: URL) -> Date? {
+        (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
     }
 
-    /// Stores the file as sent and drops any old video of it. The idle animation's first frame also
-    /// becomes the still picture, shown until the videos are ready.
-    func saveAnimation(_ data: Data, name: String) throws -> MuseAvatarAnimationInfo {
-        guard let info = MuseAvatarAnimationInfo(data: data) else { throw Failure.notAnImage }
-        if name == MuseAvatarState.idle.rawValue { _ = try save(imageData: data) }
+    private var storedFiles: [String] {
+        // Names hold no dots, which leaves out a video still being built.
+        (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+    }
+
+    private func names(withExtension suffix: String) -> [String] {
+        storedFiles
+            .filter { $0.hasSuffix(suffix) }
+            .map { String($0.dropLast(suffix.count)) }
+            .filter { !$0.contains(".") }
+    }
+
+    var availableAnimations: [String] {
+        Set(names(withExtension: ".animation") + names(withExtension: ".mp4")).sorted()
+    }
+
+    /// An animation with no video yet, or a video older than a new file. The old video stays until
+    /// the new one is ready, so the avatar never goes still in between.
+    var animationsToBuild: [String] {
+        names(withExtension: ".animation").filter { name in
+            guard let video = modified(videoFile(name)) else { return true }
+            guard let file = modified(animationFile(name)) else { return false }
+            return file > video
+        }
+    }
+
+    private func write(_ data: Data, to url: URL) throws {
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            try? FileManager.default.removeItem(at: videoFile(name))
-            var target = animationFile(name)
+            var target = url
             try data.write(to: target, options: .atomic)
             var values = URLResourceValues()
             values.isExcludedFromBackup = true
@@ -228,24 +262,57 @@ final class MuseAvatarStore {
         } catch {
             throw Failure.saveFailed
         }
+    }
+
+    /// An MP4 is ready to play as it is. Anything else is kept to be turned into a video. The same
+    /// file arriving again changes nothing, so it costs no rebuild.
+    func saveAnimation(_ data: Data, name: String) throws -> MuseAvatarAnimationInfo {
+        if data.count > 8, data[data.startIndex + 4..<data.startIndex + 8] == Data("ftyp".utf8) {
+            let trial = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mp4")
+            defer { try? FileManager.default.removeItem(at: trial) }
+            do { try data.write(to: trial) } catch { throw Failure.saveFailed }
+            guard let info = MuseAvatarAnimationInfo(videoAt: trial) else { throw Failure.notAnImage }
+            if name == MuseAvatarState.idle.rawValue, let poster = Self.firstFrame(ofVideoAt: trial) {
+                _ = try save(imageData: poster)
+            }
+            try write(data, to: videoFile(name))
+            try? FileManager.default.removeItem(at: animationFile(name))
+            return info
+        }
+        guard let info = MuseAvatarAnimationInfo(data: data) else { throw Failure.notAnImage }
+        if (try? Data(contentsOf: animationFile(name))) == data { return info }
+        if name == MuseAvatarState.idle.rawValue { _ = try save(imageData: data) }
+        try write(data, to: animationFile(name))
         return info
     }
 
-    /// Builds whatever has no video yet, reporting each one as it is ready. A failure leaves the
-    /// file to try again next time.
-    func buildMissingVideos(onBuilt: () -> Void = {}) {
-        for name in animationNames where !FileManager.default.fileExists(atPath: videoFile(name).path) {
+    private static func firstFrame(ofVideoAt url: URL) -> Data? {
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+        generator.appliesPreferredTrackTransform = true
+        guard let frame = try? generator.copyCGImage(at: .zero, actualTime: nil) else { return nil }
+        return UIImage(cgImage: frame).pngData()
+    }
+
+    /// Builds what `animationsToBuild` lists, reporting as each one finishes. A failure, such as the
+    /// app leaving the screen, leaves the file to try again next time.
+    func buildMissingVideos(onProgress: (Int) -> Void = { _ in }) {
+        // Builds run one at a time, so anything left here was cut off, by a reinstall for example.
+        for file in storedFiles where file.hasSuffix(".building.mp4") {
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent(file))
+        }
+        for name in animationsToBuild {
+            onProgress(animationsToBuild.count)
             do {
                 try MuseAvatarVideoBuilder.build(source: animationFile(name), destination: videoFile(name))
                 var target = videoFile(name)
                 var values = URLResourceValues()
                 values.isExcludedFromBackup = true
                 try target.setResourceValues(values)
-                onBuilt()
             } catch {
                 continue
             }
         }
+        onProgress(animationsToBuild.count)
     }
 
     /// What the VM's list said about a file when it was last fetched, to notice a new version.
@@ -263,18 +330,13 @@ final class MuseAvatarStore {
 
     func videoFiles() -> [String: URL] {
         var files: [String: URL] = [:]
-        for name in animationNames where FileManager.default.fileExists(atPath: videoFile(name).path) {
-            files[name] = videoFile(name)
-        }
+        for name in names(withExtension: ".mp4") { files[name] = videoFile(name) }
         return files
     }
 
     func duration(of name: String) -> TimeInterval? {
-        guard let source = CGImageSourceCreateWithURL(animationFile(name) as CFURL, nil) else { return nil }
-        return MuseAvatarAnimationInfo(source: source)?.duration
+        MuseAvatarAnimationInfo(videoAt: videoFile(name))?.duration
     }
-
-    var availableAnimations: [String] { animationNames }
 
     func clear() {
         try? FileManager.default.removeItem(at: directory)
@@ -291,6 +353,8 @@ final class MuseVMImageService {
 
     /// Set once the runtime exists; the command registry has to be built before it.
     var readVMFile: FileReader?
+    /// Asks Muse to set up its avatar, with nothing shown in the chat. Called when the VM has no list.
+    var askMuseForAvatar: (() -> Void)?
 
     private let store: MuseAvatarStore
     private let videoQueue = DispatchQueue(label: "MuseGadgetLegacy.avatarVideos", qos: .userInitiated)
@@ -318,13 +382,21 @@ final class MuseVMImageService {
     /// Runs in the background, once for each new animation.
     func buildAvatarVideos() {
         videoQueue.async { [store] in
-            store.buildMissingVideos { Self.post(.museAvatarChanged, nil) }
+            var last: Int?
+            store.buildMissingVideos { remaining in
+                Self.post(.museAvatarPreparing, remaining)
+                if let last, remaining < last { Self.post(.museAvatarChanged, nil) }
+                last = remaining
+            }
         }
     }
 
     /// Where Muse lists its animations, so that every gadget on the account finds them by itself.
     static let manifestPath = "workspace/pal-again/avatars.json"
     private static let syncOffKey = "avatarSyncOff"
+    private static let lastAskedKey = "avatarLastAsked"
+    /// Muse may be busy or fail, so it is asked again later, but not so often as to be a bother.
+    private static let askInterval: TimeInterval = 24 * 3600
     private static let logger = Logger(subsystem: "com.exrector.MuseGadgetLegacy", category: "avatar")
 
     struct ManifestEntry: Equatable {
@@ -355,8 +427,12 @@ final class MuseVMImageService {
         guard !UserDefaults.standard.bool(forKey: Self.syncOffKey), let readVMFile else { return }
         readVMFile(Self.manifestPath, 256 * 1024) { [weak self] result in
             guard let self else { return }
+            if case .failure(MuseVMFileError.status(404)) = result {
+                self.askForAvatarIfDue()
+                return
+            }
             guard case .success(let data) = result, let entries = Self.parseManifest(data) else {
-                Self.logger.info("No avatar list on the VM")
+                Self.logger.info("Could not read the avatar list on the VM")
                 return
             }
             if let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -367,6 +443,17 @@ final class MuseVMImageService {
             Self.logger.info("Avatar list: \(entries.count, privacy: .public) entries, \(pending.count, privacy: .public) new")
             self.download(pending)
         }
+    }
+
+    /// Nobody should have to know that an avatar has to be asked for. The first gadget to find no
+    /// list asks Muse, and every other one then fetches what Muse lists.
+    private func askForAvatarIfDue() {
+        let defaults = UserDefaults.standard
+        let last = defaults.object(forKey: Self.lastAskedKey) as? Date
+        guard last.map({ Date().timeIntervalSince($0) >= Self.askInterval }) ?? true else { return }
+        defaults.set(Date(), forKey: Self.lastAskedKey)
+        Self.logger.info("No avatar list on the VM, asking Muse")
+        askMuseForAvatar?()
     }
 
     private func download(_ remaining: [ManifestEntry]) {
@@ -387,13 +474,14 @@ final class MuseVMImageService {
     }
 
     func playAvatar(name: String, completion: @escaping (CommandResult) -> Void) {
-        guard let key = MuseAvatarState.animationName(name),
-              let duration = store.duration(of: key),
-              store.videoFiles()[key] != nil else {
-            completion(CommandResult(success: false, value: [
-                "error": "unknown_animation",
-                "available": Array(store.videoFiles().keys).sorted()
-            ]))
+        let ready = Array(store.videoFiles().keys).sorted()
+        guard let key = MuseAvatarState.animationName(name), store.availableAnimations.contains(key) else {
+            completion(CommandResult(success: false, value: ["error": "unknown_animation", "available": ready]))
+            return
+        }
+        guard let duration = store.duration(of: key) else {
+            // Stored, but its video is still being built.
+            completion(CommandResult(success: false, value: ["error": "not_ready", "available": ready]))
             return
         }
         Self.post(.museAvatarPlay, MuseAvatarPlayRequest(name: key, duration: duration))
@@ -418,7 +506,8 @@ final class MuseVMImageService {
                         "frames": info.delays.count,
                         "width": info.pixelWidth,
                         "height": info.pixelHeight,
-                        "duration_ms": Int(info.duration * 1000)
+                        "duration_ms": Int(info.duration * 1000),
+                        "ready": store.videoFiles()[name] != nil
                     ]))
                 } catch MuseAvatarStore.Failure.notAnImage {
                     completion(CommandResult(success: false, value: ["error": "not_an_image"]))
@@ -514,6 +603,7 @@ struct MuseAvatarPlayRequest {
 
 extension Notification.Name {
     static let museAvatarPlay = Notification.Name("MuseGadgetLegacy.avatarPlay")
+    static let museAvatarPreparing = Notification.Name("MuseGadgetLegacy.avatarPreparing")
     static let museAvatarChanged = Notification.Name("MuseGadgetLegacy.avatarChanged")
     static let museDrawnImageChanged = Notification.Name("MuseGadgetLegacy.drawnImageChanged")
 }

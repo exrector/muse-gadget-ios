@@ -206,10 +206,10 @@ final class IOSCommandRegistry {
 
         registry.register(CommandDefinition(
             name: "display.set_avatar",
-            summary: "Set this gadget's picture of you from an image file on your VM. Draw your own avatar from your profile as a square PNG or JPEG, save it on the VM, then call this. The device keeps the image across restarts and shows it beside your name in its chat. To make it move, call this once per state with an animated GIF, APNG or WebP of your avatar in that state. List your name and files in workspace/pal-again/avatars.json as {\"name\":\"Your name\",\"animations\":{\"idle\":{\"path\":\"workspace/idle.webp\",\"bytes\":123}}}: every gadget reads that list when it connects and fetches what is new by itself.",
+            summary: "Set this gadget's picture of you from a file on your VM, ideally what you already have in your profile. The device keeps it and shows it beside your name. To make it move, call this once for each of idle, listening, thinking and speaking that you have. A state you don't have plays idle, so nothing has to be drawn. MP4 with H.264 plays at once; GIF, APNG and WebP also work, but take the device a long time to prepare, so converting to MP4 is welcome. Keep workspace/pal-again/avatars.json up to date, as {\"name\":\"Your name\",\"animations\":{\"idle\":{\"path\":\"workspace/idle.mp4\",\"bytes\":123}}}: the user's other gadgets read it when they connect and fetch what is new, so they need no separate call.",
             parameters: ["path": [
                 "type": "string",
-                "description": "Path of the image file on this VM, relative, as the VM's file API takes it, such as workspace/avatar.png. Keep the original size and frame rate. At most 32 MiB."
+                "description": "Path of the image file on this VM, relative, as the VM's file API takes it, such as workspace/avatar.mp4. At most 32 MiB."
             ]],
             optional: ["state": [
                 "type": "string",
