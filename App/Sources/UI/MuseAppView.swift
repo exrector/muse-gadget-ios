@@ -1607,9 +1607,9 @@ private struct MuseChatView: View {
             }
 
             if onPhone, let card = model.card {
-                MuseWidgetCard(card: card) { model.card = nil }
+                MuseWidgetCard(card: card, compact: true) { model.card = nil }
                     .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
+                    .padding(.vertical, 4)
                     .background(MuseTheme.bar)
                     .overlay(alignment: .bottom) { Divider() }
                     .transition(.move(edge: .top).combined(with: .opacity))
@@ -1948,7 +1948,14 @@ private struct MuseChatHeader: View {
 
 private struct MuseWidgetCard: View {
     let card: MuseCard
+    /// One row, for a phone, where a full card would leave little room for the chat.
+    var compact = false
     let dismiss: () -> Void
+    @State private var isExpanded = false
+
+    private var iconName: String {
+        card.kind == .timer ? "timer" : card.kind == .progress ? "chart.bar.fill" : "rectangle.on.rectangle.angled"
+    }
 
     private func remaining(at date: Date) -> TimeInterval? {
         guard let duration = card.durationSeconds else { return nil }
@@ -1965,10 +1972,62 @@ private struct MuseWidgetCard: View {
             : String(format: "%02d:%02d", minutes, tail)
     }
 
+    private func compactRow(at date: Date) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Image(systemName: iconName)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(MuseTheme.accent)
+                Text(card.title)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                if !card.body.isEmpty {
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption2.weight(.bold))
+                        .foregroundColor(MuseTheme.secondary)
+                }
+                Spacer(minLength: 4)
+                if let value = remaining(at: date) {
+                    Text(timerText(value))
+                        .font(.system(.subheadline, design: .monospaced).weight(.semibold))
+                        .foregroundColor(value == 0 ? .red : MuseTheme.accent)
+                } else if let progress = card.progress {
+                    Text("\(Int((progress * 100).rounded()))%")
+                        .font(.subheadline.monospacedDigit().weight(.semibold))
+                        .foregroundColor(MuseTheme.accent)
+                }
+                Button(action: dismiss) {
+                    Image(systemName: "xmark")
+                        .font(.caption2.weight(.bold))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Закрыть карточку")
+            }
+            if let duration = card.durationSeconds, let value = remaining(at: date) {
+                ProgressView(value: duration - value, total: duration).tint(MuseTheme.accent)
+            } else if let progress = card.progress {
+                ProgressView(value: progress).tint(MuseTheme.accent)
+            }
+            if isExpanded, !card.body.isEmpty {
+                Text(card.body)
+                    .font(.footnote)
+                    .foregroundColor(MuseTheme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { if !card.body.isEmpty { isExpanded.toggle() } }
+    }
+
     var body: some View {
         TimelineView(.periodic(from: card.shownAt, by: card.kind == .timer ? 1 : 60)) { context in
+            if compact {
+                compactRow(at: context.date)
+            } else {
             HStack(alignment: .top, spacing: 12) {
-                Image(systemName: card.kind == .timer ? "timer" : card.kind == .progress ? "chart.bar.fill" : "rectangle.on.rectangle.angled")
+                Image(systemName: iconName)
                     .font(.subheadline.weight(.semibold))
                     .foregroundColor(MuseTheme.accent)
                     .frame(width: 32, height: 32)
@@ -2017,6 +2076,7 @@ private struct MuseWidgetCard: View {
             }
             .museCard()
             .accessibilityElement(children: .contain)
+            }
         }
     }
 }
