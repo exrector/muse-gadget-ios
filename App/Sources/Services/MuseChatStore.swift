@@ -1,7 +1,7 @@
 import Foundation
 import UIKit
 
-/// Keeps the chat on this device: the Muse Gadget SDK has no endpoint for reading past messages.
+/// Keeps a local copy of chat, merged with Muse server history when that route is available.
 /// Lives in Application Support rather than Documents, which the app shares through Finder.
 final class MuseChatStore {
     private struct StoredItem: Codable {

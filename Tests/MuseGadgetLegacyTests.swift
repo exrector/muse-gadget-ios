@@ -178,6 +178,22 @@ final class MuseGadgetLegacyTests: XCTestCase {
         ])).isEmpty)
     }
 
+    func testTimelineStopIgnoresLateReplyAndAcceptsNextRequest() {
+        let timeline = acknowledgedTimeline()
+        timeline.stopCurrentReply()
+        XCTAssertTrue(timeline.feed(chatEvent("delta.message_done", [
+            "message_id": "late", "reply_to_message_id": "user-1", "content": "late"
+        ])).isEmpty)
+        timeline.expectRequest()
+        _ = timeline.acknowledge(["message_id": "user-2", "session_id": "main"])
+        XCTAssertEqual(
+            timeline.feed(chatEvent("delta.message_done", [
+                "message_id": "next", "reply_to_message_id": "user-2", "content": "next"
+            ])),
+            [.reply(messageID: "next", text: "next", done: true)]
+        )
+    }
+
     func testTimelineReadsStructuredTranscriptAndRespectsReadyFlag() {
         let timeline = acknowledgedTimeline()
         let transcript: [String: Any] = ["messages": [
@@ -519,6 +535,36 @@ final class MuseGadgetLegacyTests: XCTestCase {
         ).items
         XCTAssertEqual(merged.count, 1)
         XCTAssertEqual(merged[0].id, local.id)
+    }
+
+    func testServerHistoryParsesTextAndMergesWithoutDuplicates() throws {
+        let json = #"{"result":{"messages":[{"id":"u1","role":"user","created_at":10,"content":[{"type":"text","text":"Hello"}]},{"id":"a1","role":"assistant","created_at":"1970-01-01T00:00:20Z","content":[{"type":"text","text":"Hi"}]},{"id":"tool","role":"tool","content":"hidden"}]}}"#
+        let parsed = MuseServerHistory.parse(Data(json.utf8))
+        XCTAssertEqual(parsed.map(\.messageID), ["u1", "a1"])
+        XCTAssertEqual(parsed.map(\.text), ["Hello", "Hi"])
+
+        let local = MuseChatItem(
+            author: .user,
+            text: "Hello",
+            createdAt: Date(timeIntervalSince1970: 10)
+        )
+        let merged = MuseChatMerge.mergeServer(local: [local], server: parsed, clearedBefore: nil)
+        XCTAssertEqual(merged.map(\.text), ["Hello", "Hi"])
+        XCTAssertEqual(merged.first?.museMessageID, "u1")
+        XCTAssertEqual(MuseChatMerge.mergeServer(local: merged, server: parsed, clearedBefore: nil).count, 2)
+    }
+
+    func testServerHistoryRespectsLocalClearDate() {
+        let old = MuseServerChatMessage(
+            author: .muse, text: "old", messageID: "a1", createdAt: Date(timeIntervalSince1970: 1)
+        )
+        let new = MuseServerChatMessage(
+            author: .muse, text: "new", messageID: "a2", createdAt: Date(timeIntervalSince1970: 3)
+        )
+        let merged = MuseChatMerge.mergeServer(
+            local: [], server: [old, new], clearedBefore: Date(timeIntervalSince1970: 2)
+        )
+        XCTAssertEqual(merged.map(\.text), ["new"])
     }
 
     func testClearingOnOneDeviceReachesTheOthersButKeepsNewerMessages() {
@@ -1021,6 +1067,43 @@ final class MuseGadgetLegacyTests: XCTestCase {
         registry.invoke(name: "voice.configure", arguments: ["volume": 101]) { result = $0 }
         XCTAssertEqual(result?.value["error"] as? String, "invalid_volume")
         XCTAssertEqual(MuseSpeechVolume.current, 40)
+    }
+
+    func testDeviceHealthReportsUsefulAppVisibleState() {
+        let registry = IOSCommandRegistry.defaultRegistry(
+            nativeServices: NativeCommandServices(permissions: PermissionCenter()),
+            shortcuts: MuseShortcutsBridge(grants: MuseGrantStore(), approvals: MuseApprovalCenter()),
+            grants: MuseGrantStore(),
+            lan: MuseLANServices(permissions: PermissionCenter(), grants: MuseGrantStore(), approvals: MuseApprovalCenter()),
+            images: MuseVMImageService()
+        )
+        let finished = expectation(description: "device health")
+        registry.invoke(name: "device.health", arguments: [:]) { result in
+            XCTAssertTrue(result.success)
+            XCTAssertNotNil(result.value["system"] as? String)
+            XCTAssertNotNil(result.value["system_version"] as? String)
+            XCTAssertNotNil(result.value["model_identifier"] as? String)
+            XCTAssertNotNil(result.value["battery_state"] as? String)
+            XCTAssertNotNil(result.value["thermal_state"] as? String)
+            XCTAssertNotNil(result.value["storage_free_bytes"])
+            XCTAssertNotNil(result.value["app_version"] as? String)
+            XCTAssertNotNil(result.value["foreground"] as? Bool)
+            let permissions = result.value["permissions"] as? [String: String]
+            XCTAssertEqual(Set(permissions?.keys.map { $0 } ?? []), [
+                "bluetooth", "local_network", "camera", "microphone", "location", "motion"
+            ])
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 2)
+    }
+
+    func testLocationFailureKeepsCoreLocationDiagnostics() {
+        let error = NSError(domain: "kCLErrorDomain", code: 0)
+        let result = NativeCommandServices.locationFailure(error)
+        XCTAssertFalse(result.success)
+        XCTAssertEqual(result.value["error"] as? String, "location_failed")
+        XCTAssertEqual(result.value["error_domain"] as? String, "kCLErrorDomain")
+        XCTAssertEqual(result.value["error_code"] as? Int, 0)
     }
 
     func testChatMarkdownDropsItsMarkersAndKeepsLineBreaks() {

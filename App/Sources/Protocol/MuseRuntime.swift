@@ -261,6 +261,14 @@ final class MuseRuntime: NSObject {
     private var registeredAt: Date?
     private var lastRefreshAttempt: Date?
     private var tokenRejected = false
+    #if DEBUG
+    private var didRunV2RouteProbe = false
+    private var didRunV2VoiceTTSProbe = false
+    private var didRunV2HistoryTTSProbe = false
+    private var v2VoiceProbeUserIDs: Set<String> = []
+    private var v2VoiceProbePendingRecords: [[String: Any]] = []
+    private var v2VoiceProbeRequestedTTS = false
+    #endif
 
     private static let tokenRefreshAge: TimeInterval = 3 * 3600
     private static let tokenRetryInterval: TimeInterval = 300
@@ -389,6 +397,27 @@ final class MuseRuntime: NSObject {
             ["message": clean, "output_modality": "text", "items": text + [item]],
             completion: completion
         )
+    }
+
+    /// Reads recent server history through the same authenticated Noise session as chat.
+    func fetchChatHistory(limit: Int = 20, completion: @escaping (Result<Data, Error>) -> Void) {
+        queue.async {
+            let bounded = min(max(limit, 1), 50)
+            self.performRequest(
+                method: "GET",
+                path: "/chat/history?limit=\(bounded)",
+                body: Data(),
+                headers: []
+            ) { result in
+                let mapped = result.flatMap { response -> Result<Data, Error> in
+                    guard (200..<300).contains(response.status) else {
+                        return .failure(MuseRuntimeError.requestFailed(response.status))
+                    }
+                    return .success(response.body)
+                }
+                DispatchQueue.main.async { completion(mapped) }
+            }
+        }
     }
 
     private func postChat(
@@ -807,6 +836,9 @@ final class MuseRuntime: NSObject {
     private func handleChatData(_ data: Data, end: Bool, streamID: Int64) {
         do {
             for record in try chatDecoder.feed(data, end: end) where record["type"] as? String == "event" {
+                #if DEBUG
+                captureV2VoiceProbeRecord(record)
+                #endif
                 DispatchQueue.main.async { self.onChatRecord?(record) }
             }
         } catch {
@@ -849,6 +881,24 @@ final class MuseRuntime: NSObject {
                 schedulePing()
                 openChatSubscription()
                 fetchAgentIdentity()
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("--probe-v2-routes"),
+                   !didRunV2RouteProbe {
+                    didRunV2RouteProbe = true
+                    probeV2Routes()
+                }
+                if (ProcessInfo.processInfo.arguments.contains("--probe-v2-voice-tts")
+                    || ProcessInfo.processInfo.environment["PAL_V2_VOICE_TTS_PROBE"] == "1"),
+                   !didRunV2VoiceTTSProbe {
+                    didRunV2VoiceTTSProbe = true
+                    probeV2VoiceTTS()
+                }
+                if ProcessInfo.processInfo.environment["PAL_V2_HISTORY_TTS_PROBE"] == "1",
+                   !didRunV2HistoryTTSProbe {
+                    didRunV2HistoryTTSProbe = true
+                    probeLatestHistoryTTS()
+                }
+                #endif
                 DispatchQueue.main.async { self.onRegistered?() }
             }
             return
@@ -937,6 +987,192 @@ final class MuseRuntime: NSObject {
             DispatchQueue.main.async { self.onAgentIdentity?(identity) }
         }
     }
+
+    #if DEBUG
+    /// Non-destructive device-only check for optional routes in the current Muse VM.
+    /// It deliberately logs no response body, credentials, conversation text or message IDs.
+    private func probeV2Routes() {
+        performRequest(
+            method: "GET",
+            path: "/chat/history?limit=1",
+            body: Data(),
+            headers: []
+        ) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let response):
+                self.log("V2 probe history: HTTP \(response.status), \(response.body.count) bytes")
+            case .failure(let error):
+                self.log("V2 probe history failed: \(self.safeError(error))")
+            }
+            self.probeTTSRoute(prefix: "/api/voice/tts-stream", allowLegacyFallback: true)
+        }
+    }
+
+    private func probeTTSRoute(prefix: String, allowLegacyFallback: Bool) {
+        let missingMessageID = "pal-again-capability-probe-" + UUID().uuidString.lowercased()
+        performRequest(
+            method: "GET",
+            path: prefix + "?message_id=" + missingMessageID,
+            body: Data(),
+            headers: [MuseHTTPHeader(name: "Accept", value: "audio/mpeg")]
+        ) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let response):
+                self.log("V2 probe TTS \(prefix): HTTP \(response.status), \(response.body.count) bytes")
+                if response.status == 404, allowLegacyFallback {
+                    self.probeTTSRoute(prefix: "/voice/tts-stream", allowLegacyFallback: false)
+                }
+            case .failure(let error):
+                self.log("V2 probe TTS \(prefix) failed: \(self.safeError(error))")
+            }
+        }
+    }
+
+    private func probeV2VoiceTTS() {
+        log("V2 voice TTS probe: sending one-word text request")
+        writeV2VoiceProbeResult(["stage": "request_started"])
+        postChat([
+            "message": "Reply with one word: ready.",
+            "output_modality": "text"
+        ]) { [weak self] result in
+            guard let self else { return }
+            self.queue.async {
+                switch result {
+                case .failure(let error):
+                    self.log("V2 voice TTS probe send failed: \(self.safeError(error))")
+                    self.writeV2VoiceProbeResult(["stage": "send_failed"])
+                case .success(let response):
+                    let payload = response["result"] as? [String: Any] ?? response
+                    for key in ["message_id", "reply_to_message_id"] {
+                        if let value = payload[key] as? String, !value.isEmpty {
+                            self.v2VoiceProbeUserIDs.insert(value)
+                        }
+                    }
+                    self.log("V2 voice TTS probe send: acknowledged")
+                    self.writeV2VoiceProbeResult(["stage": "acknowledged"])
+                    let pending = self.v2VoiceProbePendingRecords
+                    self.v2VoiceProbePendingRecords.removeAll()
+                    for record in pending { self.captureV2VoiceProbeRecord(record) }
+                }
+            }
+        }
+    }
+
+    /// Continues the one-shot voice probe without sending a second chat message. The most recent
+    /// history item is inspected in memory; no message ID or conversation content leaves the app.
+    private func probeLatestHistoryTTS() {
+        writeV2VoiceProbeResult(["stage": "history_lookup_started"])
+        performRequest(method: "GET", path: "/chat/history?limit=1", body: Data(), headers: []) {
+            [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .failure:
+                self.writeV2VoiceProbeResult(["stage": "history_lookup_failed"])
+            case .success(let response):
+                guard (200..<300).contains(response.status),
+                      let root = try? JSONSerialization.jsonObject(with: response.body),
+                      let messageID = self.findAssistantMessageID(root) else {
+                    self.writeV2VoiceProbeResult([
+                        "stage": "history_message_not_found",
+                        "http_status": response.status,
+                        "bytes": response.body.count
+                    ])
+                    return
+                }
+                self.writeV2VoiceProbeResult(["stage": "history_message_found"])
+                self.probeTTSMessage(messageID, prefix: "/api/voice/tts-stream", allowLegacyFallback: true)
+            }
+        }
+    }
+
+    private func findAssistantMessageID(_ value: Any) -> String? {
+        if let object = value as? [String: Any] {
+            if object["role"] as? String == "assistant" {
+                for key in ["id", "message_id"] {
+                    if let identifier = object[key] as? String, !identifier.isEmpty { return identifier }
+                }
+            }
+            for key in ["messages", "history", "items", "results", "data", "result"] {
+                if let child = object[key], let identifier = findAssistantMessageID(child) { return identifier }
+            }
+            for child in object.values {
+                if let identifier = findAssistantMessageID(child) { return identifier }
+            }
+        } else if let array = value as? [Any] {
+            for child in array {
+                if let identifier = findAssistantMessageID(child) { return identifier }
+            }
+        }
+        return nil
+    }
+
+    private func captureV2VoiceProbeRecord(_ record: [String: Any]) {
+        guard didRunV2VoiceTTSProbe, !v2VoiceProbeRequestedTTS,
+              let event = record["event"] as? String,
+              let payload = record["payload"] as? [String: Any] else { return }
+        guard !v2VoiceProbeUserIDs.isEmpty else {
+            if v2VoiceProbePendingRecords.count < 64 { v2VoiceProbePendingRecords.append(record) }
+            return
+        }
+        let parent = payload["reply_to_message_id"] as? String
+            ?? payload["parent_message_id"] as? String
+        guard (parent == nil || parent.map(v2VoiceProbeUserIDs.contains) == true),
+              event == "delta.message_done" || event == "message.assistant",
+              payload["display_text_ready"] as? Bool != false,
+              let messageID = payload["message_id"] as? String
+                ?? record["message_id"] as? String
+                ?? payload["id"] as? String,
+              !messageID.isEmpty else { return }
+        v2VoiceProbeRequestedTTS = true
+        probeTTSMessage(messageID, prefix: "/api/voice/tts-stream", allowLegacyFallback: true)
+    }
+
+    private func probeTTSMessage(_ messageID: String, prefix: String, allowLegacyFallback: Bool) {
+        guard let encoded = messageID.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+            log("V2 voice TTS probe: invalid message identifier")
+            writeV2VoiceProbeResult(["stage": "invalid_message_identifier"])
+            return
+        }
+        performRequest(
+            method: "GET",
+            path: prefix + "?message_id=" + encoded,
+            body: Data(),
+            headers: [MuseHTTPHeader(name: "Accept", value: "audio/mpeg")]
+        ) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let response):
+                self.log("V2 voice TTS probe \(prefix): HTTP \(response.status), \(response.body.count) bytes")
+                self.writeV2VoiceProbeResult([
+                    "stage": "tts_response",
+                    "endpoint": prefix,
+                    "http_status": response.status,
+                    "bytes": response.body.count
+                ])
+                if !(200..<300).contains(response.status), allowLegacyFallback {
+                    self.probeTTSMessage(messageID, prefix: "/voice/tts-stream", allowLegacyFallback: false)
+                }
+            case .failure(let error):
+                self.log("V2 voice TTS probe \(prefix) failed: \(self.safeError(error))")
+                self.writeV2VoiceProbeResult([
+                    "stage": "tts_request_failed",
+                    "endpoint": prefix
+                ])
+            }
+        }
+    }
+
+    /// DEBUG-only, content-free result channel for physical-device capability checks.
+    /// It intentionally stores no tokens, message IDs, prompts, or reply text.
+    private func writeV2VoiceProbeResult(_ object: [String: Any]) {
+        guard JSONSerialization.isValidJSONObject(object),
+              let data = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]),
+              let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        try? data.write(to: directory.appendingPathComponent("v2-voice-tts-probe.json"), options: .atomic)
+    }
+    #endif
 
     /// Reads a VM file in ranges, as the SDK's `display.draw_file` does: the daemon may send a whole
     /// reply in one frame, and a reply here is limited to 1 MiB. Completes on `queue`.

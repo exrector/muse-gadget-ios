@@ -38,7 +38,15 @@ A command that is not registered is simply not visible to Muse, so it has no err
 
 ### `device.health`
 
-Reports `system`, `system_version`, `model` and `battery_percent`.
+Reports only app-visible, non-private health:
+
+- system, system version, generic model and hardware model identifier;
+- battery percentage, charging state, Low Power Mode and thermal state;
+- device uptime, free/total storage visible to the app and screen brightness;
+- Pal Again version/build and whether the app is in the foreground;
+- the current Bluetooth, local-network, camera, microphone, location and motion permission states.
+
+iOS does not expose Linux-style process, SMART, arbitrary filesystem or system-log diagnostics to Pal Again.
 
 ### `display.set_caption`
 
@@ -186,7 +194,7 @@ Returns `mime_type`, `data_base64`, `byte_count`, `width`, `height` and `capture
 
 Takes one location reading, accurate to about 100 m. Takes no parameters. Needs the location permission.
 
-Returns `latitude`, `longitude`, `horizontal_accuracy_m` and `timestamp`, plus `altitude_m` and `vertical_accuracy_m` when known. Errors: `unavailable`, `busy`, `location_failed`, `timeout`.
+Returns `latitude`, `longitude`, `horizontal_accuracy_m` and `timestamp`, plus `altitude_m` and `vertical_accuracy_m` when known. Errors: `unavailable`, `busy`, `location_failed`, `timeout`. A `location_failed` result also includes the original Core Location `error_domain` and numeric `error_code`, so a failed physical test can be diagnosed without guessing or immediately repeating it.
 
 ### `motion.snapshot`
 

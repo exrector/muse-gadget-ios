@@ -197,6 +197,9 @@ final class MuseAppModel: ObservableObject {
     private var replyItemIDs: [String: UUID] = [:]
     private var replyTimeout: DispatchWorkItem?
     private var recordingTimer: Timer?
+    private var requestGeneration = 0
+    private var pendingUserItemID: UUID?
+    private var serverHistorySyncInFlight = false
 
     init(environment: AppEnvironment) {
         self.environment = environment
@@ -257,7 +260,9 @@ final class MuseAppModel: ObservableObject {
             if self.diagnostics.count > 80 { self.diagnostics.removeFirst() }
         }
         environment.runtime.onStateChange = { [weak self] state in
-            self?.runtimeState = state
+            guard let self else { return }
+            self.runtimeState = state
+            if state == .registered { self.syncServerHistory() }
         }
         environment.runtime.onLog = { [weak self] message in
             guard let self else { return }
@@ -552,17 +557,19 @@ final class MuseAppModel: ObservableObject {
     func sendChat(_ text: String) {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty, canSendToMuse else { return }
-        chatItems.append(MuseChatItem(author: .user, text: clean))
-        beginRequest()
+        let item = MuseChatItem(author: .user, text: clean)
+        chatItems.append(item)
+        pendingUserItemID = item.id
+        let generation = beginRequest()
         environment.runtime.sendChat(clean) { [weak self] result in
-            self?.finishRequest(result)
+            self?.finishRequest(result, generation: generation)
         }
     }
 
     func sendPhoto(_ image: UIImage, caption: String) {
         guard canSendToMuse else { return }
         let clean = caption.trimmingCharacters(in: .whitespacesAndNewlines)
-        beginRequest()
+        let generation = beginRequest()
         DispatchQueue.global(qos: .userInitiated).async {
             let original = image.jpegData(compressionQuality: 0.95)
             let jpeg = original.flatMap { MuseJPEG.bounded($0, maxBytes: 1_048_576, maxDimension: 1_600) }
@@ -572,12 +579,17 @@ final class MuseAppModel: ObservableObject {
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 guard let jpeg else {
-                    self.finishRequest(.failure(MuseRuntimeError.payloadTooLarge))
+                    self.finishRequest(.failure(MuseRuntimeError.payloadTooLarge), generation: generation)
                     return
                 }
-                self.chatItems.append(MuseChatItem(author: .user, text: clean, image: preview))
-                self.environment.runtime.sendImage(jpeg: jpeg, message: clean) { [weak self] result in
-                    self?.finishRequest(result)
+                let item = MuseChatItem(author: .user, text: clean, image: preview)
+                self.chatItems.append(item)
+                self.pendingUserItemID = item.id
+                self.environment.runtime.sendImage(
+                    jpeg: jpeg,
+                    message: clean
+                ) { [weak self] result in
+                    self?.finishRequest(result, generation: generation)
                 }
             }
         }
@@ -678,10 +690,14 @@ final class MuseAppModel: ObservableObject {
     }
 
     private func send(_ note: MusePendingVoiceNote) {
-        chatItems.append(MuseChatItem(author: .user, text: PalL10n.format("voice.note_format", note.seconds)))
-        beginRequest()
-        environment.runtime.sendVoiceNote(wav: note.wav) { [weak self] result in
-            self?.finishRequest(result)
+        let item = MuseChatItem(author: .user, text: PalL10n.format("voice.note_format", note.seconds))
+        chatItems.append(item)
+        pendingUserItemID = item.id
+        let generation = beginRequest()
+        environment.runtime.sendVoiceNote(
+            wav: note.wav
+        ) { [weak self] result in
+            self?.finishRequest(result, generation: generation)
         }
     }
 
@@ -737,20 +753,32 @@ final class MuseAppModel: ObservableObject {
         return PalL10n.text("Текст чата появится на устройствах с тем же Apple ID, обычно в течение нескольких минут. Фото остаются там, где их сделали.")
     }
 
-    private func beginRequest() {
+    @discardableResult
+    private func beginRequest() -> Int {
+        requestGeneration += 1
         chatTimeline.expectRequest()
         isSendingChat = true
         isAwaitingReply = true
         museActivity = nil
+        return requestGeneration
     }
 
-    private func finishRequest(_ result: Result<[String: Any], Error>) {
+    private func finishRequest(_ result: Result<[String: Any], Error>, generation: Int) {
+        guard generation == requestGeneration else { return }
         isSendingChat = false
         switch result {
         case .success(let response):
+            let payload = response["result"] as? [String: Any] ?? response
+            if let messageID = (payload["message_id"] as? String) ?? (payload["reply_to_message_id"] as? String),
+               let itemID = pendingUserItemID,
+               let index = chatItems.firstIndex(where: { $0.id == itemID }) {
+                chatItems[index].museMessageID = messageID
+            }
+            pendingUserItemID = nil
             apply(chatTimeline.acknowledge(response))
             if isAwaitingReply { scheduleReplyTimeout() }
         case .failure(let error):
+            pendingUserItemID = nil
             chatTimeline.abandonRequest()
             finishWaitingForReply()
             chatItems.append(MuseChatItem(author: .system, text: Self.describe(error)))
@@ -783,13 +811,49 @@ final class MuseAppModel: ObservableObject {
                     replyItemIDs[messageID] = item.id
                     chatItems.append(item)
                 }
-                if done { finishWaitingForReply() }
+                if done {
+                    finishWaitingForReply()
+                }
                 else if !text.isEmpty { museActivity = nil }
             case .activity(let text):
                 museActivity = text?.isEmpty == false ? text : nil
             case .finished:
                 finishWaitingForReply()
             }
+        }
+    }
+
+    func stopCurrentReply() {
+        guard isSendingChat || isAwaitingReply else { return }
+        requestGeneration += 1
+        pendingUserItemID = nil
+        isSendingChat = false
+        chatTimeline.stopCurrentReply()
+        finishWaitingForReply()
+    }
+
+    private func syncServerHistory() {
+        guard !serverHistorySyncInFlight else { return }
+        serverHistorySyncInFlight = true
+        environment.runtime.fetchChatHistory(limit: 20) { [weak self] result in
+            guard let self else { return }
+            self.serverHistorySyncInFlight = false
+            guard case .success(let data) = result else { return }
+            let server = MuseServerHistory.parse(data)
+            guard !server.isEmpty else { return }
+            let merged = MuseChatMerge.mergeServer(
+                local: self.chatItems,
+                server: server,
+                clearedBefore: self.environment.chatCloud.clearedBefore
+            )
+            let fingerprint = { (items: [MuseChatItem]) in
+                items.map { "\($0.id)|\($0.museMessageID ?? "")|\($0.text)|\($0.updatedAt.timeIntervalSince1970)" }
+            }
+            guard fingerprint(merged) != fingerprint(self.chatItems) else { return }
+            self.chatItems = merged
+            self.replyItemIDs = Dictionary(uniqueKeysWithValues: merged.compactMap { item in
+                item.museMessageID.map { ($0, item.id) }
+            })
         }
     }
 
@@ -1750,16 +1814,6 @@ private struct MuseChatView: View {
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)
                         Spacer(minLength: 0)
-                        Button(action: model.sendPendingVoiceNote) {
-                            Text(PalL10n.key("Отправить"))
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 14)
-                                .frame(minHeight: 36)
-                                .background(MuseTheme.accent)
-                                .clipShape(Capsule())
-                        }
-                        .disabled(!model.canSendToMuse)
                     }
                     .padding(.trailing, 6)
                     .frame(minHeight: 46)
@@ -1790,8 +1844,29 @@ private struct MuseChatView: View {
                         .disabled(model.runtimeState != .registered)
                 }
 
+                if (model.isSendingChat || model.isAwaitingReply) && !model.isRecordingVoice {
+                    Button(action: model.stopCurrentReply) {
+                        Image(systemName: "stop.fill")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundColor(.white)
+                            .frame(width: 44, height: 44)
+                            .background(MuseTheme.accent)
+                            .clipShape(Circle())
+                    }
+                    .accessibilityLabel(PalL10n.text("Остановить ответ"))
+                } else if model.pendingVoiceNote != nil && !model.isRecordingVoice {
+                    Button(action: model.sendPendingVoiceNote) {
+                        Image(systemName: "arrow.up")
+                            .font(.headline.weight(.bold))
+                            .foregroundColor(model.canSendToMuse ? .white : MuseTheme.secondary)
+                            .frame(width: 44, height: 44)
+                            .background(model.canSendToMuse ? MuseTheme.accent : MuseTheme.elevated)
+                            .clipShape(Circle())
+                    }
+                    .disabled(!model.canSendToMuse)
+                    .accessibilityLabel(PalL10n.text("Отправить"))
                 // Stays the same view across recording, or a held press would be cancelled.
-                if hasDraft && !model.isRecordingVoice {
+                } else if hasDraft && !model.isRecordingVoice {
                     Button(action: sendDraft) {
                         Image(systemName: model.isSendingChat ? "ellipsis" : "arrow.up")
                             .font(.headline.weight(.bold))
@@ -2295,6 +2370,8 @@ private struct MuseSettingsView: View {
     @State private var showClearHistoryConfirmation = false
     @State private var showAbout = false
     @State private var showReport = false
+    @State private var showShortcuts = false
+    @State private var showLocalDevices = false
 
     private var reportText: String {
         MuseProblemReport.text(
@@ -2380,21 +2457,55 @@ private struct MuseSettingsView: View {
                         tint: sensorAccessCount == 3 ? MuseTheme.mint : .orange
                     )
                     Divider().overlay(MuseTheme.stroke)
-                    CapabilitySettingsRow(
-                        icon: "square.stack.3d.up.fill",
-                        title: "Быстрые команды",
-                        detail: model.approvedShortcuts.isEmpty
-                            ? PalL10n.text("Спросят подтверждение перед запуском")
-                            : PalL10n.format("settings.approved_count_format", model.approvedShortcuts.count),
-                        tint: MuseTheme.blue
-                    )
+                    DisclosureGroup(isExpanded: $showShortcuts) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            if model.approvedShortcuts.isEmpty {
+                                Text(PalL10n.text("Постоянных разрешений пока нет."))
+                                    .font(.caption)
+                                    .foregroundColor(MuseTheme.secondary)
+                            }
+                            ForEach(model.approvedShortcuts, id: \.self) { name in
+                                GrantRow(icon: "square.stack.3d.up.fill", title: name) {
+                                    model.revokeShortcut(name)
+                                }
+                            }
+                        }
+                        .padding(.leading, 38)
+                        .padding(.bottom, 10)
+                    } label: {
+                        CapabilitySettingsRow(
+                            icon: "square.stack.3d.up.fill",
+                            title: "Быстрые команды",
+                            detail: model.approvedShortcuts.isEmpty
+                                ? PalL10n.text("Спросят подтверждение перед запуском")
+                                : PalL10n.format("settings.approved_count_format", model.approvedShortcuts.count),
+                            tint: MuseTheme.blue
+                        )
+                    }
+                    .tint(MuseTheme.accent)
                     Divider().overlay(MuseTheme.stroke)
-                    CapabilitySettingsRow(
-                        icon: "network",
-                        title: "Устройства в локальной сети",
-                        detail: localNetworkSummary,
-                        tint: (model.permissionStates[.localNetwork] ?? .notDetermined) == .granted ? MuseTheme.mint : .orange
-                    )
+                    DisclosureGroup(isExpanded: $showLocalDevices) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            if model.approvedDevices.isEmpty {
+                                Text(PalL10n.text("Постоянных разрешений пока нет."))
+                                    .font(.caption)
+                                    .foregroundColor(MuseTheme.secondary)
+                            }
+                            ForEach(model.approvedDevices) { device in
+                                GrantRow(icon: "network", title: device.id) { model.revokeDevice(device) }
+                            }
+                        }
+                        .padding(.leading, 38)
+                        .padding(.bottom, 10)
+                    } label: {
+                        CapabilitySettingsRow(
+                            icon: "network",
+                            title: "Устройства в локальной сети",
+                            detail: localNetworkSummary,
+                            tint: (model.permissionStates[.localNetwork] ?? .notDetermined) == .granted ? MuseTheme.mint : .orange
+                        )
+                    }
+                    .tint(MuseTheme.accent)
                 }
                 .museCard()
 
@@ -2420,22 +2531,6 @@ private struct MuseSettingsView: View {
                     }
                     .font(.subheadline.weight(.semibold))
                     .padding(.top, 4)
-                }
-                .museCard()
-
-                VStack(alignment: .leading, spacing: 13) {
-                    SettingsSectionLabel(title: "РАЗРЕШЕНО ДЛЯ MUSE")
-                    if model.approvedShortcuts.isEmpty && model.approvedDevices.isEmpty {
-                        Text("Пока ничего. Когда Muse попросит запустить Быструю команду или обратиться к устройству в сети, приложение спросит вас.")
-                            .font(.caption)
-                            .foregroundColor(MuseTheme.secondary)
-                    }
-                    ForEach(model.approvedShortcuts, id: \.self) { name in
-                        GrantRow(icon: "square.stack.3d.up.fill", title: name) { model.revokeShortcut(name) }
-                    }
-                    ForEach(model.approvedDevices) { device in
-                        GrantRow(icon: "network", title: device.id) { model.revokeDevice(device) }
-                    }
                 }
                 .museCard()
 

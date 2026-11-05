@@ -41,8 +41,17 @@ final class MuseChatTimeline {
         pending.removeAll()
     }
 
+    /// Stops presenting the current turn locally. Muse has no documented semantic cancel route for
+    /// ordinary chat, so late server events are ignored until the next request is acknowledged.
+    func stopCurrentReply() {
+        holding = false
+        pending.removeAll()
+        userIDs.removeAll()
+    }
+
     func acknowledge(_ response: [String: Any]) -> [MuseChatUpdate] {
         let result = response["result"] as? [String: Any] ?? response
+        userIDs.removeAll()
         for key in ["message_id", "reply_to_message_id"] {
             if let value = result[key] as? String, !value.isEmpty { userIDs.insert(value) }
         }

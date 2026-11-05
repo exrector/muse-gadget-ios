@@ -13,8 +13,8 @@
 | Link control | `link.register` ACK and a `haptics.impact` invoke and result verified on iPhone 6s | Each remaining command from a real invoke |
 | Text chat | Verified on iPhone 6s, iOS 15.8.8, 2026-11-03 | Reply from Muse visible in the app |
 | Photo and voice notes | Verified on iPhone 6s, iOS 15.8.8, 2026-11-03 | Muse answers about the sent photo or recording |
-| Native commands (camera, location, motion, speech) | Implemented, awaiting live check | `link.result` for each command from a real invoke |
-| Spoken replies and realtime voice | Planned | Actual bidirectional user-visible delivery |
+| Native commands (camera, location, motion, speech) | Camera, motion, speech and remote voice recording verified on iPad (6th generation), 2026-11-05. `location.current` twice returned `location_failed` after permission and foreground gates passed | Preserve the underlying Core Location error domain/code, then diagnose one further failure |
+| Spoken replies and realtime voice | Muse TTS was tested live on iPad, 2026-11-05. A voice-modality turn returned only Muse's server fallback, although its fallback MP3 downloaded successfully (HTTP 200, 37,056 bytes). A normal text reply could not be converted afterward: both `/api/voice/tts-stream` and `/voice/tts-stream` rejected its message ID (HTTP 400, 120 bytes). Production chat therefore remains text-only and the broken user-facing toggle was removed. Realtime voice is not implemented | Re-test only after the server supports TTS for a successful text reply or voice-modality stops returning the fallback |
 | Companion avatar | Product UI, not a Link payload | The SDK's ESP32 avatar is a local renderer with idle/listening/thinking/speaking/error states; Muse does not send an avatar image or avatar metadata in `link.register` |
 | Apple TV as a gadget | Proof only, 2026-11-05, on Apple TV (4th generation): paired with the Muse app, registered, and showed a caption sent by Muse. See [AppleTV](AppleTV/README.md) | An app. Speech, avatar video, reconnecting and App Review are unverified |
 | Second gadget on the same SDK token | Verified 2026-11-03: Muse sees iPhone 6s and iPad (6th generation) as two devices on one token | — |
@@ -22,23 +22,27 @@
 | Haptics on iPhone 6s and older | Verified on iPhone 6s, iOS 15.8.8, 2026-11-03: `haptics.impact` vibrates through `kSystemSoundID_Vibrate` | An earlier attempt was not felt, cause not established |
 | Haptics on iPad | Not supported by the hardware; returns `haptics_unavailable` | — |
 | Flashlight | By the owner's report, 2026-11-04: `torch.set` works on iPhone 6s and returns `torch_unavailable` on iPad (6th generation), which has no flash | — |
-| Brightness, card | Implemented, awaiting live check | Visible change on the device from a real invoke |
+| Brightness, card | iPad (6th generation), 2026-11-05: `display.set_brightness` returned success for 0.95 → 0.8 → 0.95; `display.clear_card` correctly returned `displayed: false` when no card was present | Visual confirmation of the brightness change |
 | `GET /identity` | Refused on iPad (6th generation), 2026-11-04: HTTP 403, `route not allowed for this credential's scopes`, while chat on the same session works. The name stays «Muse» | A 200 with the agent's name |
 | `display.set_avatar` | Verified on iPad (6th generation), iPadOS 17.7.11, 2026-11-04: Muse saved a PNG, the VM file was read over the Noise session, and the picture stayed in the chat header after a reinstall | The same on iPhone 6s |
 | Avatar animations by state | Verified on iPad (6th generation), 2026-11-04: Muse's four animated WebP files, 720 and 960 px at 24 fps, become H.264 videos on the device, about 100 s each, and the idle video plays beside the chat. iPhone 6s reported installed by Muse. By the owner's report, 2026-11-05: the avatar's movement changes during standard actions | Smoothness on iPhone 6s |
-| `display.set_name` | Implemented, awaiting live check | The name appears beside the avatar and stays after a restart |
+| `display.set_name` | Verified on iPad (6th generation), 2026-11-05: accepted and displayed `KOTOBOBA` | Persistence after a restart |
+| `display.play_avatar`, `display.clear_image` | Verified on iPad (6th generation), 2026-11-05: direct idle playback reported 8000 ms; image clearing returned `cleared: true` | — |
 | Avatar list on the VM (`avatars.json`) | Verified 2026-11-04: iPad and iPhone 6s fetched all four files from the list by themselves | — |
 | MP4 animations from Muse | Verified on iPad (6th generation), 2026-11-04: four MP4 files reported `ready: true` at once. iPhone 6s, iOS 15.8.8, 2026-11-04: all four files found in the app's storage, and the avatar moves, by the owner's report | Smoothness and switching between movements on iPhone 6s |
 | Asking Muse automatically when the VM has no list | Unit tests only | A newly paired gadget getting its avatar with no action from the user |
 | Pinned card through a restart | Verified on iPad (6th generation), 2026-11-04: a running timer card stayed on screen and kept counting after reinstalling | The same on iPhone 6s |
 | `display.draw_file` | Verified on iPad (6th generation), 2026-11-04: `drawn: true`, image shown above the chat | The same on iPhone 6s |
 | `audio.speak` | Verified on iPad (6th generation), 2026-11-04, by the owner's report | The same on iPhone 6s |
-| `voice.configure` | Implemented, awaiting live check | `audio.speak` is quieter at a lower volume |
+| `voice.configure` | Verified on iPad (6th generation), 2026-11-05: read 100, set 90, restored 100 | Audible comparison at two substantially different levels |
+| `voice.record` | Verified on iPad (6th generation), 2026-11-05: mono 24 kHz WAV, 2085 ms, 100096 bytes | — |
 | Speaking and listening states, command toasts, battery, brightness and volume controls | Implemented, awaiting live check | Seen on the device during a real invoke |
-| `shortcuts.run` | Simple notification shortcuts run on iPhone 6s, iOS 15.8.8, 2026-11-03, by the owner's report | `finished=true` and a text result reaching Muse |
+| `shortcuts.list` | Verified on iPad (6th generation), 2026-11-05: returned the one approved shortcut, `111` | — |
+| `shortcuts.run` | iPad (6th generation), 2026-11-05: `111` returned `started: true`, `finished: true`, but no `result` field. Simple notification shortcuts also run on iPhone 6s | Diagnose delivery of a textual Shortcut result |
 | Chat sync through iCloud | Verified from iPad to iPhone 15 Pro Max on one Apple ID, 2026-11-03, by the owner's report | The reverse direction, with both devices paired |
 | Chat sync over Wi-Fi | Postponed and off by default; exchange verified between two instances over real sockets on a Mac, where the first run after a rebuild can stall for about 25 seconds before recovering | iPhone 6s and iPad show the same text history with different Apple IDs |
-| `lan.discover`, `lan.request` | Implemented, awaiting live check | Real devices listed; an approved device answers a real request |
+| `lan.discover`, `lan.request` | Verified on iPad (6th generation), 2026-11-05: discovery returned 19 Bonjour devices; an approved GET to Keenetic returned HTTP 200 and the KeeneticOS Web Panel body | — |
+| `camera.capture` | Verified on iPad (6th generation), 2026-11-05: JPEG 600×800, 41838 bytes | — |
 | WebSocket, MQTT, UDP, SSDP, SSH on the local network | Not implemented | — |
 
 ## Sending a report

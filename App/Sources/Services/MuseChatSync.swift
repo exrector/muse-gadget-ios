@@ -1,5 +1,97 @@
 import Foundation
 
+struct MuseServerChatMessage: Equatable {
+    let author: MuseChatItem.Author
+    let text: String
+    let messageID: String
+    let createdAt: Date
+}
+
+/// Reads the deliberately small, loosely-versioned `/chat/history` response without depending on
+/// one wrapper shape. Only user and assistant text is imported; tool calls and hidden reasoning are
+/// ignored.
+enum MuseServerHistory {
+    static func parse(_ data: Data, now: Date = Date()) -> [MuseServerChatMessage] {
+        guard let root = try? JSONSerialization.jsonObject(with: data) else { return [] }
+        var raw: [(author: MuseChatItem.Author, text: String, id: String, date: Date?)] = []
+        collect(root, into: &raw)
+        var seen = Set<String>()
+        let unique = raw.filter { seen.insert($0.id).inserted }
+        return unique.enumerated().map { index, message in
+            MuseServerChatMessage(
+                author: message.author,
+                text: message.text,
+                messageID: message.id,
+                createdAt: message.date ?? now.addingTimeInterval(TimeInterval(index - unique.count))
+            )
+        }.sorted { $0.createdAt == $1.createdAt ? $0.messageID < $1.messageID : $0.createdAt < $1.createdAt }
+    }
+
+    private static func collect(
+        _ value: Any,
+        into result: inout [(author: MuseChatItem.Author, text: String, id: String, date: Date?)]
+    ) {
+        if let object = value as? [String: Any] {
+            if let role = object["role"] as? String,
+               let author = author(role),
+               let id = string(object["id"]) ?? string(object["message_id"]),
+               let text = text(from: object), !text.isEmpty {
+                result.append((author, text, id, date(from: object)))
+                return
+            }
+            for key in ["messages", "history", "items", "results", "data", "result"] {
+                if let child = object[key] { collect(child, into: &result) }
+            }
+        } else if let array = value as? [Any] {
+            for child in array { collect(child, into: &result) }
+        }
+    }
+
+    private static func author(_ role: String) -> MuseChatItem.Author? {
+        switch role.lowercased() {
+        case "user": return .user
+        case "assistant", "muse": return .muse
+        default: return nil
+        }
+    }
+
+    private static func text(from object: [String: Any]) -> String? {
+        for key in ["display_text", "text"] {
+            if let value = string(object[key]), !value.isEmpty { return value }
+        }
+        if let value = object["content"] as? String, !value.isEmpty { return value }
+        guard let content = object["content"] as? [Any] else { return nil }
+        let parts = content.compactMap { item -> String? in
+            guard let item = item as? [String: Any],
+                  item["type"] as? String == "text" else { return nil }
+            return string(item["text"])
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: "\n")
+    }
+
+    private static func date(from object: [String: Any]) -> Date? {
+        for key in ["created_at", "createdAt", "timestamp", "time"] {
+            if let number = object[key] as? NSNumber {
+                let raw = number.doubleValue
+                return Date(timeIntervalSince1970: raw > 10_000_000_000 ? raw / 1_000 : raw)
+            }
+            if let string = object[key] as? String {
+                if let raw = Double(string) {
+                    return Date(timeIntervalSince1970: raw > 10_000_000_000 ? raw / 1_000 : raw)
+                }
+                if let parsed = ISO8601DateFormatter().date(from: string) { return parsed }
+            }
+        }
+        return nil
+    }
+
+    private static func string(_ value: Any?) -> String? {
+        guard let value = value as? String else { return nil }
+        let clean = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return clean.isEmpty ? nil : clean
+    }
+}
+
 struct MuseSyncedMessage: Codable, Equatable {
     let id: UUID
     let author: String
@@ -18,6 +110,34 @@ struct MuseSyncedHistory: Codable, Equatable {
 
 /// Combines the histories of several devices. Holds no state, so it can be tested without iCloud.
 enum MuseChatMerge {
+    static func mergeServer(
+        local: [MuseChatItem],
+        server: [MuseServerChatMessage],
+        clearedBefore: Date?
+    ) -> [MuseChatItem] {
+        var items = local
+        for message in server where clearedBefore.map({ message.createdAt > $0 }) ?? true {
+            if let index = items.firstIndex(where: { $0.museMessageID == message.messageID }) {
+                if items[index].text != message.text { items[index].text = message.text }
+                continue
+            }
+            if let index = items.firstIndex(where: {
+                $0.museMessageID == nil && $0.author == message.author && $0.text == message.text
+                    && abs($0.createdAt.timeIntervalSince(message.createdAt)) < 120
+            }) {
+                items[index].museMessageID = message.messageID
+                continue
+            }
+            items.append(MuseChatItem(
+                author: message.author,
+                text: message.text,
+                museMessageID: message.messageID,
+                createdAt: message.createdAt
+            ))
+        }
+        return Array(ordered(uniqueReplies(items)).suffix(MuseChatStore.maxStoredItems))
+    }
+
     static func merge(
         local: [MuseChatItem],
         remote: MuseSyncedHistory,

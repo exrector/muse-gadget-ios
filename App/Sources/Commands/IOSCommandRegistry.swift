@@ -86,17 +86,12 @@ final class IOSCommandRegistry {
 
         registry.register(CommandDefinition(
             name: "device.health",
-            summary: "Report app-visible device health without private user data.",
+            summary: "Report app-visible power, thermal, storage, display, permission and version health without private user data.",
             parameters: [:]
         )) { _, completion in
-            UIDevice.current.isBatteryMonitoringEnabled = true
-            let battery = UIDevice.current.batteryLevel
-            completion(CommandResult(success: true, value: [
-                "system": UIDevice.current.systemName,
-                "system_version": UIDevice.current.systemVersion,
-                "model": UIDevice.current.model,
-                "battery_percent": battery < 0 ? NSNull() : Int(battery * 100)
-            ]))
+            DispatchQueue.main.async {
+                completion(CommandResult(success: true, value: nativeServices.deviceHealth()))
+            }
         }
 
         registry.register(CommandDefinition(

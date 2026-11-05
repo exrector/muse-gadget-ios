@@ -241,6 +241,8 @@
 "Muse тоже может её менять, здесь видно текущее значение" = "Muse can change it too; this shows the current value";
 "Громкость речи" = "Speech volume";
 "Для того, что Muse произносит вслух. Кнопки громкости устройства тоже действуют" = "For what Muse says aloud. The device's volume buttons still apply";
+"Остановить ответ" = "Stop response";
+"Постоянных разрешений пока нет." = "No permanent permissions yet.";
 "Фонарик" = "Flashlight";
 "Вибрация" = "Vibration";
 "Быстрая команда" = "Shortcut";

@@ -2,6 +2,7 @@ import AudioToolbox
 @preconcurrency import AVFoundation
 import CoreLocation
 import CoreMotion
+import Darwin
 import Foundation
 import ImageIO
 import UIKit
@@ -21,6 +22,88 @@ final class NativeCommandServices {
         let audioActivity = NativeAudioActivity()
         speech = NativeSpeechService(activity: audioActivity)
         recorder = NativeVoiceRecorderService(activity: audioActivity)
+    }
+
+    /// A bounded, privacy-safe health report. iOS does not expose processes, arbitrary files,
+    /// SMART data or the other host-wide diagnostics available to the Linux gadget.
+    func deviceHealth() -> [String: Any] {
+        UIDevice.current.isBatteryMonitoringEnabled = true
+        let batteryLevel = UIDevice.current.batteryLevel
+        let fileSystem = try? FileManager.default.attributesOfFileSystem(forPath: NSHomeDirectory())
+        let process = ProcessInfo.processInfo
+        let permissions = Dictionary(uniqueKeysWithValues: AppPermission.allCases.map {
+            ($0.healthKey, self.permissions.status(for: $0).healthValue)
+        })
+        let brightness = min(max(Double(UIScreen.main.brightness), 0), 1)
+        return [
+            "system": UIDevice.current.systemName,
+            "system_version": UIDevice.current.systemVersion,
+            "model": UIDevice.current.model,
+            "model_identifier": Self.modelIdentifier(),
+            "battery_percent": batteryLevel < 0 ? NSNull() : Int((batteryLevel * 100).rounded()),
+            "battery_state": Self.batteryState(UIDevice.current.batteryState),
+            "charging": Self.charging(UIDevice.current.batteryState),
+            "low_power_mode": process.isLowPowerModeEnabled,
+            "thermal_state": Self.thermalState(process.thermalState),
+            "device_uptime_seconds": Int(process.systemUptime),
+            "storage_free_bytes": fileSystem?[.systemFreeSize] as? Int64 ?? NSNull(),
+            "storage_total_bytes": fileSystem?[.systemSize] as? Int64 ?? NSNull(),
+            "screen_brightness_percent": Int((brightness * 100).rounded()),
+            "app_version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0",
+            "app_build": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0",
+            "foreground": UIApplication.shared.applicationState == .active,
+            "permissions": permissions
+        ]
+    }
+
+    private static func modelIdentifier() -> String {
+        var info = utsname()
+        uname(&info)
+        var machine = info.machine
+        let byteCount = MemoryLayout.size(ofValue: machine)
+        return withUnsafePointer(to: &machine) {
+            $0.withMemoryRebound(to: CChar.self, capacity: byteCount) {
+                String(cString: $0)
+            }
+        }
+    }
+
+    private static func batteryState(_ state: UIDevice.BatteryState) -> String {
+        switch state {
+        case .unknown: return "unknown"
+        case .unplugged: return "unplugged"
+        case .charging: return "charging"
+        case .full: return "full"
+        @unknown default: return "unknown"
+        }
+    }
+
+    private static func charging(_ state: UIDevice.BatteryState) -> Any {
+        switch state {
+        case .charging, .full: return true
+        case .unplugged: return false
+        case .unknown: return NSNull()
+        @unknown default: return NSNull()
+        }
+    }
+
+    private static func thermalState(_ state: ProcessInfo.ThermalState) -> String {
+        switch state {
+        case .nominal: return "nominal"
+        case .fair: return "fair"
+        case .serious: return "serious"
+        case .critical: return "critical"
+        @unknown default: return "unknown"
+        }
+    }
+
+    static func locationFailure(_ error: Error) -> CommandResult {
+        let failure = error as NSError
+        return CommandResult(success: false, value: [
+            "error": "location_failed",
+            "error_domain": failure.domain,
+            "error_code": failure.code
+        ])
     }
 
     func speak(text: String, completion: @escaping (CommandResult) -> Void) {
@@ -194,6 +277,31 @@ final class NativeCommandServices {
     ) {
         if Thread.isMainThread { completion(result) }
         else { DispatchQueue.main.async { completion(result) } }
+    }
+}
+
+private extension AppPermission {
+    var healthKey: String {
+        switch self {
+        case .bluetooth: return "bluetooth"
+        case .localNetwork: return "local_network"
+        case .camera: return "camera"
+        case .microphone: return "microphone"
+        case .location: return "location"
+        case .motion: return "motion"
+        }
+    }
+}
+
+private extension PermissionState {
+    var healthValue: String {
+        switch self {
+        case .notDetermined: return "not_determined"
+        case .granted: return "granted"
+        case .denied: return "denied"
+        case .restricted: return "restricted"
+        case .unavailable: return "unavailable"
+        }
     }
 }
 
@@ -525,7 +633,7 @@ private final class NativeLocationService: NSObject, CLLocationManagerDelegate {
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        finish(.failure("location_failed"))
+        finish(NativeCommandServices.locationFailure(error))
     }
 
     private func finish(_ result: CommandResult) {
