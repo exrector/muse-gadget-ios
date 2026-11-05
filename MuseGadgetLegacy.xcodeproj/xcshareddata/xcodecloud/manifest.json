@@ -1,0 +1,9 @@
+{
+  "id" : "b24c0fc2-5306-40ef-ae1b-00f0a7440004",
+  "targets" : [
+    {
+      "id" : "f407522c-289e-43cf-8723-265633d4a8ab",
+      "name" : "MuseGadgetLegacy"
+    }
+  ]
+}

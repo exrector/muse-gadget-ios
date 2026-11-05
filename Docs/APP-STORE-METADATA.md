@@ -10,9 +10,9 @@ The App Store listing starts in English. A Russian listing can follow in a later
 | Subtitle | COGNITIVE LABS |
 | Category | Utilities, then Productivity |
 | Copyright | Cognitive Labs |
-| Support URL | https://exrector.com/apps/support.html#palagain |
-| Marketing URL | https://github.com/exrector/muse-gadget-ios |
-| Privacy policy URL | https://exrector.com/apps/palagain/privacy.html |
+| Support URL | https://exrector.com/apps/support#palagain |
+| Marketing URL | https://exrector.com/apps/ |
+| Privacy policy URL | https://exrector.com/apps/palagain/privacy |
 | Support email | support@exrector.com |
 
 ## Promotional text
@@ -77,7 +77,7 @@ The SDK includes clients for ESP32 and Linux. This app is the same kind of clien
 https://github.com/exrector/muse-gadget-ios
 
 WHY THERE IS NO DEMO ACCOUNT
-Pairing needs a Muse Gadget SDK Token. It is personal to one Muse account, and its terms do not allow sharing it (https://gadgets.muse.ai/sdk-terms), so we cannot provide one. Anyone with Muse can create their own at gadgets.muse.ai. Pairing also needs a second phone with the Muse app and Developer Mode. Without pairing, you can review the guided setup and its explanations of each permission. We can send a video of the whole flow on request.
+Pairing needs a Muse Gadget SDK Token. It is personal to one Muse account, and its terms do not allow sharing it (https://gadgets.muse.ai/sdk-terms), so we cannot provide one. Anyone with Muse can create their own at gadgets.muse.ai. Pairing also needs a second phone with the Muse app and Developer Mode. Without pairing, you can review the guided setup and its explanations of each permission.
 
 PERMISSIONS
 Each one is asked for when it is first needed, and the app keeps working if it is denied.
