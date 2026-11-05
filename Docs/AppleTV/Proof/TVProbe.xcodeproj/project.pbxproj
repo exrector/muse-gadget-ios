@@ -1,0 +1,46 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 56;
+	objects = {
+		A0 = {isa = PBXBuildFile; fileRef = R0; };
+		R0 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BLEFraming.swift; sourceTree = "<group>"; };
+		A1 = {isa = PBXBuildFile; fileRef = R1; };
+		R1 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CredentialStore.swift; sourceTree = "<group>"; };
+		A2 = {isa = PBXBuildFile; fileRef = R2; };
+		R2 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceIdentity.swift; sourceTree = "<group>"; };
+		A3 = {isa = PBXBuildFile; fileRef = R3; };
+		R3 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSCommandRegistry.swift; sourceTree = "<group>"; };
+		A4 = {isa = PBXBuildFile; fileRef = R4; };
+		R4 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MuseChatTimeline.swift; sourceTree = "<group>"; };
+		A5 = {isa = PBXBuildFile; fileRef = R5; };
+		R5 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MuseRuntime.swift; sourceTree = "<group>"; };
+		A6 = {isa = PBXBuildFile; fileRef = R6; };
+		R6 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoiseWire.swift; sourceTree = "<group>"; };
+		A7 = {isa = PBXBuildFile; fileRef = R7; };
+		R7 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoiseXX.swift; sourceTree = "<group>"; };
+		A8 = {isa = PBXBuildFile; fileRef = R8; };
+		R8 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingCoordinator.swift; sourceTree = "<group>"; };
+		A9 = {isa = PBXBuildFile; fileRef = R9; };
+		R9 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingCrypto.swift; sourceTree = "<group>"; };
+		A10 = {isa = PBXBuildFile; fileRef = R10; };
+		R10 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TVApp.swift; sourceTree = "<group>"; };
+		A11 = {isa = PBXBuildFile; fileRef = R11; };
+		R11 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TVMusePeripheral.swift; sourceTree = "<group>"; };
+		B2 = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B3 = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TVProbe.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C1 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		C2 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11); runOnlyForDeploymentPostprocessing = 0; };
+		D1 = {isa = PBXGroup; children = (D2, D3); sourceTree = "<group>"; };
+		D2 = {isa = PBXGroup; children = (R0, R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, B2); path = Probe; sourceTree = "<group>"; };
+		D3 = {isa = PBXGroup; children = (B3); name = Products; sourceTree = "<group>"; };
+		E1 = {isa = PBXNativeTarget; buildConfigurationList = F2; buildPhases = (C2, C1); buildRules = (); dependencies = (); name = TVProbe; productName = TVProbe; productReference = B3; productType = "com.apple.product-type.application"; };
+		E2 = {isa = PBXProject; attributes = {LastUpgradeCheck = 2720; }; buildConfigurationList = F1; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; knownRegions = (en, Base); mainGroup = D1; productRefGroup = D3; projectDirPath = ""; projectRoot = ""; targets = (E1); };
+		G1 = {isa = XCBuildConfiguration; buildSettings = {SDKROOT = appletvos; TVOS_DEPLOYMENT_TARGET = 15.0; SWIFT_VERSION = 5.0; ONLY_ACTIVE_ARCH = YES; ENABLE_TESTABILITY = YES; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; }; name = Debug; };
+		G2 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic; DEVELOPMENT_TEAM = K3Q8WG53V3; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = Probe/Info.plist; PRODUCT_BUNDLE_IDENTIFIER = com.exrector.PalAgainTVProbe; PRODUCT_NAME = "$(TARGET_NAME)"; TARGETED_DEVICE_FAMILY = 3; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks"; }; name = Debug; };
+		F1 = {isa = XCConfigurationList; buildConfigurations = (G1); defaultConfigurationName = Debug; };
+		F2 = {isa = XCConfigurationList; buildConfigurations = (G2); defaultConfigurationName = Debug; };
+	};
+	rootObject = E2;
+}

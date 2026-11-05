@@ -1,0 +1,74 @@
+import CoreBluetooth
+import SwiftUI
+
+/// Looks for the Muse gadget service from outside the Apple TV, connects and lists what it offers.
+final class Looker: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDelegate {
+    @Published var status = "Starting"
+    private var central: CBCentralManager!
+    private var found: CBPeripheral?
+    private let serviceID = CBUUID(string: "7fdd3d1c-38ea-46cf-8b46-314ecf5f240c")
+
+    override init() {
+        super.init()
+        central = CBCentralManager(delegate: self, queue: .main)
+    }
+
+    private func say(_ text: String) {
+        status = text
+        Handoff.log(text)
+    }
+
+    func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        guard central.state == .poweredOn else { return }
+        central.scanForPeripherals(withServices: [serviceID])
+        say("Scanning for the Muse gadget service")
+    }
+
+    func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String: Any], rssi: NSNumber) {
+        central.stopScan()
+        found = peripheral
+        peripheral.delegate = self
+        say("FOUND name=\(advertisementData[CBAdvertisementDataLocalNameKey] ?? "-") device=\(peripheral.name ?? "-") rssi=\(rssi) connectable=\(advertisementData[CBAdvertisementDataIsConnectable] ?? "-") services=\(advertisementData[CBAdvertisementDataServiceUUIDsKey] ?? "-")")
+        central.connect(peripheral)
+    }
+
+    func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        say("CONNECTED")
+        peripheral.discoverServices(nil)
+    }
+
+    func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
+        say("connect failed \(error?.localizedDescription ?? "")")
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
+        say("services \(peripheral.services?.map(\.uuid.uuidString) ?? []) error \(error?.localizedDescription ?? "none")")
+        peripheral.services?.filter { $0.uuid == serviceID }.forEach { peripheral.discoverCharacteristics(nil, for: $0) }
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
+        say("characteristics \(service.characteristics?.map { "\($0.uuid.uuidString) props \($0.properties.rawValue)" } ?? [])")
+        if let writable = service.characteristics?.first(where: { $0.properties.contains(.write) }) {
+            peripheral.writeValue(Data("hello".utf8), for: writable, type: .withResponse)
+        }
+        if let notifying = service.characteristics?.first(where: { $0.properties.contains(.notify) }) {
+            peripheral.setNotifyValue(true, for: notifying)
+        }
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
+        say("write finished, error \(error?.localizedDescription ?? "none")")
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
+        say("subscribed, error \(error?.localizedDescription ?? "none")")
+    }
+}
+
+@main
+struct SenderApp: App {
+    @StateObject private var looker = Looker()
+    var body: some Scene {
+        WindowGroup { VStack(spacing: 16) { Text("Bluetooth look test").font(.title); Text(looker.status) } }
+    }
+}
