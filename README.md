@@ -4,6 +4,8 @@
 
 > **Make Old Devices Smart Again.**
 
+**[Get it on the App Store](https://apps.apple.com/us/app/pal-again/id6830354776)** · **[Join the TestFlight beta](https://testflight.apple.com/join/jWYJWgHz)**
+
 An open-source Muse community gadget that turns an older iPhone or iPad into a screen, microphone, speaker, camera and sensor companion for Muse, with a chat you can type or talk into.
 
 > This is an independent open-source community project. Muse and related marks belong to their respective owners. Muse Gadget SDK tokens are governed separately by the [Muse Gadget SDK Token Terms](https://gadgets.muse.ai/sdk-terms).
@@ -41,7 +43,7 @@ iOS has no shell, so unlike the Linux gadget there is no `system.run`. Muse gets
 - iPhone or iPad as the gadget. **Confirmed so far:** iPhone 6s with iOS 15.8.8 and iPad (6th generation) with iPadOS 17.7.11. These are the oldest devices we have to test on, not a known limit. The app can be installed on iOS or iPadOS 15 or newer, so other devices may work, and you are welcome to try: older iPads that run iPadOS 15, such as iPad Air 2 or iPad mini 4, would help the most. Whether it works or not, please [open an issue](https://github.com/exrector/muse-gadget-ios/issues) with the device model, system version and what you tried, and we will add the result here. Never include your SDK Token.
 - A different phone with the Muse app. A phone running Muse cannot be its own gadget, because it does not see its own Bluetooth signal.
 - An SDK Token from [gadgets.muse.ai](https://gadgets.muse.ai/settings/sdk-tokens). One token can serve several gadgets.
-- During the beta, a Mac with Xcode is required to build and install the app. The App Store link will be added here when the public listing is live.
+- The app itself: [Pal Again on the App Store](https://apps.apple.com/us/app/pal-again/id6830354776) as a one-time $1 purchase, or the free [TestFlight beta](https://testflight.apple.com/join/jWYJWgHz) for builds before release. You can also build it from source with a Mac and Xcode by following [BUILDING.md](Docs/BUILDING.md).
 
 ## Current status
 
