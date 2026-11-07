@@ -1,14 +1,35 @@
 # Pal Again for iOS and iPadOS
 
-**Pal Again** is a faithful Muse AI companion that gives an older iPhone or iPad a useful second life.
+## **FOR OLD, OUTDATED iPhone AND iPad MODELS**
+
+### **Pal Again turns an old iPhone or iPad, one that Apple no longer updates to the latest iOS or that lies unused in a drawer, into a Muse gadget: the same kind of device as the ESP32 boards and Raspberry Pi computers from [Muse Gadgets](https://gadgets.muse.ai/).**
+
+<p align="center">
+  <img src="Docs/images/iphone-6s-1.jpg" height="300" alt="Pal Again chat with Muse on iPhone 6s">
+  <img src="Docs/images/iphone-6s-2.jpg" height="300" alt="Pal Again on iPhone 6s">
+  <img src="Docs/images/ipad-6-1.jpg" height="300" alt="Pal Again chat with Muse on iPad (6th generation)">
+  <img src="Docs/images/ipad-6-2.jpg" height="300" alt="Pal Again on iPad (6th generation)">
+</p>
+<p align="center"><sub>iPhone 6s with iOS 15 · iPad (6th generation) with iPadOS 17</sub></p>
 
 > **Make Old Devices Smart Again.**
 
 **[Get it on the App Store](https://apps.apple.com/us/app/pal-again/id6830354776)** · **[Join the TestFlight beta](https://testflight.apple.com/join/jWYJWgHz)**
 
-An open-source Muse community gadget that turns an older iPhone or iPad into a screen, microphone, speaker, camera and sensor companion for Muse, with a chat you can type or talk into.
+The old device becomes a screen, microphone, speaker, camera and sensor companion for Muse, with a chat you can type or talk into. Tested on an iPhone 6s from 2015 with iOS 15 and an iPad (6th generation) from 2018 with iPadOS 17.
 
 > This is an independent open-source community project. Muse and related marks belong to their respective owners. Muse Gadget SDK tokens are governed separately by the [Muse Gadget SDK Token Terms](https://gadgets.muse.ai/sdk-terms).
+
+## How it works
+
+[Muse Gadgets](https://gadgets.muse.ai/) is Meta's open-source program for building your own hardware for the Muse assistant. Its [official SDK](https://github.com/facebookincubator/muse-gadget-sdk) runs on ESP32 boards and Linux computers such as a Raspberry Pi. Pal Again is an independent native Swift port of that SDK's gadget protocol for iOS and iPadOS, so an old iPhone or iPad joins Muse the same way those boards do, with no extra hardware.
+
+1. **Token.** You create an SDK token at gadgets.muse.ai and enter it in the app, which keeps it in the iOS Keychain.
+2. **Pairing over Bluetooth.** The device advertises itself as `MuseGadgetXXXXXX`, like an ESP32 or Linux gadget. On a different phone, the Muse app finds it under Settings > Devices with Developer Mode turned on, and the two complete the SDK's encrypted pairing. Muse then gives the gadget its own device credentials.
+3. **Connecting to Muse.** The gadget finds its Muse VM through Muse's API and opens an encrypted Noise session to it over the internet. It registers with `link.register`, sending the list of commands it supports.
+4. **Daily use.** Bluetooth is needed only for pairing. After that the gadget works over Wi-Fi without the phone nearby: Muse calls commands such as showing a card, speaking, taking a photo or reading the sensors, and the device answers. Chat, photos and voice notes go through the same session.
+
+Where it differs from the Linux SDK: iOS has no shell, so instead of `system.run` the gadget offers an explicit list of native commands, and anything new it wants to reach needs a tap on the device. iOS also suspends apps in the background, so the gadget works while the app is on screen.
 
 ## What it does
 
@@ -22,8 +43,6 @@ An open-source Muse community gadget that turns an older iPhone or iPad into a s
 - **History sync** between devices on one Apple ID through iCloud.
 - **English and Russian interface** selected by iOS, including localized permission prompts. The per-app language can be changed in iOS Settings; there is no separate language switch inside Pal Again.
 - **System appearance** with a turquoise-blue design that follows Light and Dark Mode on iOS 15 and newer.
-
-iOS has no shell, so unlike the Linux gadget there is no `system.run`. Muse gets an explicit list of native commands, and anything new it wants to reach needs a tap on the device.
 
 ## Documentation
 
