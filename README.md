@@ -84,7 +84,7 @@ The app reports Muse as connected only after the server acknowledges `link.regis
 
 ## Quick start
 
-1. [Build and install](Docs/BUILDING.md) the app on your gadget, using your own Apple team and bundle ID.
+1. Install Pal Again on your gadget from the [App Store](https://apps.apple.com/us/app/pal-again/id6830354776) or the free [TestFlight beta](https://testflight.apple.com/join/jWYJWgHz), or [build it yourself](Docs/BUILDING.md) with your own Apple team and bundle ID.
 2. Follow the steps in the app: add your token, allow permissions, confirm Wi-Fi and start pairing.
 3. On your main phone, open Muse, go to Settings > Devices, turn on Developer Mode, tap **+** and choose the `MuseGadgetXXXXXX` name shown on the gadget.
 
@@ -108,7 +108,7 @@ Apache License 2.0. See `LICENSE` and `NOTICE`. Upstream source retains its own 
 
 ## App Store price and support
 
-Pal Again will cost **$1** on the App Store. Each user supplies their own Muse Gadget SDK Token; the purchase does not sell access to Muse. The price covers a ready-to-use build, Apple signing and App Store delivery, and helps fund independent development, compatibility testing on older devices and the Apple Developer Program, which costs about $100 per year.
+Pal Again costs **$1** on the App Store. Each user supplies their own Muse Gadget SDK Token; the purchase does not sell access to Muse. The price covers a ready-to-use build, Apple signing and App Store delivery, and helps fund independent development, compatibility testing on older devices and the Apple Developer Program, which costs about $100 per year.
 
 The source remains public so anyone can inspect it, contribute improvements or build it themselves. Buying the App Store version is the simplest way to install Pal Again and directly support continued development.
 
