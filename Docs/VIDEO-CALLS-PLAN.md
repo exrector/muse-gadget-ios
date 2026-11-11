@@ -137,3 +137,16 @@ first and a 15-second second sentence with no suppression at all, and a video ca
 and answered the first sentence. Calls now leave the hint out; voice notes keep it only with
 "Short Replies to Voice". A "Muse Greets First" setting (on by default) sets
 `proactive_greeting_enabled` for both kinds of call.
+
+### iPhone 6s and layouts, 2026-11-12
+
+On the iPhone 6s with iOS 15.8.8 a video call ran over UDP, connected in 2.7 s and showed 852 of
+853 assembled frames with no SRTP or decode errors. AudioToolbox encodes Opus on iOS 15 too, so
+libopus is not needed. Muse's video is 448x768 at about 18 frames a second; on an iPad it is
+scaled up about 1.7-2x whatever the app does, and nothing in the JOIN asks for more.
+
+Every layout crops the empty white above and below the avatar to the middle 60% of the height. A
+phone held sideways shows the picture with one status line under it and the buttons in a column
+on the right. An iPad switches its microphones when it turns, which changes the audio
+configuration; the call then reconnects the player and mixer before restarting the engine, or
+Muse played into nothing after a turn.

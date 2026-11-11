@@ -3081,6 +3081,20 @@ private struct MuseVoiceCallView: View {
     var inline = false
     /// In the wide band of an upright iPad, status and buttons go beside the picture.
     var beside = false
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+
+    /// An iPhone on its side: too little height for anything under the picture but one line.
+    private var phoneSideways: Bool { !inline && verticalSizeClass == .compact }
+
+    /// One line under the picture on a phone held sideways: Muse's latest words while it
+    /// speaks, kept at their end so the line moves on as it talks, otherwise the status.
+    private var runningLine: String {
+        call.phase == .speaking && !call.reply.isEmpty ? call.reply : status
+    }
+
+    /// Muse's video comes upright with empty white above and below its avatar; every window
+    /// keeps the middle part of the height, so the avatar is larger.
+    private static let videoCrop: CGFloat = 0.6
     @Environment(\.colorScheme) private var colorScheme
 
     private var status: String {
@@ -3117,7 +3131,20 @@ private struct MuseVoiceCallView: View {
 
     var body: some View {
         Group {
-            if beside {
+            if phoneSideways {
+                HStack(spacing: 12) {
+                    VStack(spacing: 6) {
+                        face.frame(maxWidth: .infinity, maxHeight: .infinity)
+                        Text(runningLine)
+                            .font(.subheadline)
+                            .lineLimit(1)
+                            .truncationMode(.head)
+                            .frame(maxWidth: .infinity)
+                    }
+                    VStack(spacing: 12) { controlButtons }
+                }
+                .padding(8)
+            } else if beside {
                 // A wide band (an iPad held upright): the picture as tall as the band, with the
                 // status and buttons beside it, so neither leaves the other empty space.
                 HStack(spacing: 16) {
@@ -3130,9 +3157,9 @@ private struct MuseVoiceCallView: View {
                     .frame(width: 300)
                 }
                 .padding(12)
-            } else if inline {
-                // A tall panel (an iPad lying sideways): the picture takes all the height the
-                // compact status and buttons below it leave.
+            } else {
+                // A tall panel (an iPad lying sideways) or a phone's card: the picture takes all
+                // the height the compact status and buttons below it leave.
                 VStack(spacing: 12) {
                     face.frame(maxWidth: .infinity, maxHeight: .infinity).layoutPriority(1)
                     info
@@ -3140,16 +3167,7 @@ private struct MuseVoiceCallView: View {
                     controls
                 }
                 .padding(12)
-            } else {
-                VStack(spacing: 20) {
-                    Spacer(minLength: 12)
-                    face
-                    info
-                    Spacer()
-                    extras
-                    controls
-                    Spacer(minLength: 24)
-                }
+                .padding(.bottom, inline ? 0 : 12)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -3167,9 +3185,10 @@ private struct MuseVoiceCallView: View {
             // Muse's own video in a media call: its avatar, talking in sync with its voice.
             // No frame or corners: on the call's white background Muse's video, which comes
             // on white, blends in instead of sitting in it as a white card.
-            MuseVideoSurface(renderer: call.video)
-                .aspectRatio(call.videoAspect, contentMode: .fit)
-                .frame(maxWidth: inline ? .infinity : 340, maxHeight: inline ? .infinity : 420)
+            MuseVideoSurface(renderer: call.video, fills: true)
+                .aspectRatio(call.videoAspect / Self.videoCrop, contentMode: .fit)
+                .clipped()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ZStack {
                 if let data = model.agentAvatar, let image = UIImage(data: data) {
@@ -3185,7 +3204,7 @@ private struct MuseVoiceCallView: View {
                 }
             }
             .aspectRatio(1, contentMode: .fit)
-            .frame(maxWidth: inline ? .infinity : 160, maxHeight: inline ? .infinity : 160)
+            .frame(maxWidth: 280, maxHeight: 280)
             .background(MuseTheme.elevated)
             .clipShape(Circle())
             .overlay(Circle().stroke(call.phase == .speaking ? MuseTheme.accent : MuseTheme.stroke, lineWidth: 4))
@@ -3230,8 +3249,12 @@ private struct MuseVoiceCallView: View {
         }
     }
 
-    @ViewBuilder private var controls: some View {
-        HStack(spacing: inline ? 16 : 28) {
+    private var controls: some View {
+        HStack(spacing: inline ? 16 : 28) { controlButtons }
+    }
+
+    @ViewBuilder private var controlButtons: some View {
+        Group {
             if call.phase.isActive {
                 roundButton(call.isMuted ? "mic.slash.fill" : "mic.fill",
                             label: call.isMuted ? "Включить микрофон" : "Выключить микрофон",
@@ -3252,7 +3275,7 @@ private struct MuseVoiceCallView: View {
             Image(systemName: icon)
                 .font(.title2)
                 .foregroundColor(color == MuseTheme.elevated ? .primary : .white)
-                .frame(width: inline ? 56 : 68, height: inline ? 56 : 68)
+                .frame(width: inline || phoneSideways ? 56 : 68, height: inline || phoneSideways ? 56 : 68)
                 .background(color)
                 .clipShape(Circle())
         }
@@ -3262,17 +3285,22 @@ private struct MuseVoiceCallView: View {
 
 private struct MuseVideoSurface: UIViewRepresentable {
     let renderer: MuseVideoRenderer
+    /// Fill the window and crop what does not fit, instead of fitting the whole picture.
+    var fills = false
 
     func makeUIView(context: Context) -> MuseVideoLayerView {
         let view = MuseVideoLayerView()
         // The space beside the picture shows whatever is behind it, not black bars.
         view.backgroundColor = .clear
+        view.clipsToBounds = true
         view.renderer = renderer
+        renderer.layer.videoGravity = fills ? .resizeAspectFill : .resizeAspect
         return view
     }
 
     func updateUIView(_ view: MuseVideoLayerView, context: Context) {
         if view.renderer !== renderer { view.renderer = renderer }
+        renderer.layer.videoGravity = fills ? .resizeAspectFill : .resizeAspect
     }
 }
 

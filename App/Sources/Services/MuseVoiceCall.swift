@@ -341,7 +341,10 @@ final class MuseVoiceCall: ObservableObject {
                 DispatchQueue.main.async { self?.show(nals, timestamp: timestamp) }
             }
             self.video.onNeedsKeyframe = { [weak media] in media?.requestKeyframe() }
-            self.video.onSize = { [weak self] size in self?.videoAspect = size.width / size.height }
+            self.video.onSize = { [weak self] size in
+                self?.videoAspect = size.width / size.height
+                self?.trace("video_size=\(Int(size.width))x\(Int(size.height))")
+            }
             media.onLost = { [weak self] in
                 DispatchQueue.main.async { self?.end(PalL10n.text("Связь с Muse прервалась")) }
             }
@@ -643,6 +646,12 @@ final class MuseVoiceCall: ObservableObject {
         guard engineRunning, phase.isActive else { return }
         trace("engine_restart=\(reason)")
         engine.stop()
+        // After a configuration change (an iPad turning switches its microphones) the output's
+        // format can change too: connect the player and mixer again or Muse plays into nothing.
+        engine.disconnectNodeOutput(player)
+        engine.connect(player, to: engine.mainMixerNode, format: playbackFormat)
+        engine.disconnectNodeOutput(engine.mainMixerNode)
+        engine.connect(engine.mainMixerNode, to: engine.outputNode, format: nil)
         do {
             try startEngine()
             routeToSpeakerIfBuiltIn()
