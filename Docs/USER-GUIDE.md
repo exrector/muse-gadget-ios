@@ -129,6 +129,9 @@ The gear button opens **Settings**: under the avatar on an iPad, and in the head
 | **Keep Screen Awake** | Keeps the screen on while paired |
 | **Help and Guide** | Explains pairing, chats, attachments, voice recording and permissions inside the app |
 | **Diagnostics** | Technical log, including the result of each command |
+| **Live Conversation with Muse (Beta)** | Adds a phone button beside the microphone: you talk and Muse answers in its own voice, hands-free. Turning it on or off reconnects to Muse. Voice notes keep working as before |
+| **Video with Muse's Avatar (Beta)** | Shown when live conversation is on. The conversation becomes a video call: Muse shows its face and its lips move as it speaks, as in the Muse app. It uses about 1 Mbit/s. Turn it off to talk by voice only |
+| **Short Replies to Voice** | Muse answers voice notes briefly, in plain sentences. Turn it off for full replies |
 | **Share Diagnostics** | Optionally sends Apple MetricKit crash and hang reports plus safe app-flow steps. It never sends chat text, tokens, the gadget name, files, photos or audio |
 | **Clear Chat History** | Deletes the saved chat |
 | **Replace SDK Token** | Stores a different token |

@@ -29,6 +29,7 @@ final class MuseMediaSession {
         var decodeErrors = 0
         var lateAudio = 0
         var audioSent = 0
+        var videoUnits = 0
     }
 
     private final class Path {
@@ -50,6 +51,8 @@ final class MuseMediaSession {
 
     /// Mono 48 kHz PCM16 decoded from Muse's Opus packets.
     var onAudio: ((Data) -> Void)?
+    /// Muse's video: the NAL units of each complete H.264 access unit.
+    var onVideo: (([Data]) -> Void)?
     /// Connectivity was lost: no consent answers for 30 s, or the chosen TCP path closed.
     var onLost: (() -> Void)?
     let queue = DispatchQueue(label: "MuseGadgetLegacy.media", qos: .userInteractive)
@@ -67,6 +70,7 @@ final class MuseMediaSession {
     private var pending: [Data: (path: Path, sent: Date)] = [:]
     private var selected: Path?
     private var connected: ((String?) -> Void)?
+    private let h264 = MuseH264Depacketizer()
     private var decoder: MuseOpusDecoder?
     private var encoder: MuseOpusEncoder?
     private var sequence = UInt16.random(in: 0...UInt16.max)
@@ -275,8 +279,14 @@ final class MuseMediaSession {
             }
             onAudio?(pcm)
         case Self.h264PayloadType:
-            // Step 4 shows it; for now only counted.
             stats.rtpVideo += 1
+            let unit = h264.push(packet)
+            // Drops resume at a keyframe, asked for with a PLI at most once a second.
+            if h264.needsKeyframe { requestKeyframe() }
+            if let unit {
+                stats.videoUnits += 1
+                onVideo?(unit)
+            }
         default:
             break
         }

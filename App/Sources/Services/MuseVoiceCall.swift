@@ -83,15 +83,24 @@ final class MuseVoiceCall: ObservableObject {
 
     private let runtime: MuseRuntime
     private var media: MuseMediaSession?
+    /// Muse's own video in a media call: its avatar, talking in sync, drawn by the server.
+    let video = MuseVideoRenderer()
+    @Published private(set) var hasVideo = false
+    /// Width over height of Muse's video, so its window has no bars.
+    @Published private(set) var videoAspect: CGFloat = 9.0 / 16.0
+    static let videoCallsKey = "videoCallsWithAvatar"
     private static let mediaTimeout: TimeInterval = 10
-    /// DEBUG only for now: PAL_CALL_TRANSPORT=media makes a call over the video-call media path.
+    /// The "Video with Muse's avatar (Beta)" setting, on unless turned off: a call over the
+    /// video-call media path, with Muse's own video. Off keeps the realtime voice call.
     static var usesMedia: Bool {
         #if DEBUG
-        return ProcessInfo.processInfo.environment["PAL_CALL_TRANSPORT"] == "media"
-        #else
-        return false
+        if let forced = ProcessInfo.processInfo.environment["PAL_CALL_TRANSPORT"] { return forced == "media" }
         #endif
+        return UserDefaults.standard.object(forKey: videoCallsKey) as? Bool ?? true
     }
+
+    /// Fixed for the length of one call, so changing the setting mid-call changes nothing.
+    @Published private(set) var isVideoCall = false
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
     private let playbackFormat = AVAudioFormat(
@@ -110,6 +119,10 @@ final class MuseVoiceCall: ObservableObject {
     /// Buffers handed to the player that it has not played yet, counted from its own callbacks.
     /// The clock estimate drifted from real playback, so silence was inserted mid-sentence.
     private var unplayed = 0
+    /// Audible buffers not played yet, and when the last one finished, for the talking animation.
+    private var audibleUnplayed = 0
+    private var lastAudiblePlayed: TimeInterval = 0
+    private static let talkingHold: TimeInterval = 0.6
     /// Bumped when playback is flushed, so callbacks for discarded buffers are ignored.
     private var playbackGeneration = 0
     private var fenced = false
@@ -221,7 +234,8 @@ final class MuseVoiceCall: ObservableObject {
             phase = .ended(PalL10n.text("Не удалось включить микрофон и динамик"))
             return
         }
-        if Self.usesMedia {
+        isVideoCall = Self.usesMedia
+        if isVideoCall {
             connectAttemptsUntil = Date().addingTimeInterval(Self.connectWait)
             connectMedia()
             return
@@ -320,6 +334,11 @@ final class MuseVoiceCall: ObservableObject {
                 let pcm = MuseVoiceCall.downsample48to24(pcm48)
                 DispatchQueue.main.async { self?.play(pcm) }
             }
+            media.onVideo = { [weak self] nals in
+                DispatchQueue.main.async { self?.show(nals) }
+            }
+            self.video.onNeedsKeyframe = { [weak media] in media?.requestKeyframe() }
+            self.video.onSize = { [weak self] size in self?.videoAspect = size.width / size.height }
             media.onLost = { [weak self] in
                 DispatchQueue.main.async { self?.end(PalL10n.text("Связь с Muse прервалась")) }
             }
@@ -382,10 +401,13 @@ final class MuseVoiceCall: ObservableObject {
         }
         if let media {
             let stats = media.stats
-            trace("media_total[transport=\(stats.transport),in=\(stats.bytesIn),audio=\(stats.rtpAudio),video=\(stats.rtpVideo),rtcp=\(stats.rtcp),srtp_errors=\(stats.srtpErrors),decode_errors=\(stats.decodeErrors),late=\(stats.lateAudio),sent=\(stats.audioSent)]")
+            trace("media_total[transport=\(stats.transport),in=\(stats.bytesIn),audio=\(stats.rtpAudio),video=\(stats.rtpVideo),rtcp=\(stats.rtcp),srtp_errors=\(stats.srtpErrors),decode_errors=\(stats.decodeErrors),late=\(stats.lateAudio),sent=\(stats.audioSent),units=\(stats.videoUnits)]")
             media.close()
             self.media = nil
         }
+        trace("video_shown=\(video.framesShown)")
+        video.reset()
+        hasVideo = false
         stopAudio()
         audibleSpans.removeAll()
         isVoiceAudible = false
@@ -416,9 +438,10 @@ final class MuseVoiceCall: ObservableObject {
         let clock = uptime()
         audibleSpans.removeAll { $0.end + Self.speakingSettle < clock }
         // The media path has no reply events: Muse talks while its audio is audible.
-        let talking = media != nil
-            ? audibleSpans.contains { $0.start <= clock && clock <= $0.end + Self.speakingSettle }
-            : replyHeard && (replyAudioOpen || unplayed > 0)
+        // Lips move while audible audio is actually playing, as the SDK's mouth follows the voice
+        // level, and for a short hold after it so pauses between words do not restart the clip.
+        // Muse's quiet background stream between replies no longer counts.
+        let talking = audibleUnplayed > 0 || clock - lastAudiblePlayed < Self.talkingHold
         if let media, phase.isActive, phase != .connecting {
             if now.timeIntervalSince(media.lastMedia) > Self.mediaTimeout {
                 end(PalL10n.text("Связь с Muse прервалась"))
@@ -589,6 +612,8 @@ final class MuseVoiceCall: ObservableObject {
         engineRunning = true
         queueEnd = 0
         unplayed = 0
+        audibleUnplayed = 0
+        lastAudiblePlayed = 0
         playbackGeneration += 1
         underruns = 0
         withGate {
@@ -708,6 +733,18 @@ final class MuseVoiceCall: ObservableObject {
         }
     }
 
+    private func show(_ nals: [Data]) {
+        guard phase.isActive, media != nil else { return }
+        video.enqueue(nals)
+        if !hasVideo, video.framesShown > 0 {
+            hasVideo = true
+            trace("video_first")
+            // A player may lose the first keyframe while it starts; ask again a moment later,
+            // as the SDK's VideoCall does.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.media?.requestKeyframe() }
+        }
+    }
+
     /// 24 kHz to 48 kHz by linear interpolation, as the SDK's _upsample24_to_48.
     static func upsample24to48(_ pcm: Data) -> Data {
         let input = pcm.withUnsafeBytes { Array($0.bindMemory(to: Int16.self)) }
@@ -759,7 +796,7 @@ final class MuseVoiceCall: ObservableObject {
                 queueEnd = uptime() + Self.prebuffer
             }
         }
-        schedule(buffer)
+        schedule(buffer, audible: rms >= Self.audibleRMS)
         let duration = Double(count) / Double(MuseVoiceEvents.sampleRate)
         let startsAt = max(uptime(), queueEnd)
         queueEnd = startsAt + duration
@@ -782,13 +819,18 @@ final class MuseVoiceCall: ObservableObject {
         }
     }
 
-    private func schedule(_ buffer: AVAudioPCMBuffer) {
+    private func schedule(_ buffer: AVAudioPCMBuffer, audible: Bool = false) {
         unplayed += 1
+        if audible { audibleUnplayed += 1 }
         let generation = playbackGeneration
         player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
             DispatchQueue.main.async {
                 guard let self, generation == self.playbackGeneration, self.unplayed > 0 else { return }
                 self.unplayed -= 1
+                if audible, self.audibleUnplayed > 0 {
+                    self.audibleUnplayed -= 1
+                    self.lastAudiblePlayed = self.uptime()
+                }
             }
         }
     }
@@ -798,6 +840,8 @@ final class MuseVoiceCall: ObservableObject {
         player.play()
         queueEnd = 0
         unplayed = 0
+        audibleUnplayed = 0
+        lastAudiblePlayed = 0
         playbackGeneration += 1
         audibleSpans.removeAll()
         isVoiceAudible = false

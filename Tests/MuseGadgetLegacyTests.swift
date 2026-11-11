@@ -12,6 +12,26 @@ final class MuseGadgetLegacyTests: XCTestCase {
         XCTAssertEqual(identity.bluetoothName, "MuseGadgetAABBCC")
     }
 
+    func testH264DepacketizerWaitsForAKeyframeAndDropsOnLoss() {
+        func packet(_ seq: UInt16, _ payload: [UInt8], marker: Bool) -> MuseRTPPacket {
+            MuseRTPPacket(payloadType: 127, marker: marker, sequence: seq, timestamp: 0, ssrc: 201, payload: Data(payload))
+        }
+        let depacketizer = MuseH264Depacketizer()
+        // A P-frame before any keyframe is not shown.
+        XCTAssertNil(depacketizer.push(packet(1, [0x41, 1, 2], marker: true)))
+        // STAP-A with SPS and PPS, then an IDR slice split in two FU-A fragments.
+        XCTAssertNil(depacketizer.push(packet(2, [0x18, 0, 2, 0x67, 9, 0, 2, 0x68, 8], marker: false)))
+        XCTAssertNil(depacketizer.push(packet(3, [0x7C, 0x85, 0xAA], marker: false)))
+        let unit = depacketizer.push(packet(4, [0x7C, 0x45, 0xBB], marker: true))
+        XCTAssertEqual(unit, [Data([0x67, 9]), Data([0x68, 8]), Data([0x65, 0xAA, 0xBB])])
+        XCTAssertFalse(depacketizer.needsKeyframe)
+        // A lost packet drops the unit and waits for the next keyframe.
+        XCTAssertNil(depacketizer.push(packet(6, [0x41, 3], marker: true)))
+        XCTAssertTrue(depacketizer.needsKeyframe)
+        XCTAssertNil(depacketizer.push(packet(7, [0x41, 4], marker: true)))
+        XCTAssertNotNil(depacketizer.push(packet(8, [0x65, 5], marker: true)))
+    }
+
     func testOpusThroughAudioToolboxRoundTrips() throws {
         let encoder = try MuseOpusEncoder()
         let decoder = try MuseOpusDecoder()

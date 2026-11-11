@@ -354,3 +354,5 @@
 "Режим микрофона" = "Mic Mode";
 "Muse не расслышал, скажите ещё раз" = "Muse missed that, please say it again";
 "Muse готовится, сейчас поздоровается…" = "Muse is getting ready and will say hello…";
+"Видео с аватаром Muse (бета)" = "Video with Muse's Avatar (Beta)";
+"В разговоре Muse показывает своё лицо и говорит губами в такт, как в приложении Muse. Это видеозвонок через медиасервер Meta, около 1 Мбит/с. Выключите, чтобы говорить только голосом" = "In a conversation Muse shows its face and moves its lips as it speaks, as in the Muse app. This is a video call through Meta's media server, about 1 Mbit/s. Turn it off to talk by voice only";

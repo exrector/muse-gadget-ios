@@ -219,6 +219,9 @@ final class MuseAppModel: ObservableObject {
             environment.runtime.restartConnection()
         }
     }
+    @Published var videoCallsWithAvatar = UserDefaults.standard.object(forKey: MuseVoiceCall.videoCallsKey) as? Bool ?? true {
+        didSet { UserDefaults.standard.set(videoCallsWithAvatar, forKey: MuseVoiceCall.videoCallsKey) }
+    }
     @Published var isVoiceCallOpen = false
     /// The call button wakes up 2 s after Muse is connected, so a tap right after launch or a
     /// reconnect never lands on a connection that is still settling.
@@ -3079,6 +3082,13 @@ private struct MuseVoiceCallView: View {
     var body: some View {
         VStack(spacing: 24) {
             Spacer(minLength: 12)
+            if call.hasVideo {
+                // Muse's own video in a media call: its avatar, talking in sync with its voice.
+                MuseVideoSurface(renderer: call.video)
+                    .aspectRatio(call.videoAspect, contentMode: .fit)
+                    .frame(maxWidth: 340, maxHeight: 420)
+                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            } else {
             ZStack {
                 if let data = model.agentAvatar, let image = UIImage(data: data) {
                     Image(uiImage: image).resizable().scaledToFill()
@@ -3096,6 +3106,7 @@ private struct MuseVoiceCallView: View {
             .background(MuseTheme.elevated)
             .clipShape(Circle())
             .overlay(Circle().stroke(call.phase == .speaking ? MuseTheme.accent : MuseTheme.stroke, lineWidth: 4))
+            }
 
             Label(status, systemImage: statusIcon)
                 .font(.headline)
@@ -3124,7 +3135,7 @@ private struct MuseVoiceCallView: View {
                 }
             }
 
-            if model.avatarFiles[MuseAppModel.callSpeakingAnimation] == nil, !model.callAvatarRequested {
+            if !call.isVideoCall, model.avatarFiles[MuseAppModel.callSpeakingAnimation] == nil, !model.callAvatarRequested {
                 Button(action: model.requestCallAvatar) {
                     Label(PalL10n.text("Попросить Muse анимацию губ для звонков"), systemImage: "mouth")
                         .font(.footnote)
@@ -3166,6 +3177,21 @@ private struct MuseVoiceCallView: View {
                 .clipShape(Circle())
         }
         .accessibilityLabel(PalL10n.text(label))
+    }
+}
+
+private struct MuseVideoSurface: UIViewRepresentable {
+    let renderer: MuseVideoRenderer
+
+    func makeUIView(context: Context) -> MuseVideoLayerView {
+        let view = MuseVideoLayerView()
+        view.backgroundColor = .black
+        view.renderer = renderer
+        return view
+    }
+
+    func updateUIView(_ view: MuseVideoLayerView, context: Context) {
+        if view.renderer !== renderer { view.renderer = renderer }
     }
 }
 
@@ -3488,6 +3514,13 @@ private struct MuseSettingsView: View {
                         detail: PalL10n.text("Кнопка с телефоном рядом с микрофоном: вы говорите, Muse отвечает своим голосом. Голосовые заметки остаются как были. При переключении приложение переподключается к Muse"),
                         isOn: $model.liveVoiceCalls
                     )
+                    if model.liveVoiceCalls {
+                        SettingsToggleRow(
+                            title: "Видео с аватаром Muse (бета)",
+                            detail: PalL10n.text("В разговоре Muse показывает своё лицо и говорит губами в такт, как в приложении Muse. Это видеозвонок через медиасервер Meta, около 1 Мбит/с. Выключите, чтобы говорить только голосом"),
+                            isOn: $model.videoCallsWithAvatar
+                        )
+                    }
                     SettingsToggleRow(
                         title: "Короткие ответы на голос",
                         detail: PalL10n.text("Muse отвечает на голосовые заметки коротко и простыми фразами, как на гаджетах с микрофоном. Выключите, чтобы получать полные ответы, как раньше"),

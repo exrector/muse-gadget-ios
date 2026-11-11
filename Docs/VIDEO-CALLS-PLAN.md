@@ -116,3 +116,13 @@ A 90-second call over the media path (`PAL_CALL_TRANSPORT=media`): UDP to the me
 RTCP, no SRTP or decode errors, 4,128 Opus packets sent. Muse heard the person and answered by
 voice. Opus comes from AudioToolbox; libopus was not needed on iPadOS 17 (iOS 15 not yet tried).
 Muse already streams its avatar as H.264: step 4 shows it.
+
+### Steps 4 and 5, 2026-11-12, iPad (6th generation), iPadOS 17.7.11
+
+Muse's H.264 is reassembled from RTP (single NAL, STAP-A, FU-A; a loss drops the unit until the
+next keyframe, asked for with a PLI) and shown by an `AVSampleBufferDisplayLayer`, which decodes
+in hardware. The window takes the picture's proportions from its parameter sets. The owner saw
+Muse's face talking in sync, as in the Muse app. "Video with Muse's Avatar (Beta)" (on by
+default, under "Live Conversation with Muse") chooses the video call; off keeps the realtime
+voice call. A video call has no captions: like the SDK's video_call.py it carries only media.
+The conversation still lands in the main chat, which refreshes when the call closes.
