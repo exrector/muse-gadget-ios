@@ -108,3 +108,11 @@ From `rtc/srtp.py`, `rtc/opus.py`, `rtc/rtp.py` and `rtc/media.py`:
   (`kAudioFormatOpus`) encodes and decodes on iOS 15; otherwise vendor libopus.
 - Consent: a STUN check every 4 s on the chosen path; 30 s without answers ends the call. A PLI
   asks for a keyframe once connected.
+
+### Step 3, 2026-11-12, iPad (6th generation), iPadOS 17.7.11
+
+A 90-second call over the media path (`PAL_CALL_TRANSPORT=media`): UDP to the media endpoint,
+11.2 MB received (about 1 Mbit/s), 1,942 Opus packets and 10,734 H.264 packets from Muse, 513
+RTCP, no SRTP or decode errors, 4,128 Opus packets sent. Muse heard the person and answered by
+voice. Opus comes from AudioToolbox; libopus was not needed on iPadOS 17 (iOS 15 not yet tried).
+Muse already streams its avatar as H.264: step 4 shows it.

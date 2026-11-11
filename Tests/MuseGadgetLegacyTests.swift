@@ -12,6 +12,59 @@ final class MuseGadgetLegacyTests: XCTestCase {
         XCTAssertEqual(identity.bluetoothName, "MuseGadgetAABBCC")
     }
 
+    func testOpusThroughAudioToolboxRoundTrips() throws {
+        let encoder = try MuseOpusEncoder()
+        let decoder = try MuseOpusDecoder()
+        var tone = Data()
+        for frame in 0..<5 {
+            for index in 0..<960 {
+                let sample = Int16(8_000 * sin(2 * Double.pi * 440 * Double(frame * 960 + index) / 48_000))
+                withUnsafeBytes(of: sample.littleEndian) { tone.append(contentsOf: $0) }
+            }
+        }
+        var decoded = Data()
+        for frame in 0..<5 {
+            let packet = try encoder.encode(tone.subdata(in: frame * 1_920..<(frame + 1) * 1_920))
+            XCTAssertGreaterThan(packet.count, 0)
+            XCTAssertLessThan(packet.count, 400)
+            decoded.append(try decoder.decode(packet))
+        }
+        XCTAssertGreaterThan(decoded.count, 0)
+    }
+
+    func testSRTPMatchesRFC3711AndRoundTrips() throws {
+        func hex(_ text: String) -> Data {
+            Data(stride(from: 0, to: text.count, by: 2).map {
+                UInt8(text[text.index(text.startIndex, offsetBy: $0)..<text.index(text.startIndex, offsetBy: $0 + 2)], radix: 16)!
+            })
+        }
+        // RFC 3711 appendix B.3: key derivation test vectors.
+        let session = try MuseSRTPSession(keyAndSalt: hex("E1F97A0D3E018BE0D64FA32C06DE4139") + hex("0EC675AD498AFEEBB6960B3AABE6"))
+        XCTAssertEqual(session.rtpKeys.encryption, hex("C61E7A93744F39EE10734AFE3FF7A087"))
+        XCTAssertEqual(Data(session.rtpKeys.salt), hex("30CBBC08863D8C85D49DB34A9AE1"))
+        XCTAssertEqual(session.rtpKeys.authentication, hex("CEBE321F6FF7716B6FD4AB49AF256A156D38BAA4"))
+
+        // One key for both ends, as in a call: what one side protects the other reads back once.
+        var key = [UInt8](repeating: 0, count: 30)
+        _ = SecRandomCopyBytes(kSecRandomDefault, key.count, &key)
+        let sender = try MuseSRTPSession(keyAndSalt: Data(key))
+        let receiver = try MuseSRTPSession(keyAndSalt: Data(key))
+        let packet = MuseRTPPacket.build(payloadType: 111, sequence: 65_535, timestamp: 960, ssrc: 200, payload: Data("opus".utf8))
+        let protected = try sender.protectRTP(packet)
+        XCTAssertNotEqual(protected.dropLast(10), packet)
+        let read = try MuseRTPPacket.parse(try receiver.unprotectRTP(protected))
+        XCTAssertEqual(read.payload, Data("opus".utf8))
+        XCTAssertEqual(read.sequence, 65_535)
+        XCTAssertThrowsError(try receiver.unprotectRTP(protected), "a replay is refused")
+        var tampered = [UInt8](try sender.protectRTP(MuseRTPPacket.build(payloadType: 111, sequence: 0, timestamp: 1_920, ssrc: 200, payload: Data([1]))))
+        tampered[12] ^= 1
+        XCTAssertThrowsError(try receiver.unprotectRTP(Data(tampered)), "a changed packet fails authentication")
+
+        let pli = MuseRTPPacket.pictureLossIndication(sender: 101, media: 201)
+        XCTAssertTrue(MuseRTPPacket.isRTCP(pli))
+        XCTAssertEqual(try receiver.unprotectRTCP(try sender.protectRTCP(pli)), pli)
+    }
+
     func testVideoCallJoinPiecesMatchTheSDK() throws {
         // zlib's CRC-32 check value, which STUN's FINGERPRINT uses.
         XCTAssertEqual(MuseSTUN.crc32(Data("123456789".utf8)), 0xCBF4_3926)

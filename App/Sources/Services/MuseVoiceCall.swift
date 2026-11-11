@@ -82,6 +82,16 @@ final class MuseVoiceCall: ObservableObject {
     private var audibleSpans: [(start: TimeInterval, end: TimeInterval)] = []
 
     private let runtime: MuseRuntime
+    private var media: MuseMediaSession?
+    private static let mediaTimeout: TimeInterval = 10
+    /// DEBUG only for now: PAL_CALL_TRANSPORT=media makes a call over the video-call media path.
+    static var usesMedia: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.environment["PAL_CALL_TRANSPORT"] == "media"
+        #else
+        return false
+        #endif
+    }
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
     private let playbackFormat = AVAudioFormat(
@@ -111,6 +121,10 @@ final class MuseVoiceCall: ObservableObject {
     // Shared with the audio thread, under `lock`.
     private let lock = NSLock()
     private var gateStream: MuseDuplexStream?
+    /// Video-call media (Docs/VIDEO-CALLS-PLAN.md step 3): SRTP straight to Muse's media
+    /// endpoint instead of the realtime stream. Audio only for now.
+    private var gateMedia: MuseMediaSession?
+    private var lastMicSpeech: TimeInterval = 0
     private var gateReady = false
     private var gateMuted = false
     private var gatePlayingUntil: TimeInterval = 0
@@ -207,6 +221,11 @@ final class MuseVoiceCall: ObservableObject {
             phase = .ended(PalL10n.text("Не удалось включить микрофон и динамик"))
             return
         }
+        if Self.usesMedia {
+            connectAttemptsUntil = Date().addingTimeInterval(Self.connectWait)
+            connectMedia()
+            return
+        }
         let admission = MuseVoiceEvents.line([
             "type": "hatch.voice.call.start",
             "call_id": callID,
@@ -241,6 +260,91 @@ final class MuseVoiceCall: ObservableObject {
         openCallStream(admission: admission, handlers: handlers)
     }
 
+    /// Media endpoint, JOIN, then SRTP straight to the endpoint, as the SDK's VideoCall._start.
+    private func connectMedia() {
+        trace("media_endpoint")
+        runtime.requestJSON(method: "GET", path: "/voice/calls/media-endpoint") { [weak self] response in
+            guard let self, self.phase == .connecting else { return }
+            guard case .success(let reply) = response else {
+                if Date() < self.connectAttemptsUntil {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.connectMedia() }
+                } else {
+                    self.end(PalL10n.text("Muse сейчас не подключён"), notify: false)
+                }
+                return
+            }
+            let endpoint = ((try? JSONSerialization.jsonObject(with: reply.body)) as? [String: Any])?["result"] as? [String: Any]
+            guard let host = endpoint?["host"] as? String, !host.isEmpty,
+                  let port = endpoint?["port"] as? Int, (1...65_535).contains(port),
+                  let vip = endpoint?["vip_type"] as? String, let code = MuseCallJoinOffer.endpointTypes[vip] else {
+                self.end(PalL10n.format("voice.call_refused_format", reply.status), notify: false)
+                return
+            }
+            self.join(host: host, port: port, vipCode: code, cosmos: (endpoint?["enable_media_to_cosmos"] as? Bool) ?? false)
+        }
+    }
+
+    private func join(host: String, port: Int, vipCode: Int32, cosmos: Bool) {
+        trace("join")
+        let offer = MuseCallJoinOffer.make(threadID: nil, edgeHost: host, edgePort: port, vipType: vipCode, video: true)
+        let body: [String: Any] = [
+            "payload_b64": offer.payload.base64EncodedString(),
+            "call_id": callID,
+            "call_media_type": "video",
+            "device": "mcu-wearable",
+            "device_id": runtime.deviceNodeID,
+            "proactive_greeting_enabled": false,
+            "enable_media_to_cosmos": cosmos
+        ]
+        runtime.postJSON(path: "/voice/calls/join", fields: body) { [weak self] response in
+            guard let self, self.phase == .connecting else { return }
+            guard case .success(let reply) = response,
+                  let joined = ((try? JSONSerialization.jsonObject(with: reply.body)) as? [String: Any])?["result"] as? [String: Any],
+                  let encoded = joined["payload_b64"] as? String, let payload = Data(base64Encoded: encoded),
+                  let answer = try? MuseCallJoinAnswer.parse(payload) else {
+                let status = (try? response.get().status) ?? 0
+                self.end(PalL10n.format("voice.call_refused_format", status))
+                return
+            }
+            let media: MuseMediaSession
+            do {
+                media = try MuseMediaSession(offer: offer, answer: answer, host: host, port: port)
+            } catch {
+                // Opus comes from AudioToolbox; an iOS without it cannot make this call.
+                self.trace("media_unavailable=\(MuseDiagnostics.label(error))")
+                self.end(PalL10n.text("Не удалось включить микрофон и динамик"))
+                return
+            }
+            self.media = media
+            media.onAudio = { [weak self] pcm48 in
+                let pcm = MuseVoiceCall.downsample48to24(pcm48)
+                DispatchQueue.main.async { self?.play(pcm) }
+            }
+            media.onLost = { [weak self] in
+                DispatchQueue.main.async { self?.end(PalL10n.text("Связь с Muse прервалась")) }
+            }
+            self.trace("ice")
+            media.connect(timeout: 10) { [weak self] transport in
+                guard let self, self.phase == .connecting else { return }
+                guard let transport else {
+                    self.end(PalL10n.text("Связь с Muse прервалась"))
+                    return
+                }
+                self.trace("media=\(transport)")
+                self.withGate {
+                    self.gateMedia = media
+                    self.gateReady = true
+                }
+                media.requestKeyframe()
+                self.isMuseReady = true
+                self.lastActivity = Date()
+                self.phase = .listening
+                self.timer?.invalidate()
+                self.timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in self?.tick() }
+            }
+        }
+    }
+
     private func openCallStream(admission: Data, handlers: MuseDuplexHandlers) {
         runtime.openDuplexStream(
             path: "/voice/realtime?call_id=\(callID)",
@@ -272,8 +376,15 @@ final class MuseVoiceCall: ObservableObject {
         let stream = withGate { () -> MuseDuplexStream? in
             let stream = gateStream
             gateStream = nil
+            gateMedia = nil
             gateReady = false
             return stream
+        }
+        if let media {
+            let stats = media.stats
+            trace("media_total[transport=\(stats.transport),in=\(stats.bytesIn),audio=\(stats.rtpAudio),video=\(stats.rtpVideo),rtcp=\(stats.rtcp),srtp_errors=\(stats.srtpErrors),decode_errors=\(stats.decodeErrors),late=\(stats.lateAudio),sent=\(stats.audioSent)]")
+            media.close()
+            self.media = nil
         }
         stopAudio()
         audibleSpans.removeAll()
@@ -304,7 +415,18 @@ final class MuseVoiceCall: ObservableObject {
         }
         let clock = uptime()
         audibleSpans.removeAll { $0.end + Self.speakingSettle < clock }
-        let talking = replyHeard && (replyAudioOpen || unplayed > 0)
+        // The media path has no reply events: Muse talks while its audio is audible.
+        let talking = media != nil
+            ? audibleSpans.contains { $0.start <= clock && clock <= $0.end + Self.speakingSettle }
+            : replyHeard && (replyAudioOpen || unplayed > 0)
+        if let media, phase.isActive, phase != .connecting {
+            if now.timeIntervalSince(media.lastMedia) > Self.mediaTimeout {
+                end(PalL10n.text("Связь с Muse прервалась"))
+                return
+            }
+            let spoke = withGate { lastMicSpeech }
+            if clock - spoke < 0.5 { lastActivity = now }
+        }
         if talking != isVoiceAudible { isVoiceAudible = talking }
         if !talking, !replyAudioOpen { replyHeard = false }
         if now.timeIntervalSince(lastCounters) >= 5 {
@@ -505,6 +627,10 @@ final class MuseVoiceCall: ObservableObject {
     /// Runs on the audio thread: sends whole 40 ms frames while the microphone is open.
     private func capture(_ buffer: AVAudioPCMBuffer) {
         let pcm = resampler.convert(buffer)
+        if let media = withGate({ gateMedia }) {
+            captureForMedia(pcm, media: media)
+            return
+        }
         var frames: [Data] = []
         let stream: MuseDuplexStream? = withGate {
             guard let stream = gateStream, gateReady, !gateMuted, uptime() >= gatePlayingUntil else {
@@ -552,6 +678,57 @@ final class MuseVoiceCall: ObservableObject {
             return batch
         }
         if let batch { stream.send(batch) }
+    }
+
+    /// The video-call path, as the SDK's video_call.py: 20 ms Opus frames at 48 kHz, and while
+    /// Muse's voice plays (or the mic is muted) silence instead of the microphone, so the stream
+    /// keeps its timing.
+    private func captureForMedia(_ pcm: Data, media: MuseMediaSession) {
+        var frames: [Data] = []
+        withGate {
+            guard gateReady else { micBuffer.removeAll(); return }
+            let open = !gateMuted && uptime() >= gatePlayingUntil
+            if !open { micClosed += 1 }
+            micBuffer.append(open ? pcm : Data(count: pcm.count))
+            while micBuffer.count >= MuseVoiceEvents.frameBytes {
+                let frame = micBuffer.prefix(MuseVoiceEvents.frameBytes)
+                micBuffer.removeFirst(MuseVoiceEvents.frameBytes)
+                let level = Self.rms(frame)
+                rmsSum += level
+                rmsCount += 1
+                if level >= Self.audibleRMS { lastMicSpeech = uptime() }
+                frames.append(frame)
+            }
+            micSent += frames.count
+        }
+        for frame in frames {
+            let wide = MuseVoiceCall.upsample24to48(frame)
+            media.sendAudio(wide.prefix(1_920))
+            media.sendAudio(wide.suffix(from: wide.startIndex + 1_920))
+        }
+    }
+
+    /// 24 kHz to 48 kHz by linear interpolation, as the SDK's _upsample24_to_48.
+    static func upsample24to48(_ pcm: Data) -> Data {
+        let input = pcm.withUnsafeBytes { Array($0.bindMemory(to: Int16.self)) }
+        var output = [Int16](repeating: 0, count: input.count * 2)
+        for index in 0..<input.count {
+            let current = Int32(input[index])
+            let next = Int32(index + 1 < input.count ? input[index + 1] : input[index])
+            output[2 * index] = Int16(current)
+            output[2 * index + 1] = Int16((current + next) / 2)
+        }
+        return output.withUnsafeBytes { Data($0) }
+    }
+
+    /// 48 kHz to 24 kHz by averaging each pair of samples.
+    static func downsample48to24(_ pcm: Data) -> Data {
+        let input = pcm.withUnsafeBytes { Array($0.bindMemory(to: Int16.self)) }
+        var output = [Int16](repeating: 0, count: input.count / 2)
+        for index in 0..<output.count {
+            output[index] = Int16((Int32(input[2 * index]) + Int32(input[2 * index + 1])) / 2)
+        }
+        return output.withUnsafeBytes { Data($0) }
     }
 
     private func play(_ pcm: Data) {
