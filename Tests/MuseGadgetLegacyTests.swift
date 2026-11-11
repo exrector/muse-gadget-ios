@@ -12,6 +12,31 @@ final class MuseGadgetLegacyTests: XCTestCase {
         XCTAssertEqual(identity.bluetoothName, "MuseGadgetAABBCC")
     }
 
+    func testVoiceRoutesReadAudioAndSplitStreamedLines() throws {
+        let pcm = Data([1, 0, 2, 0, 3, 0, 4, 0])
+        let delta: [String: Any] = ["type": "response.output_audio.delta", "delta": pcm.base64EncodedString()]
+        XCTAssertEqual(MuseVoiceEvents.audio(from: delta), pcm)
+        let continuous: [String: Any] = ["type": "continuous_audio_video.delta", "audio_delta": [
+            "format": ["type": "audio/pcm", "rate": 24_000], "audio_frames": pcm.base64EncodedString()
+        ]]
+        XCTAssertEqual(MuseVoiceEvents.audio(from: continuous), pcm)
+        let wrongRate: [String: Any] = ["type": "continuous_audio_video.delta", "audio_delta": [
+            "format": ["rate": 16_000], "audio_frames": pcm.base64EncodedString()
+        ]]
+        XCTAssertNil(MuseVoiceEvents.audio(from: wrongRate))
+        XCTAssertNil(MuseVoiceEvents.audio(from: ["type": "hatch.voice.session"]))
+
+        var lines = MuseNDJSONLines()
+        XCTAssertTrue(lines.feed(Data("{\"type\":\"par".utf8)).isEmpty)
+        let records = lines.feed(Data("tial\"}\nnot json\n{\"type\":\"final\"}\n".utf8))
+        XCTAssertEqual(records.compactMap { $0["type"] as? String }, ["partial", "final"])
+
+        let append = try XCTUnwrap(JSONSerialization.jsonObject(with: MuseVoiceEvents.appendLine(pcm).dropLast()) as? [String: Any])
+        XCTAssertEqual(append["type"] as? String, "input_audio_buffer.append")
+        XCTAssertEqual(append["audio"] as? String, pcm.base64EncodedString())
+        XCTAssertEqual(MuseRuntime.spokenTurnHint["device"] as? String, "mcu-wearable")
+    }
+
     func testDiagnosticsLogStatesWithoutGadgetNamesOrErrorText() {
         XCTAssertEqual(MuseDiagnostics.label(PairingCoordinator.State.advertising("MuseGadgetA1B2C3")), "advertising")
         XCTAssertEqual(MuseDiagnostics.label(PairingCoordinator.State.failed("token mgst_secret")), "failed")

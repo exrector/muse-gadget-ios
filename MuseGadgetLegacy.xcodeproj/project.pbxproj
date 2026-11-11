@@ -49,6 +49,9 @@
 		A10000000000000000000F17 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000F17 /* PrivacyInfo.xcprivacy */; };
 		A10000000000000000000F18 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000F18 /* PrivacyInfo.xcprivacy */; };
 		A10000000000000000000F19 /* MuseDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000F19 /* MuseDiagnostics.swift */; };
+		A10000000000000000000F1A /* MuseVoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000F1A /* MuseVoice.swift */; };
+		A10000000000000000000F1B /* MuseVoiceProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000F1B /* MuseVoiceProbe.swift */; };
+		A10000000000000000000F1C /* MuseVoiceCall.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000F1C /* MuseVoiceCall.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -122,6 +125,9 @@
 		B10000000000000000000F17 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		B10000000000000000000F18 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		B10000000000000000000F19 /* MuseDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/MuseDiagnostics.swift; sourceTree = "<group>"; };
+		B10000000000000000000F1A /* MuseVoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/MuseVoice.swift; sourceTree = "<group>"; };
+		B10000000000000000000F1B /* MuseVoiceProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/MuseVoiceProbe.swift; sourceTree = "<group>"; };
+		B10000000000000000000F1C /* MuseVoiceCall.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/MuseVoiceCall.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -145,7 +151,7 @@
 		G10000000000000000000003 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
-				B10000000000000000000F10, B10000000000000000000F11, B10000000000000000000F16, B10000000000000000000F19,
+				B10000000000000000000F10, B10000000000000000000F11, B10000000000000000000F16, B10000000000000000000F19, B10000000000000000000F1A, B10000000000000000000F1B, B10000000000000000000F1C,
 				B10000000000000000000001, B10000000000000000000002, B10000000000000000000003,
 				B10000000000000000000004, B10000000000000000000005, B10000000000000000000006,
 				B10000000000000000000007, B10000000000000000000008, B10000000000000000000009,
@@ -223,7 +229,7 @@
 
 /* Begin PBXSourcesBuildPhase section */
 		I10000000000000000000001 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (
-			A10000000000000000000001, A10000000000000000000002, A10000000000000000000003, A10000000000000000000F10, A10000000000000000000F11, A10000000000000000000F16, A10000000000000000000F19,
+			A10000000000000000000001, A10000000000000000000002, A10000000000000000000003, A10000000000000000000F10, A10000000000000000000F11, A10000000000000000000F16, A10000000000000000000F19, A10000000000000000000F1A, A10000000000000000000F1B, A10000000000000000000F1C,
 			A10000000000000000000004, A10000000000000000000005, A10000000000000000000006,
 			A10000000000000000000007, A10000000000000000000008, A10000000000000000000009,
 			A1000000000000000000000A, A1000000000000000000000B, A1000000000000000000000C,

@@ -205,6 +205,26 @@ final class MuseAppModel: ObservableObject {
     @Published var confirmsVoiceNotes = UserDefaults.standard.bool(forKey: "confirmsVoiceNotes") {
         didSet { UserDefaults.standard.set(confirmsVoiceNotes, forKey: "confirmsVoiceNotes") }
     }
+    /// Version 2.0: voice notes carry the SDK's spoken-turn hint, so Muse answers them briefly.
+    /// Off restores the 1.0 behaviour, full replies as for typed messages.
+    @Published var shortVoiceReplies = UserDefaults.standard.object(forKey: "shortVoiceReplies") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(shortVoiceReplies, forKey: "shortVoiceReplies") }
+    }
+    /// Version 2.0: a live voice call with Muse beside voice notes. Changing it reconnects,
+    /// because the connection itself carries the app identity voice calls need.
+    @Published var liveVoiceCalls = UserDefaults.standard.bool(forKey: MuseRuntime.liveVoiceCallsKey) {
+        didSet {
+            guard oldValue != liveVoiceCalls else { return }
+            UserDefaults.standard.set(liveVoiceCalls, forKey: MuseRuntime.liveVoiceCallsKey)
+            environment.runtime.restartConnection()
+        }
+    }
+    @Published var isVoiceCallOpen = false
+    lazy var voiceCall: MuseVoiceCall = {
+        let call = MuseVoiceCall(runtime: environment.runtime)
+        call.onTrace = { [weak self] step in self?.environment.diagnostics.record("call", detail: step) }
+        return call
+    }()
     @Published var pendingVoiceNote: MusePendingVoiceNote?
     @Published var voiceHint: String?
     @Published var isCloudSyncEnabled: Bool {
@@ -950,7 +970,8 @@ final class MuseAppModel: ObservableObject {
         let generation = beginRequest()
         environment.runtime.sendVoiceNote(
             wav: note.wav,
-            sessionID: activeChatSessionID
+            sessionID: activeChatSessionID,
+            shortReply: shortVoiceReplies
         ) { [weak self] result in
             self?.finishRequest(result, generation: generation)
         }
@@ -1169,6 +1190,19 @@ final class MuseAppModel: ObservableObject {
         MuseWidgetPublisher.publish(name: agentIdentity?.name, card: card)
     }
 
+    func openVoiceCall() {
+        guard canSendToMuse, !isRecordingVoice else { return }
+        isVoiceCallOpen = true
+        UIApplication.shared.isIdleTimerDisabled = true
+        voiceCall.start()
+    }
+
+    func closeVoiceCall() {
+        voiceCall.hangUp()
+        isVoiceCallOpen = false
+        applyIdleTimerPolicy()
+    }
+
     private func applyIdleTimerPolicy() {
         // Native commands run only while the app is visible, so a sleeping gadget cannot serve them.
         UIApplication.shared.isIdleTimerDisabled = keepScreenAwake && isPaired
@@ -1276,6 +1310,9 @@ struct MuseAppView: View {
             Button(PalL10n.text("Отправлять диагностику")) { diagnostics.setSharingEnabled(true) }
         } message: {
             Text(PalL10n.text("Приложение может отправлять разработчику отчёты о сбоях и зависаниях с коротким журналом этапов работы, чтобы быстрее находить ошибки. Текст чата, токены, имя гаджета, файлы, фото и аудио никогда не отправляются. Это можно выключить в настройках."))
+        }
+        .fullScreenCover(isPresented: $model.isVoiceCallOpen) {
+            MuseVoiceCallView(model: model, call: model.voiceCall)
         }
         .sheet(isPresented: $model.isConnectChatOpen) {
             NavigationView {
@@ -2223,7 +2260,10 @@ private struct MuseChatView: View {
                     .disabled(!canSend)
                     .accessibilityLabel("Отправить")
                 } else {
-                    VoiceRecordButton(model: model)
+                    HStack(spacing: 8) {
+                        if model.liveVoiceCalls { VoiceCallButton(model: model) }
+                        VoiceRecordButton(model: model)
+                    }
                 }
             }
             .padding(.horizontal, 16)
@@ -2948,6 +2988,117 @@ private struct MuseWidgetCard: View {
     }
 }
 
+private struct VoiceCallButton: View {
+    @ObservedObject var model: MuseAppModel
+
+    var body: some View {
+        Button(action: model.openVoiceCall) {
+            Image(systemName: "phone.fill")
+                .font(.headline)
+                .foregroundColor(.white)
+                .frame(width: 44, height: 44)
+                .background(MuseTheme.accent)
+                .clipShape(Circle())
+                .opacity(model.canSendToMuse && !model.isRecordingVoice ? 1 : 0.4)
+        }
+        .disabled(!model.canSendToMuse || model.isRecordingVoice)
+        .accessibilityLabel(PalL10n.text("Поговорить с Muse голосом"))
+    }
+}
+
+private struct MuseVoiceCallView: View {
+    @ObservedObject var model: MuseAppModel
+    @ObservedObject var call: MuseVoiceCall
+
+    private var status: String {
+        switch call.phase {
+        case .idle, .connecting: return PalL10n.text("Соединяю с Muse…")
+        case .listening: return call.isMuted ? PalL10n.text("Микрофон выключен") : PalL10n.text("Говорите, Muse слушает")
+        case .thinking: return PalL10n.text("Muse думает…")
+        case .speaking: return PalL10n.text("Muse говорит")
+        case .ended(let reason): return reason
+        }
+    }
+
+    private var statusIcon: String {
+        switch call.phase {
+        case .speaking: return "speaker.wave.3.fill"
+        case .thinking: return "ellipsis"
+        case .ended: return "phone.down.fill"
+        default: return call.isMuted ? "mic.slash.fill" : "waveform"
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 24) {
+            Spacer(minLength: 12)
+            Group {
+                if let data = model.agentAvatar, let image = UIImage(data: data) {
+                    Image(uiImage: image).resizable().scaledToFill()
+                } else {
+                    Image(systemName: "person.wave.2.fill").resizable().scaledToFit().padding(36)
+                        .foregroundColor(MuseTheme.accent)
+                }
+            }
+            .frame(width: 160, height: 160)
+            .background(MuseTheme.elevated)
+            .clipShape(Circle())
+            .overlay(Circle().stroke(call.phase == .speaking ? MuseTheme.accent : MuseTheme.stroke, lineWidth: 4))
+
+            Label(status, systemImage: statusIcon)
+                .font(.headline)
+                .multilineTextAlignment(.center)
+
+            VStack(alignment: .leading, spacing: 12) {
+                if !call.heard.isEmpty {
+                    Text(PalL10n.format("voice.call_heard_format", call.heard))
+                        .font(.subheadline)
+                        .foregroundColor(MuseTheme.secondary)
+                }
+                if !call.reply.isEmpty {
+                    Text(call.reply).font(.body)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 24)
+
+            Spacer()
+
+            if call.phase.isActive {
+                HStack(spacing: 28) {
+                    roundButton(call.isMuted ? "mic.slash.fill" : "mic.fill",
+                                label: call.isMuted ? "Включить микрофон" : "Выключить микрофон",
+                                color: MuseTheme.elevated) { call.isMuted.toggle() }
+                    if call.phase == .speaking {
+                        roundButton("hand.raised.fill", label: "Перебить", color: MuseTheme.elevated) { call.interrupt() }
+                    }
+                    roundButton("phone.down.fill", label: "Завершить разговор", color: .red) { model.closeVoiceCall() }
+                }
+            } else {
+                HStack(spacing: 28) {
+                    roundButton("phone.fill", label: "Позвонить снова", color: MuseTheme.accent) { call.start() }
+                    roundButton("xmark", label: "Закрыть", color: MuseTheme.elevated) { model.closeVoiceCall() }
+                }
+            }
+            Spacer(minLength: 24)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(MuseTheme.background.ignoresSafeArea())
+    }
+
+    private func roundButton(_ icon: String, label: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundColor(color == MuseTheme.elevated ? .primary : .white)
+                .frame(width: 68, height: 68)
+                .background(color)
+                .clipShape(Circle())
+        }
+        .accessibilityLabel(PalL10n.text(label))
+    }
+}
+
 private struct VoiceRecordButton: View {
     @ObservedObject var model: MuseAppModel
     @State private var isHeld = false
@@ -3261,6 +3412,16 @@ private struct MuseSettingsView: View {
                         title: "Подтверждать отправку",
                         detail: PalL10n.text("Записанная заметка уйдёт только после кнопки «Отправить». Её можно и удалить"),
                         isOn: $model.confirmsVoiceNotes
+                    )
+                    SettingsToggleRow(
+                        title: "Живой разговор с Muse (бета)",
+                        detail: PalL10n.text("Кнопка с телефоном рядом с микрофоном: вы говорите, Muse отвечает своим голосом. Голосовые заметки остаются как были. При переключении приложение переподключается к Muse"),
+                        isOn: $model.liveVoiceCalls
+                    )
+                    SettingsToggleRow(
+                        title: "Короткие ответы на голос",
+                        detail: PalL10n.text("Muse отвечает на голосовые заметки коротко и простыми фразами, как на гаджетах с микрофоном. Выключите, чтобы получать полные ответы, как раньше"),
+                        isOn: $model.shortVoiceReplies
                     )
                     Divider().overlay(MuseTheme.stroke)
                     SettingsToggleRow(

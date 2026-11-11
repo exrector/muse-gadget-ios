@@ -233,6 +233,39 @@ private final class MuseNoiseTransport {
     }
 }
 
+/// What a duplex stream reports back. Every handler runs on the runtime's private queue, so a
+/// consumer that touches its own state or the UI dispatches from there.
+struct MuseDuplexHandlers {
+    var onStatus: (Int) -> Void = { _ in }
+    var onData: (Data) -> Void = { _ in }
+    /// Called once: nil when Muse finished the response body, an error when the stream broke.
+    var onClose: (Error?) -> Void = { _ in }
+}
+
+/// A request whose body stays open while its response streams back, the way the SDK runs
+/// dictation and live voice calls over the gadget's Noise connection.
+final class MuseDuplexStream {
+    fileprivate let streamID: Int64
+    fileprivate let generation: Int
+    fileprivate weak var runtime: MuseRuntime?
+
+    fileprivate init(streamID: Int64, generation: Int, runtime: MuseRuntime) {
+        self.streamID = streamID
+        self.generation = generation
+        self.runtime = runtime
+    }
+
+    /// Sends the next part of the request body; `end` half-closes it. Safe from any thread.
+    func send(_ data: Data, end: Bool = false) {
+        runtime?.sendDuplexBody(self, data: data, end: end)
+    }
+
+    /// Resets the stream without waiting for Muse to finish it.
+    func cancel() {
+        runtime?.cancelDuplex(self)
+    }
+}
+
 final class MuseRuntime: NSObject {
     var onStateChange: ((MuseRuntimeState) -> Void)?
     var onLog: ((String) -> Void)?
@@ -262,6 +295,7 @@ final class MuseRuntime: NSObject {
     private let maxConcurrentInvokes = 4
     private var nextStreamID: Int64 = 2
     private var pendingRequests: [Int64: PendingHTTPRequest] = [:]
+    private var duplexStreams: [Int64: MuseDuplexHandlers] = [:]
     private var chatSubscriptionID: Int64?
     private var chatSessionID: String?
     private var chatDecoder = MuseNDJSONDecoder()
@@ -287,6 +321,29 @@ final class MuseRuntime: NSObject {
     private static let maxInlineRequestBytes = 64 * 1024
     private static let maxControlMessageBytes = 256 * 1024
     private static let maxMediaBytes = 2 * 1024 * 1024
+
+    static let liveVoiceCallsKey = "liveVoiceCalls"
+
+    /// Version 2.0: live voice calls with Muse. Read on every connection.
+    static var liveVoiceCallsEnabled: Bool {
+        UserDefaults.standard.bool(forKey: liveVoiceCallsKey)
+            || ProcessInfo.processInfo.environment["PAL_NOISE_APP_ID"] == "hatch-web"
+    }
+
+    /// Reconnects with the saved credentials, for a setting that changes the connection itself.
+    func restartConnection() {
+        queue.async {
+            guard let credentials = self.credentials else { return }
+            self.generation += 1
+            self.reconnectFailures = 0
+            self.resetConnection()
+            self.credentials = credentials
+            self.fetchVM(generation: self.generation)
+        }
+    }
+
+    /// The node ID Muse knows this gadget by, which voice calls carry as `device_id`.
+    var deviceNodeID: String { identity.nodeID }
 
     private(set) var state: MuseRuntimeState = .idle {
         didSet { DispatchQueue.main.async { self.onStateChange?(self.state) } }
@@ -378,10 +435,13 @@ final class MuseRuntime: NSObject {
         )
     }
 
+    /// `shortReply` adds the SDK's spoken-turn hint, `device: "mcu-wearable"`, which asks Muse
+    /// for short plain sentences without Markdown. Replies still come back as text.
     func sendVoiceNote(
         wav: Data,
         message: String = "",
         sessionID: String? = nil,
+        shortReply: Bool = false,
         completion: @escaping (Result<[String: Any], Error>) -> Void
     ) {
         postMedia(
@@ -394,9 +454,13 @@ final class MuseRuntime: NSObject {
             byteCount: wav.count,
             message: message,
             sessionID: sessionID,
+            extraFields: shortReply ? Self.spokenTurnHint : [:],
             completion: completion
         )
     }
+
+    /// The SDK's hint for dictated turns and voice notes.
+    static let spokenTurnHint: [String: Any] = ["device": "mcu-wearable"]
 
     func sendDocument(
         data: Data,
@@ -424,6 +488,7 @@ final class MuseRuntime: NSObject {
         byteCount: Int,
         message: String,
         sessionID: String?,
+        extraFields: [String: Any] = [:],
         completion: @escaping (Result<[String: Any], Error>) -> Void
     ) {
         guard byteCount > 0, byteCount <= Self.maxMediaBytes else {
@@ -434,7 +499,8 @@ final class MuseRuntime: NSObject {
         let clean = message.trimmingCharacters(in: .whitespacesAndNewlines)
         let text: [[String: Any]] = clean.isEmpty ? [] : [["type": "text", "text": clean]]
         postChat(
-            ["message": clean, "output_modality": "text", "items": text + [item]],
+            ["message": clean, "output_modality": "text", "items": text + [item]]
+                .merging(extraFields) { current, _ in current },
             sessionID: sessionID,
             completion: completion
         )
@@ -495,6 +561,92 @@ final class MuseRuntime: NSObject {
                     }
                     return .success(response.body)
                 }
+                DispatchQueue.main.async { completion(mapped) }
+            }
+        }
+    }
+
+    /// Opens a request whose body stays open. Completes on the main queue with nil when Muse is
+    /// not connected.
+    func openDuplexStream(
+        method: String = "POST",
+        path: String,
+        contentType: String? = nil,
+        accept: String? = nil,
+        firstBody: Data = Data(),
+        // The SDK's ESP32 session sends hatch-web on its voice streams.
+        appID: String = "hatch-web",
+        handlers: MuseDuplexHandlers,
+        completion: @escaping (MuseDuplexStream?) -> Void
+    ) {
+        queue.async {
+            guard self.state == .registered, self.transport != nil else {
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+            let streamID = self.allocateStreamID()
+            self.duplexStreams[streamID] = handlers
+            let frame = MuseNoiseWire.applicationRequest(
+                streamID: streamID,
+                method: method,
+                path: path,
+                headers: [
+                    MuseHTTPHeader(name: "x-request-id", value: UUID().uuidString.lowercased()),
+                    MuseHTTPHeader(name: "x-app-id", value: appID)
+                ]
+                + (contentType.map { [MuseHTTPHeader(name: "Content-Type", value: $0)] } ?? [])
+                + (accept.map { [MuseHTTPHeader(name: "accept", value: $0)] } ?? []),
+                body: firstBody,
+                endBody: false
+            )
+            do {
+                try self.sendEncrypted(frame, completion: {})
+            } catch {
+                self.duplexStreams.removeValue(forKey: streamID)
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+            let stream = MuseDuplexStream(streamID: streamID, generation: self.generation, runtime: self)
+            DispatchQueue.main.async { completion(stream) }
+        }
+    }
+
+    fileprivate func sendDuplexBody(_ stream: MuseDuplexStream, data: Data, end: Bool) {
+        queue.async {
+            guard stream.generation == self.generation, self.duplexStreams[stream.streamID] != nil else { return }
+            for chunk in MuseNoiseWire.bodyChunks(streamID: stream.streamID, data: data, endBody: end) {
+                try? self.sendEncrypted(chunk, completion: {})
+            }
+        }
+    }
+
+    fileprivate func cancelDuplex(_ stream: MuseDuplexStream) {
+        queue.async {
+            guard stream.generation == self.generation,
+                  self.duplexStreams.removeValue(forKey: stream.streamID) != nil else { return }
+            self.resetStream(stream.streamID, reason: "consumer closed")
+        }
+    }
+
+    /// A one-shot JSON request over the gadget's Noise connection, such as ending a voice call.
+    func postJSON(
+        path: String,
+        fields: [String: Any],
+        completion: @escaping (Result<(status: Int, body: Data), Error>) -> Void
+    ) {
+        queue.async {
+            guard self.state == .registered,
+                  let body = try? JSONSerialization.data(withJSONObject: fields) else {
+                DispatchQueue.main.async { completion(.failure(MuseRuntimeError.notConnected)) }
+                return
+            }
+            self.performRequest(
+                method: "POST",
+                path: path,
+                body: body,
+                headers: [MuseHTTPHeader(name: "Content-Type", value: "application/json")]
+            ) { result in
+                let mapped = result.map { (status: $0.status, body: $0.body) }
                 DispatchQueue.main.async { completion(mapped) }
             }
         }
@@ -647,6 +799,12 @@ final class MuseRuntime: NSObject {
         components.host = host
         components.path = "/v1/noise"
         components.queryItems = [URLQueryItem(name: "vm_id", value: vmID)]
+        // The VM takes every request's app identity from the upgrade's app_id and ignores a
+        // per-request x-app-id. Live voice calls need hatch-web there, as on the SDK's ESP32
+        // (muse_chat_session.cpp, ws_upgrade). With calls off the connection stays as in 1.0.
+        if Self.liveVoiceCallsEnabled {
+            components.queryItems?.append(URLQueryItem(name: "app_id", value: "hatch-web"))
+        }
         guard let url = components.url else {
             fail("Invalid Noise host", reconnect: false)
             return
@@ -868,6 +1026,15 @@ final class MuseRuntime: NSObject {
             if response.endBody { closeChatSubscription(streamID: streamID, reconnect: true) }
             return
         }
+        if let handlers = duplexStreams[streamID] {
+            handlers.onStatus(response.status)
+            if !response.body.isEmpty { handlers.onData(response.body) }
+            if response.endBody {
+                duplexStreams.removeValue(forKey: streamID)
+                handlers.onClose(nil)
+            }
+            return
+        }
         guard var pending = pendingRequests[streamID] else { return }
         pending.status = response.status
         try append(response.body, to: &pending)
@@ -959,6 +1126,14 @@ final class MuseRuntime: NSObject {
             if chunk.endBody { closeChatSubscription(streamID: streamID, reconnect: true) }
             return
         }
+        if let handlers = duplexStreams[streamID] {
+            if !chunk.data.isEmpty { handlers.onData(chunk.data) }
+            if chunk.endBody {
+                duplexStreams.removeValue(forKey: streamID)
+                handlers.onClose(nil)
+            }
+            return
+        }
         guard var pending = pendingRequests[streamID] else { return }
         try append(chunk.data, to: &pending)
         pendingRequests[streamID] = pending
@@ -973,6 +1148,8 @@ final class MuseRuntime: NSObject {
     private func handleHTTPReset(streamID: Int64) {
         if streamID == chatSubscriptionID {
             closeChatSubscription(streamID: streamID, reconnect: true)
+        } else if let handlers = duplexStreams.removeValue(forKey: streamID) {
+            handlers.onClose(MuseRuntimeError.connectionEnded)
         } else {
             finishRequest(streamID: streamID, result: .failure(MuseRuntimeError.connectionEnded))
         }
@@ -1048,6 +1225,9 @@ final class MuseRuntime: NSObject {
                    !didRunV2VoiceTTSProbe {
                     didRunV2VoiceTTSProbe = true
                     probeV2VoiceTTS()
+                }
+                if ProcessInfo.processInfo.environment["PAL_V2_REALTIME_PROBE"] == "1" {
+                    MuseVoiceProbe.shared.run(runtime: self)
                 }
                 if ProcessInfo.processInfo.environment["PAL_V2_HISTORY_TTS_PROBE"] == "1",
                    !didRunV2HistoryTTSProbe {
@@ -1510,6 +1690,9 @@ final class MuseRuntime: NSObject {
         nextStreamID = 2
         chatSubscriptionID = nil
         chatDecoder = MuseNDJSONDecoder()
+        let streams = duplexStreams
+        duplexStreams.removeAll()
+        for handlers in streams.values { handlers.onClose(MuseRuntimeError.connectionEnded) }
         let requests = pendingRequests
         pendingRequests.removeAll()
         for request in requests.values {
