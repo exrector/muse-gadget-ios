@@ -6,8 +6,9 @@ import Foundation
 /// realtime voice client runs it: `POST /voice/realtime` with a `hatch.voice.call.start`
 /// admission, 40 ms `input_audio_buffer.append` frames of 24 kHz PCM16, Muse's voice back as
 /// audio deltas, and `POST /voice/end-call` at the end. Muse's server detects when the person
-/// stops talking. The microphone is closed while Muse's voice plays and for 200 ms after,
-/// the SDK's half-duplex default, so Muse does not hear itself on a speaker.
+/// stops talking. As in the SDK's hands-free call, the microphone sends raw audio and is closed
+/// while Muse's voice plays, plus the speaker's lag and a short tail, so Muse does not hear
+/// itself; replies wait for 600 ms of audio before playing, like the SDK's voice player.
 final class MuseVoiceCall: ObservableObject {
     enum Phase: Equatable {
         case idle
@@ -30,6 +31,30 @@ final class MuseVoiceCall: ObservableObject {
     @Published private(set) var heard = ""
     /// What Muse is saying, from its transcript events.
     @Published private(set) var reply = ""
+    /// True while Muse is answering, for the talking animation: from the first sound of a reply
+    /// until Muse's server says that reply's audio is done and the player has played it all.
+    /// A stall in delivery mid-sentence does not end it, so the animation does not restart.
+    @Published private(set) var isVoiceAudible = false
+    private var replyAudioOpen = false
+    private var videoSeen = 0
+    private var videoBytes = 0
+    /// DEBUG only: PAL_CALL_MEDIA_TYPE asks Muse for another media type, to see what
+    /// continuous_audio_video.delta's video_delta carries. The SDK always asks for audio.
+    private static var callMediaType: String {
+        #if DEBUG
+        if let value = ProcessInfo.processInfo.environment["PAL_CALL_MEDIA_TYPE"], !value.isEmpty { return value }
+        #endif
+        return "audio"
+    }
+    private var replyHeard = false
+    /// True from Muse's server hearing the person start to speak until it hears them stop.
+    @Published private(set) var isUserSpeaking = false
+    /// False until Muse has greeted or answered: before that its server drops what it hears.
+    @Published private(set) var isMuseReady = false
+    /// Set for a few seconds when Muse's server dropped a sentence (hatch.voice.input_suppressed).
+    @Published private(set) var missedSentence = false
+    private var missedReset: DispatchWorkItem?
+    private static let readyFallback: TimeInterval = 20
     /// Content-free timing of each step, for finding where a call loses time: an event name
     /// and the milliseconds since the call started. Set by the app to its diagnostics log.
     var onTrace: ((String) -> Void)?
@@ -43,7 +68,18 @@ final class MuseVoiceCall: ObservableObject {
     private static let idleTimeout: TimeInterval = 45
     private static let maxDuration: TimeInterval = 15 * 60
     private static let settle: TimeInterval = 0.2
+    /// The SDK's CALL_SPEAKER_LAG_US: sound leaves the speaker this long after it is queued.
+    private static let speakerLag: TimeInterval = 0.12
     private static let audibleRMS: Double = 300
+    /// Audio collected before playback starts, so uneven delivery does not cut words: the SDK's
+    /// voice player waits for 600 ms (PREBUFFER_BYTES in esp32/main/voice_player.c).
+    private static let prebuffer: TimeInterval = 0.6
+    private var underruns = 0
+    /// How long a reply waits for Muse's server before the call gives up on connecting.
+    private static let connectWait: TimeInterval = 15
+    private var connectAttemptsUntil = Date()
+    private static let speakingSettle: TimeInterval = 1.0
+    private var audibleSpans: [(start: TimeInterval, end: TimeInterval)] = []
 
     private let runtime: MuseRuntime
     private let engine = AVAudioEngine()
@@ -61,10 +97,16 @@ final class MuseVoiceCall: ObservableObject {
     private var startedAt = Date()
     private var lastActivity = Date()
     private var queueEnd: TimeInterval = 0
+    /// Buffers handed to the player that it has not played yet, counted from its own callbacks.
+    /// The clock estimate drifted from real playback, so silence was inserted mid-sentence.
+    private var unplayed = 0
+    /// Bumped when playback is flushed, so callbacks for discarded buffers are ignored.
+    private var playbackGeneration = 0
     private var fenced = false
     private var stopRequested = false
     private var timer: Timer?
     private var engineRunning = false
+    private var routeObserver: NSObjectProtocol?
 
     // Shared with the audio thread, under `lock`.
     private let lock = NSLock()
@@ -73,6 +115,25 @@ final class MuseVoiceCall: ObservableObject {
     private var gateMuted = false
     private var gatePlayingUntil: TimeInterval = 0
     private var micBuffer = Data()
+    /// Append lines waiting to go out together. One socket message per 40 ms frame was more
+    /// than an iPhone 6s could send, so its audio reached Muse later and later; five frames
+    /// per message keeps up, for at most 200 ms of extra delay.
+    private var pendingLines = Data()
+    private var pendingFrames = 0
+    private static let framesPerMessage = 5
+    // Microphone levels for the diagnostics log only: the device's noise floor, and `silenced`
+    // counting frames near it. Nothing is altered.
+    private var noiseFloor: Double = 120
+    private var floorFrames = 0
+    private var lastSpeech: TimeInterval = 0
+    private var rmsSum: Double = 0
+    private var rmsCount = 0
+    private var silenced = 0
+    private var micSent = 0
+    private var micClosed = 0
+    private var audibleIn = 0
+    private var quietIn = 0
+    private var lastCounters = Date()
 
     init(runtime: MuseRuntime) {
         self.runtime = runtime
@@ -93,6 +154,29 @@ final class MuseVoiceCall: ObservableObject {
                 }
                 self.connect()
             }
+        }
+    }
+
+    /// Whether this device offers microphone modes such as Voice Isolation (A12 chips and later).
+    static var canPickMicrophoneMode: Bool {
+        guard #available(iOS 15.0, *) else { return false }
+        return AVCaptureDevice.activeMicrophoneMode != .standard || supportsMicrophoneModes
+    }
+
+    private static var supportsMicrophoneModes: Bool {
+        var info = utsname()
+        uname(&info)
+        let model = withUnsafeBytes(of: &info.machine) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
+        // Older than A12: iPhone 8/X and before are iPhone10,x or lower; iPad 7 and before iPad7,x.
+        guard let major = Int(model.drop { !$0.isNumber }.prefix { $0.isNumber }) else { return false }
+        if model.hasPrefix("iPhone") { return major >= 11 }
+        if model.hasPrefix("iPad") { return major >= 11 }
+        return false
+    }
+
+    static func showMicrophoneModes() {
+        if #available(iOS 15.0, *) {
+            AVCaptureDevice.showSystemUserInterface(.microphoneModes)
         }
     }
 
@@ -126,10 +210,12 @@ final class MuseVoiceCall: ObservableObject {
         let admission = MuseVoiceEvents.line([
             "type": "hatch.voice.call.start",
             "call_id": callID,
-            "call_media_type": "audio",
+            "call_media_type": Self.callMediaType,
             "device": "mcu-wearable",
             "device_id": runtime.deviceNodeID,
-            "proactive_greeting_enabled": false
+            // Muse greets once it can listen. For its first 12-15 s a call answered every
+            // sentence with hatch.voice.input_suppressed, so the greeting is the signal to talk.
+            "proactive_greeting_enabled": true
         ]) + MuseVoiceEvents.line(["type": "hatch.voice.capability.offer", "end_call_stop": 1])
 
         var handlers = MuseDuplexHandlers()
@@ -151,6 +237,11 @@ final class MuseVoiceCall: ObservableObject {
                                       : PalL10n.text("Связь с Muse прервалась"))
             }
         }
+        connectAttemptsUntil = Date().addingTimeInterval(Self.connectWait)
+        openCallStream(admission: admission, handlers: handlers)
+    }
+
+    private func openCallStream(admission: Data, handlers: MuseDuplexHandlers) {
         runtime.openDuplexStream(
             path: "/voice/realtime?call_id=\(callID)",
             contentType: "application/x-ndjson; charset=utf-8",
@@ -160,12 +251,17 @@ final class MuseVoiceCall: ObservableObject {
         ) { [weak self] stream in
             guard let self else { return }
             guard let stream else {
-                self.end(PalL10n.text("Muse сейчас не подключён"), notify: false)
+                // Turning live calls on reconnects; wait for Muse instead of failing a tap.
+                if Date() < self.connectAttemptsUntil, self.phase == .connecting {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.openCallStream(admission: admission, handlers: handlers) }
+                } else {
+                    self.end(PalL10n.text("Muse сейчас не подключён"), notify: false)
+                }
                 return
             }
             self.withGate { self.gateStream = stream }
             self.timer?.invalidate()
-            self.timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in self?.tick() }
+            self.timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in self?.tick() }
         }
     }
 
@@ -180,6 +276,15 @@ final class MuseVoiceCall: ObservableObject {
             return stream
         }
         stopAudio()
+        audibleSpans.removeAll()
+        isVoiceAudible = false
+        replyAudioOpen = false
+        replyHeard = false
+        isUserSpeaking = false
+        isMuseReady = false
+        missedSentence = false
+        trace("video_total[count=\(videoSeen),chars=\(videoBytes),media=\(Self.callMediaType)]")
+        trace("ended")
         phase = .ended(reason)
         guard notify else { stream?.cancel(); return }
         // The SDK always tells Muse the call is over, even when the stream already broke.
@@ -194,6 +299,30 @@ final class MuseVoiceCall: ObservableObject {
 
     private func tick() {
         let now = Date()
+        if !isMuseReady, phase == .listening, now.timeIntervalSince(startedAt) > Self.readyFallback {
+            isMuseReady = true
+        }
+        let clock = uptime()
+        audibleSpans.removeAll { $0.end + Self.speakingSettle < clock }
+        let talking = replyHeard && (replyAudioOpen || unplayed > 0)
+        if talking != isVoiceAudible { isVoiceAudible = talking }
+        if !talking, !replyAudioOpen { replyHeard = false }
+        if now.timeIntervalSince(lastCounters) >= 5 {
+            lastCounters = now
+            let counts = withGate { () -> String in
+                let average = rmsCount > 0 ? Int(rmsSum / Double(rmsCount)) : 0
+                let text = "sent=\(micSent),closed=\(micClosed),silenced=\(silenced),rms=\(average),floor=\(Int(noiseFloor)),until=\(Int(max(0, gatePlayingUntil - uptime()) * 1000))"
+                micSent = 0
+                micClosed = 0
+                silenced = 0
+                rmsSum = 0
+                rmsCount = 0
+                return text
+            }
+            trace("mic[\(counts),backlog=\(runtime.outboundBacklog),loud=\(audibleIn),quiet=\(quietIn),lead=\(Int(Self.prebuffer * 1000)),gaps=\(underruns),phase=\(MuseDiagnostics.label(phase))]")
+            audibleIn = 0
+            quietIn = 0
+        }
         if phase == .connecting, now.timeIntervalSince(startedAt) > Self.readyTimeout {
             end(PalL10n.text("Muse не ответил на звонок"))
         } else if now.timeIntervalSince(startedAt) > Self.maxDuration {
@@ -227,7 +356,16 @@ final class MuseVoiceCall: ObservableObject {
                       .replacingOccurrences(of: "conversation.item.input_audio_transcription.", with: "heard.")
                       .replacingOccurrences(of: "hatch.voice.", with: ""))
             if type == "hatch.voice.turn_started" || type == "response.created" { firstAudioOfTurn = true }
-        default: break
+            if type == "error", let error = event["error"] as? [String: Any] {
+                trace("error_code=\(MuseDiagnostics.label(error["code"] as? String ?? error["type"] as? String ?? "?"))")
+            }
+        case "continuous_audio_video.delta", "response.audio.delta", "response.output_audio.delta",
+             "response.audio_transcript.delta", "response.output_audio_transcript.delta":
+            break
+        default:
+            // Every other event's type, never its content: the first sentence of a call was being
+            // dropped by the server without any event this log knew about.
+            trace("event=\(String(type.prefix(64)))")
         }
         switch type {
         case "hatch.voice.session":
@@ -235,24 +373,40 @@ final class MuseVoiceCall: ObservableObject {
             withGate { gateReady = true }
             lastActivity = Date()
             phase = .listening
+        case "hatch.voice.input_suppressed":
+            isUserSpeaking = false
+            missedSentence = true
+            missedReset?.cancel()
+            let work = DispatchWorkItem { [weak self] in self?.missedSentence = false }
+            missedReset = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4, execute: work)
         case "error":
             let code = (event["error"] as? [String: Any])?["code"] as? String
             if phase == .connecting || code == "session_dead" {
                 end(PalL10n.text("Muse не смог начать разговор"))
             }
         case "input_audio_buffer.speech_started":
+            isUserSpeaking = true
             fenced = false
             lastActivity = Date()
             if phase != .speaking { phase = .listening }
+        case "input_audio_buffer.speech_stopped", "input_audio_buffer.committed":
+            isUserSpeaking = false
         case "conversation.item.input_audio_transcription.completed":
             if let text = event["transcript"] as? String, !text.isEmpty { heard = text }
         case "hatch.voice.turn_started":
+            isMuseReady = true
+            missedSentence = false
             fenced = false
             reply = ""
             lastActivity = Date()
             if phase == .listening { phase = .thinking }
         case "response.audio_transcript.delta", "response.output_audio_transcript.delta":
             if !fenced, let delta = event["delta"] as? String { reply += delta }
+        case "response.output_audio.start", "response.created":
+            replyAudioOpen = true
+        case "response.output_audio.done", "response.done":
+            replyAudioOpen = false
         case "conversation.item.added":
             let item = event["item"] as? [String: Any]
             if item?["type"] as? String == "session_control",
@@ -261,6 +415,19 @@ final class MuseVoiceCall: ObservableObject {
                 if phase != .speaking { end(PalL10n.text("Muse завершил разговор")) }
             }
         default:
+            if let video = event["video_delta"] as? [String: Any] {
+                // Names and sizes only, never the content: does Muse send its avatar as video?
+                if videoSeen < 3 {
+                    let shape = video.keys.sorted().map { key -> String in
+                        if let text = video[key] as? String { return "\(key):\(text.count)" }
+                        if let object = video[key] as? [String: Any] { return "\(key){\(object.keys.sorted().joined(separator: ","))}" }
+                        return "\(key):\(Swift.type(of: video[key]!))"
+                    }.joined(separator: ",")
+                    trace("video[\(shape)]")
+                }
+                videoSeen += 1
+                videoBytes += (video.values.compactMap { $0 as? String }.map(\.count).reduce(0, +))
+            }
             if let pcm = MuseVoiceEvents.audio(from: event) { play(pcm) }
         }
     }
@@ -269,14 +436,23 @@ final class MuseVoiceCall: ObservableObject {
 
     private func startAudio() throws {
         let session = AVAudioSession.sharedInstance()
-        // voiceChat turns on the system's echo cancellation for the built-in mic and speaker.
-        try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth])
+        // Plain play-and-record on the loudspeaker at media volume. The voice modes switch an
+        // iPhone to its quieter call volume, and their processing kept Muse's server from hearing
+        // the end of speech; the SDK relies on half duplex, not device processing, against echo.
+        try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
         try session.setActive(true)
+        routeToSpeakerIfBuiltIn()
+        routeObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.routeToSpeakerIfBuiltIn() }
         if !engine.attachedNodes.contains(player) {
             engine.attach(player)
             engine.connect(player, to: engine.mainMixerNode, format: playbackFormat)
         }
         let input = engine.inputNode
+        if input.isVoiceProcessingEnabled {
+            try? input.setVoiceProcessingEnabled(false)
+        }
         let format = input.outputFormat(forBus: 0)
         input.removeTap(onBus: 0)
         input.installTap(onBus: 0, bufferSize: 2_048, format: format) { [weak self] buffer, _ in
@@ -284,17 +460,39 @@ final class MuseVoiceCall: ObservableObject {
         }
         engine.prepare()
         try engine.start()
+        routeToSpeakerIfBuiltIn()
+        let route = AVAudioSession.sharedInstance().currentRoute.outputs.map(\.portType.rawValue).joined(separator: "+")
+        trace("route=\(route),volume=\(Int(AVAudioSession.sharedInstance().outputVolume * 100))")
         player.play()
         engineRunning = true
         queueEnd = 0
+        unplayed = 0
+        playbackGeneration += 1
+        underruns = 0
         withGate {
             gatePlayingUntil = 0
             gateMuted = isMuted
             micBuffer.removeAll()
+            noiseFloor = 120
+            floorFrames = 0
+            lastSpeech = 0
         }
     }
 
+    /// A gadget on a desk is a speakerphone: an iPhone's loudspeaker is used, not its earpiece,
+    /// unless headphones or Bluetooth are on.
+    private func routeToSpeakerIfBuiltIn() {
+        let session = AVAudioSession.sharedInstance()
+        let outputs = session.currentRoute.outputs.map(\.portType)
+        guard outputs.contains(.builtInReceiver) || outputs.isEmpty else { return }
+        try? session.overrideOutputAudioPort(.speaker)
+    }
+
     private func stopAudio() {
+        if let routeObserver {
+            NotificationCenter.default.removeObserver(routeObserver)
+            self.routeObserver = nil
+        }
         if engineRunning {
             engine.inputNode.removeTap(onBus: 0)
             player.stop()
@@ -312,25 +510,57 @@ final class MuseVoiceCall: ObservableObject {
             guard let stream = gateStream, gateReady, !gateMuted, uptime() >= gatePlayingUntil else {
                 // Audio captured while closed is dropped, never sent late.
                 micBuffer.removeAll()
+                pendingLines.removeAll()
+                pendingFrames = 0
+                micClosed += 1
                 return nil
             }
             micBuffer.append(pcm)
+            let now = uptime()
             while micBuffer.count >= MuseVoiceEvents.frameBytes {
-                frames.append(micBuffer.prefix(MuseVoiceEvents.frameBytes))
+                let frame = micBuffer.prefix(MuseVoiceEvents.frameBytes)
                 micBuffer.removeFirst(MuseVoiceEvents.frameBytes)
+                let level = Self.rms(frame)
+                rmsSum += level
+                rmsCount += 1
+                // The first half second sets the floor; after that it drops at once and rises
+                // only on frames that are not speech, so talking never raises it.
+                floorFrames += 1
+                if floorFrames <= 12 {
+                    noiseFloor += (level - noiseFloor) / Double(floorFrames)
+                } else if level < noiseFloor {
+                    noiseFloor = level
+                } else if level < noiseFloor * 3 {
+                    noiseFloor += (level - noiseFloor) * 0.02
+                }
+                if level >= max(12, noiseFloor * 3) { lastSpeech = now } else if now - lastSpeech > 0.4 { silenced += 1 }
+                // Raw audio, as the SDK's hands-free call sends it: Muse's server finds the end
+                // of speech itself. Levels are only measured for the diagnostics log.
+                frames.append(frame)
             }
+            micSent += frames.count
             return stream
         }
         guard let stream, !frames.isEmpty else { return }
-        stream.send(frames.map(MuseVoiceEvents.appendLine).reduce(Data(), +))
+        let batch: Data? = withGate {
+            for frame in frames { pendingLines.append(MuseVoiceEvents.appendLine(frame)) }
+            pendingFrames += frames.count
+            guard pendingFrames >= Self.framesPerMessage else { return nil }
+            let batch = pendingLines
+            pendingLines = Data()
+            pendingFrames = 0
+            return batch
+        }
+        if let batch { stream.send(batch) }
     }
 
     private func play(_ pcm: Data) {
         guard !fenced, engineRunning, !pcm.isEmpty else { return }
         let count = pcm.count / 2
         let rms = Self.rms(pcm)
+        if rms >= Self.audibleRMS { audibleIn += 1 } else { quietIn += 1 }
         // Muse streams silence between answers; it is not worth queueing or closing the mic for.
-        guard rms > 0 || uptime() < queueEnd else { return }
+        guard rms > 0 || unplayed > 0 else { return }
         guard let buffer = AVAudioPCMBuffer(pcmFormat: playbackFormat, frameCapacity: AVAudioFrameCount(count)),
               let channel = buffer.floatChannelData?[0] else { return }
         buffer.frameLength = AVAudioFrameCount(count)
@@ -338,18 +568,51 @@ final class MuseVoiceCall: ObservableObject {
             let samples = raw.bindMemory(to: Int16.self)
             for index in 0..<count { channel[index] = Float(Int16(littleEndian: samples[index])) / 32_768 }
         }
-        player.scheduleBuffer(buffer, completionHandler: nil)
+        // When nothing is queued, hold the start back a little: a short underrun mid-sentence
+        // then becomes a slightly later start instead of a gap in the words.
+        // Whenever playback would start from an empty queue, quiet onset included, it first
+        // waits 600 ms, so the opening words have audio behind them.
+        if unplayed == 0 {
+            if let last = audibleSpans.last, uptime() - last.end < 1.0 { underruns += 1 }
+            if let lead = AVAudioPCMBuffer(pcmFormat: playbackFormat,
+                                           frameCapacity: AVAudioFrameCount(Self.prebuffer * Double(MuseVoiceEvents.sampleRate))) {
+                lead.frameLength = lead.frameCapacity
+                if let channel = lead.floatChannelData?[0] { channel.update(repeating: 0, count: Int(lead.frameLength)) }
+                schedule(lead)
+                queueEnd = uptime() + Self.prebuffer
+            }
+        }
+        schedule(buffer)
         let duration = Double(count) / Double(MuseVoiceEvents.sampleRate)
-        queueEnd = max(uptime(), queueEnd) + duration
+        let startsAt = max(uptime(), queueEnd)
+        queueEnd = startsAt + duration
         if rms >= Self.audibleRMS {
+            if let last = audibleSpans.last, startsAt - last.end < 0.05 {
+                audibleSpans[audibleSpans.count - 1].end = queueEnd
+            } else {
+                audibleSpans.append((startsAt, queueEnd))
+            }
             if firstAudioOfTurn {
                 firstAudioOfTurn = false
                 trace("reply_audio")
             }
-            let until = queueEnd + Self.settle
+            replyHeard = true
+            isMuseReady = true
+            let until = queueEnd + Self.speakerLag + Self.settle
             withGate { gatePlayingUntil = until; micBuffer.removeAll() }
             lastActivity = Date()
             phase = .speaking
+        }
+    }
+
+    private func schedule(_ buffer: AVAudioPCMBuffer) {
+        unplayed += 1
+        let generation = playbackGeneration
+        player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
+            DispatchQueue.main.async {
+                guard let self, generation == self.playbackGeneration, self.unplayed > 0 else { return }
+                self.unplayed -= 1
+            }
         }
     }
 
@@ -357,6 +620,12 @@ final class MuseVoiceCall: ObservableObject {
         player.stop()
         player.play()
         queueEnd = 0
+        unplayed = 0
+        playbackGeneration += 1
+        audibleSpans.removeAll()
+        isVoiceAudible = false
+        replyAudioOpen = false
+        replyHeard = false
         withGate { gatePlayingUntil = 0 }
     }
 

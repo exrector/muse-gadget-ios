@@ -349,3 +349,8 @@
 "Muse не смог начать разговор" = "Muse could not start the conversation";
 "voice.call_refused_format" = "Muse did not accept the call (HTTP %d)";
 "voice.call_heard_format" = "You: %@";
+"Попросить Muse анимацию губ для звонков" = "Ask Muse for a Talking Animation";
+"avatar.call_request_format" = "Please add a call_speaking animation for voice calls to this gadget (“%@”): a short loop of you facing forward and talking, mouth opening and closing, with no gestures. Make it like your other animations, with display.set_avatar, and add it to workspace/pal-again/avatars.json. Keep your other animations as they are. Reply in one short sentence.";
+"Режим микрофона" = "Mic Mode";
+"Muse не расслышал, скажите ещё раз" = "Muse missed that, please say it again";
+"Muse готовится, сейчас поздоровается…" = "Muse is getting ready and will say hello…";

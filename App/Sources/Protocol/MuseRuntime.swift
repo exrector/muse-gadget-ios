@@ -342,6 +342,10 @@ final class MuseRuntime: NSObject {
         }
     }
 
+    /// Encrypted messages waiting for the socket, for the call diagnostics: a growing number means
+    /// the device sends slower than it produces audio.
+    var outboundBacklog: Int { queue.sync { outboundMessages.count } }
+
     /// The node ID Muse knows this gadget by, which voice calls carry as `device_id`.
     var deviceNodeID: String { identity.nodeID }
 

@@ -220,6 +220,10 @@ final class MuseAppModel: ObservableObject {
         }
     }
     @Published var isVoiceCallOpen = false
+    /// The call button wakes up 2 s after Muse is connected, so a tap right after launch or a
+    /// reconnect never lands on a connection that is still settling.
+    @Published private(set) var isCallReady = false
+    private var callReadiness: DispatchWorkItem?
     lazy var voiceCall: MuseVoiceCall = {
         let call = MuseVoiceCall(runtime: environment.runtime)
         call.onTrace = { [weak self] step in self?.environment.diagnostics.record("call", detail: step) }
@@ -486,6 +490,7 @@ final class MuseAppModel: ObservableObject {
             self.runtimeState = state
             self.environment.diagnostics.record("runtime_state", detail: MuseDiagnostics.label(state))
             if state == .registered { self.syncServerHistory() }
+            self.updateCallReadiness(state)
         }
         environment.runtime.onLog = { [weak self] message in
             guard let self else { return }
@@ -1190,17 +1195,45 @@ final class MuseAppModel: ObservableObject {
         MuseWidgetPublisher.publish(name: agentIdentity?.name, card: card)
     }
 
+    private func updateCallReadiness(_ state: MuseRuntimeState) {
+        callReadiness?.cancel()
+        guard state == .registered else {
+            isCallReady = false
+            return
+        }
+        let work = DispatchWorkItem { [weak self] in self?.isCallReady = true }
+        callReadiness = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
+    }
+
     func openVoiceCall() {
-        guard canSendToMuse, !isRecordingVoice else { return }
+        // The call still waits up to 15 s for Muse if the connection drops just before a tap.
+        guard isCallReady, !isRecordingVoice, !isVoiceCallOpen else { return }
         isVoiceCallOpen = true
         UIApplication.shared.isIdleTimerDisabled = true
         voiceCall.start()
     }
 
+    static let callSpeakingAnimation = "call_speaking"
+    @Published var callAvatarRequested = false
+
+    /// Asks Muse to draw the talking animation a call plays, leaving its other animations alone.
+    func requestCallAvatar() {
+        callAvatarRequested = true
+        sendChat(PalL10n.format("avatar.call_request_format", environment.identity.displayName))
+    }
+
+    /// Closes the call card; `voiceCallDismissed` then ends the call.
     func closeVoiceCall() {
-        voiceCall.hangUp()
         isVoiceCallOpen = false
+    }
+
+    /// Runs once whenever the call card goes away, by a button or by a swipe.
+    func voiceCallDismissed() {
+        voiceCall.hangUp()
         applyIdleTimerPolicy()
+        // Muse keeps the call in the main conversation; show it here too.
+        syncServerHistory()
     }
 
     private func applyIdleTimerPolicy() {
@@ -1311,7 +1344,8 @@ struct MuseAppView: View {
         } message: {
             Text(PalL10n.text("Приложение может отправлять разработчику отчёты о сбоях и зависаниях с коротким журналом этапов работы, чтобы быстрее находить ошибки. Текст чата, токены, имя гаджета, файлы, фото и аудио никогда не отправляются. Это можно выключить в настройках."))
         }
-        .fullScreenCover(isPresented: $model.isVoiceCallOpen) {
+        // A sheet: a centred card on iPad, nearly the whole screen on an iPhone.
+        .sheet(isPresented: $model.isVoiceCallOpen, onDismiss: model.voiceCallDismissed) {
             MuseVoiceCallView(model: model, call: model.voiceCall)
         }
         .sheet(isPresented: $model.isConnectChatOpen) {
@@ -2999,9 +3033,9 @@ private struct VoiceCallButton: View {
                 .frame(width: 44, height: 44)
                 .background(MuseTheme.accent)
                 .clipShape(Circle())
-                .opacity(model.canSendToMuse && !model.isRecordingVoice ? 1 : 0.4)
+                .opacity(model.isCallReady && !model.isRecordingVoice ? 1 : 0.4)
         }
-        .disabled(!model.canSendToMuse || model.isRecordingVoice)
+        .disabled(!model.isCallReady || model.isRecordingVoice)
         .accessibilityLabel(PalL10n.text("Поговорить с Muse голосом"))
     }
 }
@@ -3013,11 +3047,24 @@ private struct MuseVoiceCallView: View {
     private var status: String {
         switch call.phase {
         case .idle, .connecting: return PalL10n.text("Соединяю с Muse…")
-        case .listening: return call.isMuted ? PalL10n.text("Микрофон выключен") : PalL10n.text("Говорите, Muse слушает")
+        case .listening:
+            if call.isMuted { return PalL10n.text("Микрофон выключен") }
+            if call.missedSentence { return PalL10n.text("Muse не расслышал, скажите ещё раз") }
+            return call.isMuseReady ? PalL10n.text("Говорите, Muse слушает") : PalL10n.text("Muse готовится, сейчас поздоровается…")
         case .thinking: return PalL10n.text("Muse думает…")
         case .speaking: return PalL10n.text("Muse говорит")
         case .ended(let reason): return reason
         }
+    }
+
+    /// A call has two looks, as in Muse's own voice mode: at rest, and moving its lips while its
+    /// voice is heard. The chat's listening, thinking and gesturing movements are not used here.
+    private var avatarAnimation: String {
+        if call.phase.isActive, call.isVoiceAudible,
+           model.avatarFiles[MuseAppModel.callSpeakingAnimation] != nil {
+            return MuseAppModel.callSpeakingAnimation
+        }
+        return MuseAvatarState.idle.rawValue
     }
 
     private var statusIcon: String {
@@ -3032,12 +3079,17 @@ private struct MuseVoiceCallView: View {
     var body: some View {
         VStack(spacing: 24) {
             Spacer(minLength: 12)
-            Group {
+            ZStack {
                 if let data = model.agentAvatar, let image = UIImage(data: data) {
                     Image(uiImage: image).resizable().scaledToFill()
-                } else {
+                } else if model.avatarFiles.isEmpty {
                     Image(systemName: "person.wave.2.fill").resizable().scaledToFit().padding(36)
                         .foregroundColor(MuseTheme.accent)
+                }
+                // Muse's own avatar moves with the call, the way the SDK animates its avatar
+                // locally: nothing extra comes from the server for it.
+                if !model.avatarFiles.isEmpty {
+                    MuseAvatarPlayer(files: model.avatarFiles, name: avatarAnimation, version: model.avatarVersion)
                 }
             }
             .frame(width: 160, height: 160)
@@ -3064,6 +3116,22 @@ private struct MuseVoiceCallView: View {
 
             Spacer()
 
+            // Voice Isolation needs an A12 chip or later; iOS lets only the person pick it.
+            if call.phase.isActive, MuseVoiceCall.canPickMicrophoneMode {
+                Button(action: MuseVoiceCall.showMicrophoneModes) {
+                    Label(PalL10n.text("Режим микрофона"), systemImage: "waveform.badge.mic")
+                        .font(.footnote)
+                }
+            }
+
+            if model.avatarFiles[MuseAppModel.callSpeakingAnimation] == nil, !model.callAvatarRequested {
+                Button(action: model.requestCallAvatar) {
+                    Label(PalL10n.text("Попросить Muse анимацию губ для звонков"), systemImage: "mouth")
+                        .font(.footnote)
+                }
+                .disabled(!model.canSendToMuse)
+            }
+
             if call.phase.isActive {
                 HStack(spacing: 28) {
                     roundButton(call.isMuted ? "mic.slash.fill" : "mic.fill",
@@ -3084,6 +3152,8 @@ private struct MuseVoiceCallView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(MuseTheme.background.ignoresSafeArea())
+        // A swipe must not leave the microphone open behind a closed card.
+        .interactiveDismissDisabled(call.phase.isActive)
     }
 
     private func roundButton(_ icon: String, label: String, color: Color, action: @escaping () -> Void) -> some View {
