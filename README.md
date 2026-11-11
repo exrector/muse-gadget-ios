@@ -14,7 +14,7 @@
 
 > **Make Old Devices Smart Again.**
 
-**[Get it on the App Store](https://apps.apple.com/us/app/pal-again/id6830354776)** · **[Join the TestFlight beta](https://testflight.apple.com/join/jWYJWgHz)** (iOS 16 or newer only, unfortunately)
+**[Get it on the App Store](https://apps.apple.com/us/app/pal-again/id6830354776)** · **[Join the TestFlight beta](https://testflight.apple.com/join/jWYJWgHz)** (new installs need iOS 16 or newer, unfortunately)
 
 The old device becomes a screen, microphone, speaker, camera and sensor companion for Muse, with a chat you can type or talk into. Tested on an iPhone 6s from 2015 with iOS 15 and an iPad (6th generation) from 2018 with iPadOS 17.
 
@@ -62,7 +62,7 @@ Where it differs from the Linux SDK: iOS has no shell, so instead of `system.run
 - iPhone or iPad as the gadget. **Confirmed so far:** iPhone 6s with iOS 15.8.8 and iPad (6th generation) with iPadOS 17.7.11. These are the oldest devices we have to test on, not a known limit. The app can be installed on iOS or iPadOS 15 or newer, so other devices may work, and you are welcome to try: older iPads that run iPadOS 15, such as iPad Air 2 or iPad mini 4, would help the most. Whether it works or not, please [open an issue](https://github.com/exrector/muse-gadget-ios/issues) with the device model, system version and what you tried, and we will add the result here. Never include your SDK Token.
 - A different phone with the Muse app. A phone running Muse cannot be its own gadget, because it does not see its own Bluetooth signal.
 - An SDK Token from [gadgets.muse.ai](https://gadgets.muse.ai/settings/sdk-tokens). One token can serve several gadgets.
-- The app itself: [Pal Again on the App Store](https://apps.apple.com/us/app/pal-again/id6830354776) as a one-time $1 purchase that covers the Apple Developer Program, or the free [TestFlight beta](https://testflight.apple.com/join/jWYJWgHz) for builds before release (TestFlight itself needs iOS or iPadOS 16 or newer, unfortunately, so on iOS 15 devices such as the iPhone 6s use the App Store version). You can also build it from source with a Mac and Xcode by following [BUILDING.md](Docs/BUILDING.md).
+- The app itself: [Pal Again on the App Store](https://apps.apple.com/us/app/pal-again/id6830354776) as a one-time $1 purchase that covers the Apple Developer Program, or the free [TestFlight beta](https://testflight.apple.com/join/jWYJWgHz) for builds before release (TestFlight itself can no longer be installed on iOS or iPadOS older than 16, unfortunately. If it is already on an iOS 15 device such as the iPhone 6s, it keeps working, so do not delete it. Otherwise use the App Store version there). You can also build it from source with a Mac and Xcode by following [BUILDING.md](Docs/BUILDING.md).
 
 ## Current status
 
@@ -84,7 +84,7 @@ The app reports Muse as connected only after the server acknowledges `link.regis
 
 ## Quick start
 
-1. Install Pal Again on your gadget from the [App Store](https://apps.apple.com/us/app/pal-again/id6830354776) or the free [TestFlight beta](https://testflight.apple.com/join/jWYJWgHz) (iOS 16 or newer only, unfortunately), or [build it yourself](Docs/BUILDING.md) with your own Apple team and bundle ID.
+1. Install Pal Again on your gadget from the [App Store](https://apps.apple.com/us/app/pal-again/id6830354776) or the free [TestFlight beta](https://testflight.apple.com/join/jWYJWgHz) (new installs need iOS 16 or newer, unfortunately), or [build it yourself](Docs/BUILDING.md) with your own Apple team and bundle ID.
 2. Follow the steps in the app: add your token, allow permissions, confirm Wi-Fi and start pairing.
 3. On your main phone, open Muse, go to Settings > Devices, turn on Developer Mode, tap **+** and choose the `MuseGadgetXXXXXX` name shown on the gadget.
 
