@@ -48,6 +48,7 @@ final class MuseBackgroundGrace {
 }
 
 final class AppEnvironment {
+    let diagnostics: MuseDiagnostics
     let identity: DeviceIdentity
     let credentialStore: CredentialStore
     let permissions: PermissionCenter
@@ -66,6 +67,7 @@ final class AppEnvironment {
     private let backgroundGrace = MuseBackgroundGrace()
 
     init() {
+        let diagnostics = MuseDiagnostics()
         let credentialStore = CredentialStore()
         FreshInstallReset.runIfNeeded { credentialStore.clearAll() }
         let identity = DeviceIdentityStore().loadOrCreate()
@@ -93,6 +95,7 @@ final class AppEnvironment {
             runtime.readVMFile(path: path, maxBytes: maxBytes, completion: completion)
         }
 
+        self.diagnostics = diagnostics
         self.identity = identity
         chatPeers = MuseChatPeerSync(serviceName: identity.nodeID)
         self.credentialStore = credentialStore

@@ -12,6 +12,21 @@ final class MuseGadgetLegacyTests: XCTestCase {
         XCTAssertEqual(identity.bluetoothName, "MuseGadgetAABBCC")
     }
 
+    func testDiagnosticsLogStatesWithoutGadgetNamesOrErrorText() {
+        XCTAssertEqual(MuseDiagnostics.label(PairingCoordinator.State.advertising("MuseGadgetA1B2C3")), "advertising")
+        XCTAssertEqual(MuseDiagnostics.label(PairingCoordinator.State.failed("token mgst_secret")), "failed")
+        XCTAssertEqual(MuseDiagnostics.label(PairingCoordinator.State.connected(mtu: 185)), "connected")
+        XCTAssertEqual(MuseDiagnostics.label(PairingCoordinator.State.paired), "paired")
+        XCTAssertEqual(MuseDiagnostics.label(MuseRuntimeState.failed("HTTP 401 for homelink-a1b2c3")), "failed")
+        XCTAssertEqual(MuseDiagnostics.label(MuseRuntimeState.registered), "registered")
+    }
+
+    func testOnlyTestFlightBuildsCallThemselvesBeta() {
+        // Unit tests run without a sandbox receipt, like an App Store or Xcode install.
+        XCTAssertFalse(MuseAppVersion.isTestFlight)
+        XCTAssertEqual(MuseAppVersion.display, MuseAppVersion.current)
+    }
+
     func testFreshInstallClearsKeychainButAnUpdateKeepsIt() throws {
         let suite = "FreshInstallReset.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

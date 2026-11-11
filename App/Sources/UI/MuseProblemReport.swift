@@ -7,7 +7,7 @@ import UIKit
 enum MuseProblemReport {
     static let address = "support@exrector.com"
 
-    static var subject: String { "Pal Again \(MuseAppVersion.current) report" }
+    static var subject: String { "Pal Again \(MuseAppVersion.display) report" }
 
     static func text(appVersion: String, system: String, model: String, connection: String, log: [String]) -> String {
         """

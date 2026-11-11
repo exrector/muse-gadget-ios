@@ -8,6 +8,15 @@ enum MuseAppVersion {
     }
 
     static var userAgent: String { "muse-gadget-ios/\(current)" }
+
+    /// TestFlight installs carry a sandbox receipt. Version numbers cannot hold letters, so this
+    /// is how a beta tells itself apart from the App Store release.
+    static var isTestFlight: Bool {
+        Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt"
+    }
+
+    /// The version as people see it: "1.0.2 beta" for TestFlight, "1.0.1" for the App Store.
+    static var display: String { isTestFlight ? "\(current) beta" : current }
 }
 
 struct MuseVM: Decodable {

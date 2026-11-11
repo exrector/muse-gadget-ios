@@ -450,6 +450,7 @@ final class MuseAppModel: ObservableObject {
         environment.pairing.onStateChange = { [weak self] state in
             guard let self else { return }
             self.pairingState = state
+            self.environment.diagnostics.record("pairing_state", detail: MuseDiagnostics.label(state))
             if state == .paired {
                 withAnimation(.easeInOut) { self.isPaired = true }
                 self.applyIdleTimerPolicy()
@@ -463,6 +464,7 @@ final class MuseAppModel: ObservableObject {
         environment.runtime.onStateChange = { [weak self] state in
             guard let self else { return }
             self.runtimeState = state
+            self.environment.diagnostics.record("runtime_state", detail: MuseDiagnostics.label(state))
             if state == .registered { self.syncServerHistory() }
         }
         environment.runtime.onLog = { [weak self] message in
@@ -498,6 +500,7 @@ final class MuseAppModel: ObservableObject {
         }
         environment.runtime.onCommandFinished = { [weak self] command, succeeded in
             self?.showToast(for: command, succeeded: succeeded)
+            self?.environment.diagnostics.record("command_finish", detail: "\(command.prefix(96)):\(succeeded ? "success" : "failure")")
         }
         agentAvatar = environment.vmImages.currentAvatar()
         reloadAvatarAnimations()
@@ -616,12 +619,14 @@ final class MuseAppModel: ObservableObject {
     }
 
     func request(_ permission: AppPermission) {
+        environment.diagnostics.record("permission_request", detail: String(describing: permission))
         if permissionStates[permission] == .denied {
             openSystemSettings()
             return
         }
         environment.permissions.request(permission) { [weak self] state in
             self?.permissionStates[permission] = state
+            self?.environment.diagnostics.record("permission_result", detail: "\(String(describing: permission)):\(String(describing: state))")
             if permission == .location, state == .granted {
                 self?.refreshNetworkName()
             }
@@ -684,10 +689,12 @@ final class MuseAppModel: ObservableObject {
 
     func startPairing() {
         saveNetworkName()
+        environment.diagnostics.record("pairing_start")
         environment.pairing.start()
     }
 
     func stopPairing() {
+        environment.diagnostics.record("pairing_stop")
         environment.pairing.stop()
     }
 
@@ -760,6 +767,7 @@ final class MuseAppModel: ObservableObject {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty, canSendToMuse else { return }
         let item = MuseChatItem(author: .user, text: clean, sessionID: activeChatSessionID)
+        environment.diagnostics.record("chat_send", detail: activeChatSessionID == nil ? "main" : "side")
         chatItems.append(item)
         pendingUserItemID = item.id
         let generation = beginRequest()
@@ -770,6 +778,7 @@ final class MuseAppModel: ObservableObject {
 
     func sendPhoto(_ image: UIImage, caption: String) {
         guard canSendToMuse else { return }
+        environment.diagnostics.record("photo_send")
         let clean = caption.trimmingCharacters(in: .whitespacesAndNewlines)
         let generation = beginRequest()
         DispatchQueue.global(qos: .userInitiated).async {
@@ -805,6 +814,7 @@ final class MuseAppModel: ObservableObject {
 
     func sendDocument(_ url: URL) {
         guard canSendToMuse else { return }
+        environment.diagnostics.record("document_send")
         let accessing = url.startAccessingSecurityScopedResource()
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
         guard let data = try? Data(contentsOf: url, options: .mappedIfSafe),
@@ -886,6 +896,7 @@ final class MuseAppModel: ObservableObject {
     }
 
     private func startVoiceRecording() {
+        environment.diagnostics.record("voice_record_start")
         pendingVoiceNote = nil
         isRecordingVoice = true
         recordingSeconds = 0
@@ -901,6 +912,7 @@ final class MuseAppModel: ObservableObject {
         recordingTimer?.invalidate()
         recordingTimer = nil
         isRecordingVoice = false
+        environment.diagnostics.record("voice_record_finish", detail: result.success ? "success" : "failure")
         guard result.success,
               let encoded = result.value["data_base64"] as? String,
               let wav = Data(base64Encoded: encoded) else {
@@ -927,6 +939,7 @@ final class MuseAppModel: ObservableObject {
     }
 
     private func send(_ note: MusePendingVoiceNote) {
+        environment.diagnostics.record("voice_send")
         let item = MuseChatItem(
             author: .user,
             text: PalL10n.format("voice.note_format", note.seconds),
@@ -1010,6 +1023,7 @@ final class MuseAppModel: ObservableObject {
         isSendingChat = false
         switch result {
         case .success(let response):
+            environment.diagnostics.record("request_finish", detail: "success")
             let payload = response["result"] as? [String: Any] ?? response
             if let messageID = (payload["message_id"] as? String) ?? (payload["reply_to_message_id"] as? String),
                let itemID = pendingUserItemID,
@@ -1020,6 +1034,7 @@ final class MuseAppModel: ObservableObject {
             apply(chatTimeline.acknowledge(response))
             if isAwaitingReply { scheduleReplyTimeout() }
         case .failure(let error):
+            environment.diagnostics.record("request_finish", detail: "failure")
             pendingUserItemID = nil
             chatTimeline.abandonRequest()
             finishWaitingForReply()
@@ -1213,9 +1228,11 @@ final class MuseAppModel: ObservableObject {
 
 struct MuseAppView: View {
     @StateObject private var model: MuseAppModel
+    @ObservedObject private var diagnostics: MuseDiagnostics
 
     init(environment: AppEnvironment) {
         _model = StateObject(wrappedValue: MuseAppModel(environment: environment))
+        _diagnostics = ObservedObject(wrappedValue: environment.diagnostics)
     }
 
     var body: some View {
@@ -1249,6 +1266,16 @@ struct MuseAppView: View {
             Button("Понятно", role: .cancel) { model.alertMessage = nil }
         } message: {
             Text(model.alertMessage ?? "")
+        }
+        .alert(PalL10n.text("Помочь улучшить Pal Again?"), isPresented: Binding(
+            // Asked once the gadget is paired, not on top of the first setup steps.
+            get: { diagnostics.shouldAskForConsent && model.isPaired },
+            set: { _ in }
+        )) {
+            Button(PalL10n.text("Не сейчас"), role: .cancel) { diagnostics.setSharingEnabled(false) }
+            Button(PalL10n.text("Отправлять диагностику")) { diagnostics.setSharingEnabled(true) }
+        } message: {
+            Text(PalL10n.text("Приложение может отправлять разработчику отчёты о сбоях и зависаниях с коротким журналом этапов работы, чтобы быстрее находить ошибки. Текст чата, токены, имя гаджета, файлы, фото и аудио никогда не отправляются. Это можно выключить в настройках."))
         }
         .sheet(isPresented: $model.isConnectChatOpen) {
             NavigationView {
@@ -1871,7 +1898,7 @@ private struct MuseMainTabs: View {
             NavigationView { MuseChatView(model: model) }
                 .navigationViewStyle(.stack)
             if model.isSettingsOpen {
-                NavigationView { MuseSettingsView(model: model) }
+                NavigationView { MuseSettingsView(model: model, diagnostics: model.environment.diagnostics) }
                     .navigationViewStyle(.stack)
                     .background(Color(UIColor.systemBackground))
                     .overlay(alignment: .topTrailing) {
@@ -3036,6 +3063,7 @@ private struct CognitiveLabsLockup: View {
 
 private struct MuseSettingsView: View {
     @ObservedObject var model: MuseAppModel
+    @ObservedObject var diagnostics: MuseDiagnostics
     @State private var showForgetConfirmation = false
     @State private var showClearHistoryConfirmation = false
     @State private var showAbout = false
@@ -3046,7 +3074,7 @@ private struct MuseSettingsView: View {
 
     private var reportText: String {
         MuseProblemReport.text(
-            appVersion: MuseAppVersion.current,
+            appVersion: MuseAppVersion.display,
             system: "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)",
             model: MuseHapticRoute.machineIdentifier,
             connection: model.runtimeState.shortTitle,
@@ -3283,6 +3311,36 @@ private struct MuseSettingsView: View {
                             .textSelection(.enabled)
                     }
                     .padding(.top, 12)
+                }
+                .museCard()
+
+                VStack(alignment: .leading, spacing: 12) {
+                    SettingsSectionLabel(title: "ОТЧЁТЫ О СБОЯХ")
+                    SettingsToggleRow(
+                        title: "Отправлять диагностику",
+                        detail: PalL10n.text("Только отчёты MetricKit о сбоях и зависаниях и безопасные этапы работы. Без текста чата, токенов, файлов, фото и аудио."),
+                        isOn: Binding(
+                            get: { diagnostics.sharingEnabled },
+                            set: diagnostics.setSharingEnabled
+                        )
+                    )
+                    if diagnostics.pendingReportCount > 0 {
+                        Text(PalL10n.format("diagnostics.pending_format", diagnostics.pendingReportCount))
+                            .font(.caption)
+                            .foregroundColor(MuseTheme.secondary)
+                    }
+                    if let status = diagnostics.lastUploadStatus {
+                        Text(PalL10n.format(
+                            "diagnostics.last_status_format",
+                            status == "sent" ? PalL10n.text("Отправлено")
+                                : (status == "offline" ? PalL10n.text("Нет сети") : status)
+                        ))
+                            .font(.caption)
+                            .foregroundColor(MuseTheme.secondary)
+                    }
+                    Button("Отправить диагностику сейчас") { diagnostics.sendCurrentSnapshot() }
+                        .buttonStyle(MuseSecondaryButtonStyle())
+                        .disabled(!diagnostics.sharingEnabled)
                 }
                 .museCard()
 
@@ -3551,7 +3609,7 @@ private struct PalAboutView: View {
 
                     VStack(alignment: .leading, spacing: 10) {
                         SettingsSectionLabel(title: "КОНФИДЕНЦИАЛЬНОСТЬ")
-                        Text("SDK Token и данные пары хранятся в системной Связке ключей. Сообщения, фото, голос и запрошенные данные устройства передаются Muse только для выполнения выбранных вами функций. Pal Again не содержит рекламы и собственной аналитики.")
+                        Text("SDK Token и данные пары хранятся в системной Связке ключей. Сообщения, фото, голос и запрошенные данные устройства передаются Muse только для выбранных вами функций. В Pal Again нет рекламы, поведенческой аналитики и отслеживания; отчёты о сбоях отправляются только с вашего согласия.")
                             .font(.subheadline)
                             .fixedSize(horizontal: false, vertical: true)
                         AboutExternalRow(icon: "hand.raised.fill", title: "Политика конфиденциальности", url: privacyURL)
@@ -3603,7 +3661,7 @@ private struct PalAboutView: View {
     private var appVersion: String {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
-        return PalL10n.format("about.version_format", version, build)
+        return PalL10n.format(MuseAppVersion.isTestFlight ? "about.version_beta_format" : "about.version_format", version, build)
     }
 }
 

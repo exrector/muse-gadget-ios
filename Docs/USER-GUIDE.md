@@ -129,6 +129,7 @@ The gear button opens **Settings**: under the avatar on an iPad, and in the head
 | **Keep Screen Awake** | Keeps the screen on while paired |
 | **Help and Guide** | Explains pairing, chats, attachments, voice recording and permissions inside the app |
 | **Diagnostics** | Technical log, including the result of each command |
+| **Share Diagnostics** | Optionally sends Apple MetricKit crash and hang reports plus safe app-flow steps. It never sends chat text, tokens, the gadget name, files, photos or audio |
 | **Clear Chat History** | Deletes the saved chat |
 | **Replace SDK Token** | Stores a different token |
 | **Remove Muse Pairing** | Removes the pairing, after which you set the gadget up again |
@@ -149,6 +150,7 @@ Clearing the history with sync on also clears it on your other synced devices. Y
 - **Saved history** is not included in device backups.
 - **Bluetooth** is used only during pairing.
 - **Remote commands** cannot start without the permission iOS already gave the app, and the app never shows a permission prompt because of a remote command.
+- **Crash diagnostics** are off until you agree. The app asks once, after pairing. When enabled, anonymous MetricKit crash and hang reports are retained for up to 30 days and can be disabled again in Settings.
 
 Pairing protects your credentials from people passively listening, but it cannot stop an active attacker in the middle. Pair on a network you trust and check the `MuseGadgetXXXXXX` name. See [SECURITY.md](../SECURITY.md).
 

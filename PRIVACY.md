@@ -1,8 +1,14 @@
 # Pal Again Privacy Policy
 
-Last updated: November 4, 2026
+Last updated: November 11, 2026
 
-Pal Again is an independent, open-source iOS and iPadOS client. It contains no advertising SDK and no first-party analytics or tracking.
+Pal Again is an independent, open-source iOS and iPadOS client. It contains no advertising SDK, behavioral analytics or tracking.
+
+## Optional crash diagnostics
+
+Pal Again asks once, after pairing, whether to send diagnostics. They stay off until you agree. If you agree, Pal Again sends Apple MetricKit crash and hang reports, the app version, build number, device model, operating-system version, language, and a short list of app-flow steps such as “pairing started” or “permission result.” These reports are not linked to your identity and never contain chat text, Muse tokens, account details, gadget names, filenames, photos, audio, or document contents. You can turn this off in Settings at any time.
+
+Diagnostics are sent to a developer-operated Cloudflare Worker and stored in an EU-hosted Cloudflare D1 database for up to 30 days solely to find and fix defects. Raw IP addresses are not stored. A salted one-way hash of the source IP is retained for no more than 48 hours only to prevent abuse of the report endpoint.
 
 ## Data stored on your device
 
@@ -34,15 +40,19 @@ Pal Again asks before permanently allowing a Muse-requested Apple Shortcut or a 
 
 ## Contact and deletion requests
 
-Pal Again has no developer-operated account database. For questions, bug reports or privacy requests, write to support@exrector.com or open an issue in the [public repository](https://github.com/exrector/muse-gadget-ios/issues). **Send a Report** in Settings opens an email with the connection log, app version and device model, which you can read before sending. It never includes your chat or tokens. Do not include SDK Tokens, pairing credentials, private messages, photos or other secrets in an issue.
+Pal Again has no developer-operated user-account database. For questions, bug reports, diagnostic-data deletion requests or privacy requests, write to support@exrector.com or open an issue in the [public repository](https://github.com/exrector/muse-gadget-ios/issues). **Send a Report** in Settings opens an email with the connection log, app version and device model, which you can read before sending. It never includes your chat or tokens. Do not include SDK Tokens, pairing credentials, private messages, photos or other secrets in an issue.
 
 ---
 
 # Политика конфиденциальности Pal Again
 
-Обновлено: 4 ноября 2026 года
+Обновлено: 11 ноября 2026 года
 
-Pal Again — независимый клиент с открытым исходным кодом для iOS и iPadOS. В приложении нет рекламы, собственной аналитики и отслеживания пользователей.
+Pal Again — независимый клиент с открытым исходным кодом для iOS и iPadOS. В приложении нет рекламы, поведенческой аналитики и отслеживания пользователей.
+
+После создания пары приложение один раз спрашивает разрешение на отправку диагностики; до согласия она выключена. При согласии отправляются отчёты Apple MetricKit о сбоях и зависаниях, версия приложения и сборки, модель устройства, версия системы, язык и короткий список технических этапов работы. Они не связаны с личностью пользователя и не содержат текст чата, токены Muse, данные аккаунта, имя гаджета, имена или содержимое файлов, фото и аудио. Отправку можно отключить в настройках.
+
+Диагностика хранится до 30 дней в размещённой в ЕС базе Cloudflare D1 и используется только для исправления ошибок. Исходные IP-адреса не сохраняются; их односторонний хеш живёт не более 48 часов исключительно для защиты приёмника отчётов от злоупотреблений.
 
 SDK Token и данные пары хранятся в iOS Keychain. История чата и настройки остаются на устройстве; при включённой синхронизации текст чата хранится в вашем личном iCloud. Фото, голос, сообщения и запрошенные данные устройства передаются Muse только при использовании соответствующей функции. Разрешения можно отозвать в настройках iOS, а историю, синхронизацию и пару — удалить в настройках Pal Again.
 

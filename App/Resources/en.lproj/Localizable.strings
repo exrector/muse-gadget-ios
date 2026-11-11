@@ -58,6 +58,7 @@
 "settings.sensor_access_format" = "%d of 3 allowed";
 "settings.approved_count_format" = "%d approved";
 "about.version_format" = "Version %@ (%@)";
+"about.version_beta_format" = "Version %@ beta (%@)";
 "Подключено к Muse VM" = "Connected to Muse VM";
 "Подключено" = "Connected";
 "Пара создана" = "Paired";
@@ -309,3 +310,15 @@
 "Камера, микрофон, геопозиция, Bluetooth и локальная сеть используются только для соответствующих функций. Опасные быстрые команды и новые устройства локальной сети требуют вашего подтверждения." = "Camera, microphone, location, Bluetooth, and local network access are used only for their related features. Sensitive shortcuts and new local-network devices require your confirmation.";
 "Если что-то не работает" = "If Something Does Not Work";
 "Сначала проверьте зелёный статус подключения. Затем откройте системные настройки разрешений или нажмите «Обновить чаты». Технический отчёт можно подготовить внизу настроек — сообщения и токены в него не входят." = "First check for the green connected status. Then review system permissions or tap Refresh Chats. You can prepare a technical report at the bottom of Settings; it never includes messages or tokens.";
+"Помочь улучшить Pal Again?" = "Help Improve Pal Again?";
+"Не сейчас" = "Not Now";
+"Отправлять диагностику" = "Share Diagnostics";
+"Приложение может отправлять разработчику отчёты о сбоях и зависаниях с коротким журналом этапов работы, чтобы быстрее находить ошибки. Текст чата, токены, имя гаджета, файлы, фото и аудио никогда не отправляются. Это можно выключить в настройках." = "The app can send the developer crash and hang reports with a short log of app-flow steps, so problems are found sooner. Chat text, tokens, the gadget name, files, photos, and audio are never sent. You can turn this off in Settings.";
+"ОТЧЁТЫ О СБОЯХ" = "CRASH REPORTS";
+"Только отчёты MetricKit о сбоях и зависаниях и безопасные этапы работы. Без текста чата, токенов, файлов, фото и аудио." = "Only MetricKit crash and hang reports and safe app-flow steps. No chat text, tokens, files, photos, or audio.";
+"Отправить диагностику сейчас" = "Send Diagnostics Now";
+"diagnostics.pending_format" = "%d report(s) waiting to send";
+"diagnostics.last_status_format" = "Last attempt: %@";
+"Отправлено" = "Sent";
+"Нет сети" = "Offline";
+"SDK Token и данные пары хранятся в системной Связке ключей. Сообщения, фото, голос и запрошенные данные устройства передаются Muse только для выбранных вами функций. В Pal Again нет рекламы, поведенческой аналитики и отслеживания; отчёты о сбоях отправляются только с вашего согласия." = "Your SDK Token and pairing credentials are stored in the system Keychain. Messages, photos, voice, and requested device data are sent to Muse only for features you choose. Pal Again has no ads, behavioral analytics, or tracking; crash reports are sent only with your consent.";

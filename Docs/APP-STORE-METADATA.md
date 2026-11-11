@@ -53,7 +53,9 @@ Confirmed on iPhone 6s with iOS 15.8.8 and iPad (6th generation) with iPadOS 17.
 
 YOUR DATA
 
-Pal Again has no account, advertising, analytics or server of its own. Like a physical gadget built with the SDK, it talks directly to your Muse, and data goes there only when you or Muse use a feature. A physical gadget has its camera, microphone and sensors built in. Here iOS asks your permission first, and each feature stays off until you allow it. After that, your Muse can use it while the app is open on screen. Your token is kept in the iOS Keychain.
+Pal Again has no developer account, advertising, behavioral analytics or tracking. Like a physical gadget built with the SDK, it talks directly to your Muse, and feature data goes there only when you or Muse use a feature. A physical gadget has its camera, microphone and sensors built in. Here iOS asks your permission first, and each feature stays off until you allow it. After that, your Muse can use it while the app is open on screen. Your token is kept in the iOS Keychain.
+
+After pairing, the app asks once whether to send anonymous Apple MetricKit crash and hang reports to the developer. These reports include safe technical app-flow steps, never chat text, tokens, files, photos or audio, and can be disabled in Settings.
 
 WHY IT COSTS SOMETHING
 
@@ -94,7 +96,7 @@ ENCRYPTION
 The app uses standard algorithms through Apple's CryptoKit and system TLS, and contains no proprietary encryption.
 
 PURCHASES
-Paid download. There are no in-app purchases, subscriptions, advertising or analytics.
+Paid download. There are no in-app purchases, subscriptions, advertising, behavioral analytics or tracking. Crash diagnostics are optional and disclosed in the privacy policy.
 
 ## Xcode mapping
 
