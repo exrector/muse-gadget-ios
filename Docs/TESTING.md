@@ -4,7 +4,7 @@ Pal Again is [available on the App Store](https://apps.apple.com/us/app/pal-agai
 
 ## Join the beta
 
-Join through the public [TestFlight link](https://testflight.apple.com/join/jWYJWgHz) to get builds before they reach the App Store. You can also build the current `main` branch by following [BUILDING.md](BUILDING.md).
+Join through the public [TestFlight link](https://testflight.apple.com/join/jWYJWgHz) to get builds before they reach the App Store. TestFlight itself needs iOS or iPadOS 16 or newer, unfortunately, so on iOS 15 devices such as the iPhone 6s use the App Store version. You can also build the current `main` branch by following [BUILDING.md](BUILDING.md).
 
 ## What to test
 
