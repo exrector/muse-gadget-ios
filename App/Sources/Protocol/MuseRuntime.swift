@@ -638,17 +638,27 @@ final class MuseRuntime: NSObject {
         fields: [String: Any],
         completion: @escaping (Result<(status: Int, body: Data), Error>) -> Void
     ) {
+        requestJSON(method: "POST", path: path, fields: fields, completion: completion)
+    }
+
+    /// A one-shot request over the gadget's Noise connection; GET sends no body.
+    func requestJSON(
+        method: String,
+        path: String,
+        fields: [String: Any]? = nil,
+        completion: @escaping (Result<(status: Int, body: Data), Error>) -> Void
+    ) {
         queue.async {
-            guard self.state == .registered,
-                  let body = try? JSONSerialization.data(withJSONObject: fields) else {
+            let body = fields.flatMap { try? JSONSerialization.data(withJSONObject: $0) } ?? Data()
+            guard self.state == .registered, fields == nil || !body.isEmpty else {
                 DispatchQueue.main.async { completion(.failure(MuseRuntimeError.notConnected)) }
                 return
             }
             self.performRequest(
-                method: "POST",
+                method: method,
                 path: path,
                 body: body,
-                headers: [MuseHTTPHeader(name: "Content-Type", value: "application/json")]
+                headers: fields == nil ? [] : [MuseHTTPHeader(name: "Content-Type", value: "application/json")]
             ) { result in
                 let mapped = result.map { (status: $0.status, body: $0.body) }
                 DispatchQueue.main.async { completion(mapped) }
@@ -1229,6 +1239,9 @@ final class MuseRuntime: NSObject {
                    !didRunV2VoiceTTSProbe {
                     didRunV2VoiceTTSProbe = true
                     probeV2VoiceTTS()
+                }
+                if ProcessInfo.processInfo.environment["PAL_V2_VIDEO_PROBE"] == "1" {
+                    MuseVideoProbe.shared.run(runtime: self)
                 }
                 if ProcessInfo.processInfo.environment["PAL_V2_REALTIME_PROBE"] == "1" {
                     MuseVoiceProbe.shared.run(runtime: self)

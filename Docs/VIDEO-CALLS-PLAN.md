@@ -76,3 +76,35 @@ Steps, each checked on the iPad and the iPhone 6s before the next:
 5. A separate "Video call (beta)" setting; the voice call stays as it is.
 
 The branch is unmerged and may change; compare with it again before each step.
+
+## Results
+
+### Steps 1 and 2, 2026-11-12, iPad (6th generation), iPadOS 17.7.11
+
+DEBUG probe `MuseVideoProbe` (`PAL_V2_VIDEO_PROBE=1`, `PAL_NOISE_APP_ID=hatch-web`):
+
+- `GET /voice/calls/media-endpoint`: HTTP 200, `host` `meta-ai-realtime.facebook.com`, `port`
+  3478, `vip_type` `META_AI`. The result also has `ip4_address`, `ip6_address`, `route` and
+  `enable_media_to_cosmos`, which the SDK does not read.
+- `POST /voice/calls/join` with a 1,009-byte JOIN: HTTP 200, result keys `call` and
+  `payload_b64`; the Thrift answer has status 200 and a 19-character server ufrag, no addresses.
+- ICE-lite STUN check to the host on port 3478: the first authenticated answer came over UDP in
+  237 ms and over RFC 4571 TCP in about 3 s. Both get through the owner's network in Russia.
+- `POST /voice/end-call`: HTTP 200.
+
+So Muse admits a paired gadget to a video call, and the media endpoint is reachable.
+
+### Step 3, next: audio over SRTP
+
+From `rtc/srtp.py`, `rtc/opus.py`, `rtc/rtp.py` and `rtc/media.py`:
+
+- SRTP and SRTCP with AES_CM_128_HMAC_SHA1_80 (RFC 3711), keyed directly from the JOIN's 30-byte
+  master key and salt (labels 0-2 for RTP, 3-5 for RTCP), rollover counters per SSRC and a replay
+  window.
+- RTP: Opus payload type 111 at 48 kHz, 20 ms (960 samples) per packet, client audio SSRC 100;
+  Muse's audio SSRC 200 and video SSRC 201 (H.264, payload type 127). Only those SSRCs are
+  accepted.
+- Opus: mono, 48 kHz, application VoIP, 32 kbit/s. First check whether AudioToolbox
+  (`kAudioFormatOpus`) encodes and decodes on iOS 15; otherwise vendor libopus.
+- Consent: a STUN check every 4 s on the chosen path; 30 s without answers ends the call. A PLI
+  asks for a keyframe once connected.

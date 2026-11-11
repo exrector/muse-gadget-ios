@@ -12,6 +12,45 @@ final class MuseGadgetLegacyTests: XCTestCase {
         XCTAssertEqual(identity.bluetoothName, "MuseGadgetAABBCC")
     }
 
+    func testVideoCallJoinPiecesMatchTheSDK() throws {
+        // zlib's CRC-32 check value, which STUN's FINGERPRINT uses.
+        XCTAssertEqual(MuseSTUN.crc32(Data("123456789".utf8)), 0xCBF4_3926)
+
+        // A STUN check is 20 bytes of header plus attributes, authenticated with the password.
+        let check = MuseSTUN.bindingRequest(username: "server:cl", password: "pw", priority: 1, tieBreaker: 2)
+        XCTAssertTrue(MuseSTUN.isSTUN(check.packet))
+        XCTAssertEqual(check.packet.count % 4, 0)
+
+        // The JOIN reads back as a header struct and a body with joinRequest's fields.
+        let offer = MuseCallJoinOffer.make(threadID: "t1", edgeHost: "edge.example", edgePort: 3478, vipType: 8, video: true)
+        var reader = MuseThriftReader(offer.payload)
+        let header = try reader.structure()
+        let body = try reader.structure()
+        XCTAssertEqual(header[1] as? Data, Data(offer.clientSessionID.utf8))
+        XCTAssertEqual(header[3] as? Int, Int(offer.transactionID))
+        let join = try XCTUnwrap(body[1] as? [Int: Any])
+        XCTAssertEqual(join[1] as? Data, Data(offer.clientUfrag.utf8))
+        XCTAssertEqual(join[6] as? Data, Data("edge.example:3478".utf8))
+        XCTAssertEqual(join[12] as? Int, 2)
+        XCTAssertEqual(join[13] as? Int, 8)
+        XCTAssertEqual(join[14] as? Bool, false)
+        let secrets = try XCTUnwrap(join[3] as? [Int: Any])
+        XCTAssertEqual(secrets[1] as? Data, Data(offer.srtpKey.base64EncodedString().utf8))
+        XCTAssertEqual(offer.srtpKey.count, 30)
+
+        // The DTLS identity is a certificate iOS itself can parse.
+        let identity = MuseDTLSIdentity.make()
+        let base64 = identity.certificatePEM
+            .replacingOccurrences(of: "-----BEGIN CERTIFICATE-----", with: "")
+            .replacingOccurrences(of: "-----END CERTIFICATE-----", with: "")
+            .replacingOccurrences(of: "\n", with: "")
+        let der = try XCTUnwrap(Data(base64Encoded: base64))
+        XCTAssertNotNil(SecCertificateCreateWithData(nil, der as CFData))
+        XCTAssertTrue(identity.fingerprint.hasPrefix("sha-256 "))
+        XCTAssertEqual(identity.fingerprint.split(separator: ":").count, 32)
+        XCTAssertTrue(identity.privateKeyPEM.hasPrefix("-----BEGIN PRIVATE KEY-----"))
+    }
+
     func testVoiceRoutesReadAudioAndSplitStreamedLines() throws {
         let pcm = Data([1, 0, 2, 0, 3, 0, 4, 0])
         let delta: [String: Any] = ["type": "response.output_audio.delta", "delta": pcm.base64EncodedString()]
