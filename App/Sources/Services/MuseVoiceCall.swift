@@ -40,16 +40,7 @@ final class MuseVoiceCall: ObservableObject {
     /// A stall in delivery mid-sentence does not end it, so the animation does not restart.
     @Published private(set) var isVoiceAudible = false
     private var replyAudioOpen = false
-    private var videoSeen = 0
-    private var videoBytes = 0
-    /// DEBUG only: PAL_CALL_MEDIA_TYPE asks Muse for another media type, to see what
-    /// continuous_audio_video.delta's video_delta carries. The SDK always asks for audio.
-    private static var callMediaType: String {
-        #if DEBUG
-        if let value = ProcessInfo.processInfo.environment["PAL_CALL_MEDIA_TYPE"], !value.isEmpty { return value }
-        #endif
-        return "audio"
-    }
+
     private var replyHeard = false
     /// True from Muse's server hearing the person start to speak until it hears them stop.
     @Published private(set) var isUserSpeaking = false
@@ -93,6 +84,9 @@ final class MuseVoiceCall: ObservableObject {
     /// Width over height of Muse's video, so its window has no bars.
     @Published private(set) var videoAspect: CGFloat = 9.0 / 16.0
     static let videoCallsKey = "videoCallsWithAvatar"
+    static let greetingKey = "museGreetsFirst"
+    /// "Muse Greets First", on unless turned off, for both kinds of call.
+    static var greets: Bool { UserDefaults.standard.object(forKey: greetingKey) as? Bool ?? true }
     private static let mediaTimeout: TimeInterval = 10
     /// The "Video with Muse's avatar (Beta)" setting, on unless turned off: a call over the
     /// video-call media path, with Muse's own video. Off keeps the realtime voice call.
@@ -130,6 +124,7 @@ final class MuseVoiceCall: ObservableObject {
     /// Bumped when playback is flushed, so callbacks for discarded buffers are ignored.
     private var playbackGeneration = 0
     private var fenced = false
+    private var fenceQuietSince: TimeInterval?
     private var stopRequested = false
     private var timer: Timer?
     private var engineRunning = false
@@ -245,16 +240,18 @@ final class MuseVoiceCall: ObservableObject {
             connectMedia()
             return
         }
-        let admission = MuseVoiceEvents.line([
+        // No `device: "mcu-wearable"`, which the SDK sends: with it Muse filtered speech as on a
+        // wearable and dropped a call's first sentences (hatch.voice.input_suppressed), see
+        // facebookincubator/muse-gadget-sdk#344. Without it the first sentence is heard.
+        let start: [String: Any] = [
             "type": "hatch.voice.call.start",
             "call_id": callID,
-            "call_media_type": Self.callMediaType,
-            "device": "mcu-wearable",
+            "call_media_type": "audio",
             "device_id": runtime.deviceNodeID,
-            // Muse greets once it can listen. For its first 12-15 s a call answered every
-            // sentence with hatch.voice.input_suppressed, so the greeting is the signal to talk.
-            "proactive_greeting_enabled": true
-        ]) + MuseVoiceEvents.line(["type": "hatch.voice.capability.offer", "end_call_stop": 1])
+            "proactive_greeting_enabled": Self.greets
+        ]
+        let admission = MuseVoiceEvents.line(start)
+            + MuseVoiceEvents.line(["type": "hatch.voice.capability.offer", "end_call_stop": 1])
 
         var handlers = MuseDuplexHandlers()
         handlers.onStatus = { [weak self] status in
@@ -310,9 +307,10 @@ final class MuseVoiceCall: ObservableObject {
             "payload_b64": offer.payload.base64EncodedString(),
             "call_id": callID,
             "call_media_type": "video",
-            "device": "mcu-wearable",
+            // No mcu-wearable hint here either (see the voice call's admission); Muse admits the
+            // video call without it.
             "device_id": runtime.deviceNodeID,
-            "proactive_greeting_enabled": false,
+            "proactive_greeting_enabled": Self.greets,
             "enable_media_to_cosmos": cosmos
         ]
         runtime.postJSON(path: "/voice/calls/join", fields: body) { [weak self] response in
@@ -360,7 +358,8 @@ final class MuseVoiceCall: ObservableObject {
                     self.gateReady = true
                 }
                 media.requestKeyframe()
-                self.isMuseReady = true
+                // Ready once the greeting is heard (or after the usual fallback), as in voice calls.
+                self.isMuseReady = !Self.greets
                 self.lastActivity = Date()
                 self.phase = .listening
                 self.timer?.invalidate()
@@ -421,7 +420,6 @@ final class MuseVoiceCall: ObservableObject {
         isUserSpeaking = false
         isMuseReady = false
         missedSentence = false
-        trace("video_total[count=\(videoSeen),chars=\(videoBytes),media=\(Self.callMediaType)]")
         trace("ended")
         phase = .ended(reason)
         guard notify else { stream?.cancel(); return }
@@ -523,6 +521,7 @@ final class MuseVoiceCall: ObservableObject {
             withGate { gateReady = true }
             lastActivity = Date()
             phase = .listening
+            if !Self.greets { isMuseReady = true }
         case "hatch.voice.input_suppressed":
             isUserSpeaking = false
             missedSentence = true
@@ -565,19 +564,6 @@ final class MuseVoiceCall: ObservableObject {
                 if phase != .speaking { end(PalL10n.text("Muse завершил разговор")) }
             }
         default:
-            if let video = event["video_delta"] as? [String: Any] {
-                // Names and sizes only, never the content: does Muse send its avatar as video?
-                if videoSeen < 3 {
-                    let shape = video.keys.sorted().map { key -> String in
-                        if let text = video[key] as? String { return "\(key):\(text.count)" }
-                        if let object = video[key] as? [String: Any] { return "\(key){\(object.keys.sorted().joined(separator: ","))}" }
-                        return "\(key):\(Swift.type(of: video[key]!))"
-                    }.joined(separator: ",")
-                    trace("video[\(shape)]")
-                }
-                videoSeen += 1
-                videoBytes += (video.values.compactMap { $0 as? String }.map(\.count).reduce(0, +))
-            }
             if let pcm = MuseVoiceEvents.audio(from: event) { play(pcm) }
         }
     }
@@ -809,12 +795,28 @@ final class MuseVoiceCall: ObservableObject {
     }
 
     private func play(_ pcm: Data) {
-        guard !fenced, engineRunning, !pcm.isEmpty else { return }
+        guard engineRunning, !pcm.isEmpty else { return }
         let count = pcm.count / 2
         let rms = Self.rms(pcm)
+        if fenced {
+            // A video call has no events to say a new answer began. Its interrupted answer is
+            // dropped until Muse has been quiet for half a second; meanwhile the microphone stays
+            // open, so Muse hears the person who interrupted it.
+            guard media != nil else { return }
+            if rms >= Self.audibleRMS {
+                fenceQuietSince = nil
+                return
+            }
+            let quietSince = fenceQuietSince ?? uptime()
+            fenceQuietSince = quietSince
+            guard uptime() - quietSince >= 0.5 else { return }
+            fenced = false
+            fenceQuietSince = nil
+        }
         if rms >= Self.audibleRMS { audibleIn += 1 } else { quietIn += 1 }
-        // Muse streams silence between answers; it is not worth queueing or closing the mic for.
-        guard rms > 0 || unplayed > 0 else { return }
+        // Silence between answers is not worth queueing. Inside an answer it is: dropped pauses
+        // between words emptied the queue, and each next word then waited the 600 ms prebuffer.
+        guard rms > 0 || unplayed > 0 || replyAudioOpen else { return }
         guard let buffer = AVAudioPCMBuffer(pcmFormat: playbackFormat, frameCapacity: AVAudioFrameCount(count)),
               let channel = buffer.floatChannelData?[0] else { return }
         buffer.frameLength = AVAudioFrameCount(count)

@@ -126,3 +126,14 @@ Muse's face talking in sync, as in the Muse app. "Video with Muse's Avatar (Beta
 default, under "Live Conversation with Muse") chooses the video call; off keeps the realtime
 voice call. A video call has no captions: like the SDK's video_call.py it carries only media.
 The conversation still lands in the main chat, which refreshes when the call closes.
+
+### The first sentence, 2026-11-12
+
+Muse dropped a call's first sentences (`hatch.voice.input_suppressed` in the realtime call; the
+same loss, without events, in the video call) for the first 10-35 s, as reported in
+facebookincubator/muse-gadget-sdk#344. Muse's own app did not lose them. The cause was the
+`device: "mcu-wearable"` hint the SDK sends: without it, on the iPad, a voice call accepted the
+first and a 15-second second sentence with no suppression at all, and a video call was admitted
+and answered the first sentence. Calls now leave the hint out; voice notes keep it only with
+"Short Replies to Voice". A "Muse Greets First" setting (on by default) sets
+`proactive_greeting_enabled` for both kinds of call.

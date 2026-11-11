@@ -222,6 +222,9 @@ final class MuseAppModel: ObservableObject {
     @Published var videoCallsWithAvatar = UserDefaults.standard.object(forKey: MuseVoiceCall.videoCallsKey) as? Bool ?? true {
         didSet { UserDefaults.standard.set(videoCallsWithAvatar, forKey: MuseVoiceCall.videoCallsKey) }
     }
+    @Published var museGreetsFirst = MuseVoiceCall.greets {
+        didSet { UserDefaults.standard.set(museGreetsFirst, forKey: MuseVoiceCall.greetingKey) }
+    }
     @Published var isVoiceCallOpen = false
     /// True when the chat has room to show a call beside it (an iPad), so no card is presented.
     @Published var callIsInline = false
@@ -2134,7 +2137,7 @@ private struct MuseChatView: View {
                 }
                 .overlay(alignment: .top) {
                     if model.isVoiceCallOpen {
-                        MuseVoiceCallView(model: model, call: model.voiceCall, inline: true)
+                        MuseVoiceCallView(model: model, call: model.voiceCall, inline: true, beside: true)
                             .frame(height: geometry.size.height * 0.45)
                             .overlay(alignment: .bottom) { Divider() }
                     }
@@ -3076,6 +3079,8 @@ private struct MuseVoiceCallView: View {
     @ObservedObject var call: MuseVoiceCall
     /// On an iPad the call takes the avatar's own place beside the chat, on its background.
     var inline = false
+    /// In the wide band of an upright iPad, status and buttons go beside the picture.
+    var beside = false
     @Environment(\.colorScheme) private var colorScheme
 
     private var status: String {
@@ -3111,17 +3116,61 @@ private struct MuseVoiceCallView: View {
     }
 
     var body: some View {
-        VStack(spacing: 24) {
-            Spacer(minLength: 12)
-            if call.hasVideo {
-                // Muse's own video in a media call: its avatar, talking in sync with its voice.
-                // No frame or corners: on the call's white background Muse's video, which comes
-                // on white, blends in instead of sitting in it as a white card.
-                MuseVideoSurface(renderer: call.video)
-                    .aspectRatio(call.videoAspect, contentMode: .fit)
-                    .frame(maxWidth: inline ? .infinity : 340, maxHeight: inline ? .infinity : 420)
-                    .layoutPriority(1)
+        Group {
+            if beside {
+                // A wide band (an iPad held upright): the picture as tall as the band, with the
+                // status and buttons beside it, so neither leaves the other empty space.
+                HStack(spacing: 16) {
+                    face.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    VStack(spacing: 14) {
+                        info
+                        extras
+                        controls
+                    }
+                    .frame(width: 300)
+                }
+                .padding(12)
+            } else if inline {
+                // A tall panel (an iPad lying sideways): the picture takes all the height the
+                // compact status and buttons below it leave.
+                VStack(spacing: 12) {
+                    face.frame(maxWidth: .infinity, maxHeight: .infinity).layoutPriority(1)
+                    info
+                    extras
+                    controls
+                }
+                .padding(12)
             } else {
+                VStack(spacing: 20) {
+                    Spacer(minLength: 12)
+                    face
+                    info
+                    Spacer()
+                    extras
+                    controls
+                    Spacer(minLength: 24)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Group {
+            if call.hasVideo { Color.white } else if inline { MuseTheme.bar } else { MuseTheme.background }
+        }.ignoresSafeArea())
+        // Text and buttons stay readable on the white of Muse's video in dark mode too.
+        .environment(\.colorScheme, call.hasVideo ? .light : colorScheme)
+        // A swipe must not leave the microphone open behind a closed card.
+        .interactiveDismissDisabled(call.phase.isActive)
+    }
+
+    @ViewBuilder private var face: some View {
+        if call.hasVideo {
+            // Muse's own video in a media call: its avatar, talking in sync with its voice.
+            // No frame or corners: on the call's white background Muse's video, which comes
+            // on white, blends in instead of sitting in it as a white card.
+            MuseVideoSurface(renderer: call.video)
+                .aspectRatio(call.videoAspect, contentMode: .fit)
+                .frame(maxWidth: inline ? .infinity : 340, maxHeight: inline ? .infinity : 420)
+        } else {
             ZStack {
                 if let data = model.agentAvatar, let image = UIImage(data: data) {
                     Image(uiImage: image).resizable().scaledToFill()
@@ -3135,74 +3184,67 @@ private struct MuseVoiceCallView: View {
                     MuseAvatarPlayer(files: model.avatarFiles, name: avatarAnimation, version: model.avatarVersion)
                 }
             }
-            .frame(width: 160, height: 160)
+            .aspectRatio(1, contentMode: .fit)
+            .frame(maxWidth: inline ? .infinity : 160, maxHeight: inline ? .infinity : 160)
             .background(MuseTheme.elevated)
             .clipShape(Circle())
             .overlay(Circle().stroke(call.phase == .speaking ? MuseTheme.accent : MuseTheme.stroke, lineWidth: 4))
-            }
+        }
+    }
 
+    private var info: some View {
+        VStack(spacing: 8) {
             Label(status, systemImage: statusIcon)
                 .font(.headline)
                 .multilineTextAlignment(.center)
-
-            VStack(alignment: .leading, spacing: 12) {
-                if !call.heard.isEmpty {
-                    Text(PalL10n.format("voice.call_heard_format", call.heard))
-                        .font(.subheadline)
-                        .foregroundColor(MuseTheme.secondary)
-                }
-                if !call.reply.isEmpty {
-                    Text(call.reply).font(.body)
-                }
+            if !call.heard.isEmpty {
+                Text(PalL10n.format("voice.call_heard_format", call.heard))
+                    .font(.subheadline)
+                    .foregroundColor(MuseTheme.secondary)
+                    .lineLimit(inline ? 2 : nil)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 24)
-
-            Spacer()
-
-            // Voice Isolation needs an A12 chip or later; iOS lets only the person pick it.
-            if call.phase.isActive, MuseVoiceCall.canPickMicrophoneMode {
-                Button(action: MuseVoiceCall.showMicrophoneModes) {
-                    Label(PalL10n.text("Режим микрофона"), systemImage: "waveform.badge.mic")
-                        .font(.footnote)
-                }
+            if !call.reply.isEmpty {
+                Text(call.reply)
+                    .font(.body)
+                    .lineLimit(inline ? 3 : nil)
             }
-
-            if !call.isVideoCall, model.avatarFiles[MuseAppModel.callSpeakingAnimation] == nil, !model.callAvatarRequested {
-                Button(action: model.requestCallAvatar) {
-                    Label(PalL10n.text("Попросить Muse анимацию губ для звонков"), systemImage: "mouth")
-                        .font(.footnote)
-                }
-                .disabled(!model.canSendToMuse)
-            }
-
-            if call.phase.isActive {
-                HStack(spacing: 28) {
-                    roundButton(call.isMuted ? "mic.slash.fill" : "mic.fill",
-                                label: call.isMuted ? "Включить микрофон" : "Выключить микрофон",
-                                color: MuseTheme.elevated) { call.isMuted.toggle() }
-                    if call.phase == .speaking {
-                        roundButton("hand.raised.fill", label: "Перебить", color: MuseTheme.elevated) { call.interrupt() }
-                    }
-                    roundButton("phone.down.fill", label: "Завершить разговор", color: .red) { model.closeVoiceCall() }
-                }
-            } else {
-                HStack(spacing: 28) {
-                    roundButton("phone.fill", label: "Позвонить снова", color: MuseTheme.accent) { call.start() }
-                    roundButton("xmark", label: "Закрыть", color: MuseTheme.elevated) { model.closeVoiceCall() }
-                }
-            }
-            Spacer(minLength: 24)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.horizontal, inline ? 16 : 0)
-        .background(Group {
-            if call.hasVideo { Color.white } else if inline { MuseTheme.bar } else { MuseTheme.background }
-        }.ignoresSafeArea())
-        // Text and buttons stay readable on the white of Muse's video in dark mode too.
-        .environment(\.colorScheme, call.hasVideo ? .light : colorScheme)
-        // A swipe must not leave the microphone open behind a closed card.
-        .interactiveDismissDisabled(call.phase.isActive)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, inline ? 0 : 24)
+    }
+
+    @ViewBuilder private var extras: some View {
+        // Voice Isolation needs an A12 chip or later; iOS lets only the person pick it.
+        if call.phase.isActive, MuseVoiceCall.canPickMicrophoneMode {
+            Button(action: MuseVoiceCall.showMicrophoneModes) {
+                Label(PalL10n.text("Режим микрофона"), systemImage: "waveform.badge.mic")
+                    .font(.footnote)
+            }
+        }
+        if !call.isVideoCall, model.avatarFiles[MuseAppModel.callSpeakingAnimation] == nil, !model.callAvatarRequested {
+            Button(action: model.requestCallAvatar) {
+                Label(PalL10n.text("Попросить Muse анимацию губ для звонков"), systemImage: "mouth")
+                    .font(.footnote)
+            }
+            .disabled(!model.canSendToMuse)
+        }
+    }
+
+    @ViewBuilder private var controls: some View {
+        HStack(spacing: inline ? 16 : 28) {
+            if call.phase.isActive {
+                roundButton(call.isMuted ? "mic.slash.fill" : "mic.fill",
+                            label: call.isMuted ? "Включить микрофон" : "Выключить микрофон",
+                            color: MuseTheme.elevated) { call.isMuted.toggle() }
+                if call.phase == .speaking {
+                    roundButton("hand.raised.fill", label: "Перебить", color: MuseTheme.elevated) { call.interrupt() }
+                }
+                roundButton("phone.down.fill", label: "Завершить разговор", color: .red) { model.closeVoiceCall() }
+            } else {
+                roundButton("phone.fill", label: "Позвонить снова", color: MuseTheme.accent) { call.start() }
+                roundButton("xmark", label: "Закрыть", color: MuseTheme.elevated) { model.closeVoiceCall() }
+            }
+        }
     }
 
     private func roundButton(_ icon: String, label: String, color: Color, action: @escaping () -> Void) -> some View {
@@ -3210,7 +3252,7 @@ private struct MuseVoiceCallView: View {
             Image(systemName: icon)
                 .font(.title2)
                 .foregroundColor(color == MuseTheme.elevated ? .primary : .white)
-                .frame(width: 68, height: 68)
+                .frame(width: inline ? 56 : 68, height: inline ? 56 : 68)
                 .background(color)
                 .clipShape(Circle())
         }
@@ -3558,6 +3600,11 @@ private struct MuseSettingsView: View {
                             title: "Видео с аватаром Muse (бета)",
                             detail: PalL10n.text("В разговоре Muse показывает своё лицо и говорит губами в такт, как в приложении Muse. Это видеозвонок через медиасервер Meta, около 1 Мбит/с. Выключите, чтобы говорить только голосом"),
                             isOn: $model.videoCallsWithAvatar
+                        )
+                        SettingsToggleRow(
+                            title: "Muse здоровается первым",
+                            detail: PalL10n.text("В начале разговора Muse сам здоровается, и слышно, что связь установлена. Работает и с видео, и без него"),
+                            isOn: $model.museGreetsFirst
                         )
                     }
                     SettingsToggleRow(
