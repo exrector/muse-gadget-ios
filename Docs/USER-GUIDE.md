@@ -41,6 +41,17 @@ The chat is the main screen. Messages you send here go into your main Muse chat,
   - **Tap:** tap to start, tap again to send.
   - **Hold:** hold while you speak, release to send.
 
+### Main and side chats
+
+Tap the chat-bubble button beside the Muse name:
+
+- **Main Chat** returns to the account's main conversation.
+- **New Chat** prepares a separate side chat. Muse creates it when you send its first message.
+- **Refresh Chats** reloads recent chats that the gadget credential is allowed to see.
+- **Connect Chat** attaches a chat created in the main Muse app. Copy that chat's link in Muse, open **Connect Chat** in Pal Again, paste it, and optionally give it a local name.
+
+Muse does not send the account's chat titles to gadget credentials. A connected chat therefore uses the local name you enter, or a short name made from its ID. You can rename it later by connecting the same link again and entering a name. There is no one-chat limit: every distinct chat link or ID becomes a separate entry. If the same chat is pasted twice, Pal Again opens the existing entry instead of duplicating it.
+
 ## What Muse can do with the gadget
 
 Ask Muse in the chat, or from your main phone. If you have several gadgets, say which one you mean, such as "turn on the flashlight on the iPhone".
@@ -116,6 +127,7 @@ The gear button opens **Settings**: under the avatar on an iPad, and in the head
 | **Chat history over Wi-Fi** | Direct sync between gadgets. Off by default, and still being tested |
 | **Chat history in iCloud** | Sync through iCloud. On by default |
 | **Keep Screen Awake** | Keeps the screen on while paired |
+| **Help and Guide** | Explains pairing, chats, attachments, voice recording and permissions inside the app |
 | **Diagnostics** | Technical log, including the result of each command |
 | **Clear Chat History** | Deletes the saved chat |
 | **Replace SDK Token** | Stores a different token |
@@ -127,7 +139,7 @@ The app keeps your latest 200 messages on the device, including small photo prev
 
 **iCloud sync** copies the text to your other devices on the same Apple ID, usually within a few minutes. Photos stay on the device that took them, and others show **Photo from another device**. Devices on different Apple IDs do not sync.
 
-Clearing the history with sync on also clears it on your other synced devices. Your conversation in Muse itself stays either way. Messages Muse sends while the app is closed do not appear in the gadget, because Muse offers no way to fetch past messages.
+Clearing the history with sync on also clears it on your other synced devices. Your conversation in Muse itself stays either way. On reconnect, Pal Again imports recent events that Muse exposes to the gadget credential. This is not a complete account chat list, so a side chat created in the main Muse app may still need **Connect Chat** once.
 
 ## Privacy
 

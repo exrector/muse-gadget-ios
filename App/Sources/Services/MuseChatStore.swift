@@ -9,6 +9,7 @@ final class MuseChatStore {
         let author: String
         let text: String
         let museMessageID: String?
+        var sessionID: String? = nil
         let imageFile: String?
         var createdAt: Date?
         var updatedAt: Date?
@@ -60,6 +61,7 @@ final class MuseChatStore {
                     text: stored.text,
                     image: image,
                     museMessageID: stored.museMessageID,
+                    sessionID: stored.sessionID,
                     createdAt: createdAt,
                     updatedAt: stored.updatedAt ?? createdAt,
                     hasRemoteImage: stored.hasRemoteImage ?? false
@@ -110,6 +112,7 @@ final class MuseChatStore {
                     author: item.author.storedName,
                     text: item.text,
                     museMessageID: item.museMessageID,
+                    sessionID: item.sessionID,
                     imageFile: try writeImageIfNeeded(item),
                     createdAt: item.createdAt,
                     updatedAt: item.updatedAt,

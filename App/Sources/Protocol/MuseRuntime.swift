@@ -254,6 +254,7 @@ final class MuseRuntime: NSObject {
     private var nextStreamID: Int64 = 2
     private var pendingRequests: [Int64: PendingHTTPRequest] = [:]
     private var chatSubscriptionID: Int64?
+    private var chatSessionID: String?
     private var chatDecoder = MuseNDJSONDecoder()
     private var outboundMessages: [MuseOutboundMessage] = []
     private var isSendingMessage = false
@@ -335,18 +336,23 @@ final class MuseRuntime: NSObject {
         }
     }
 
-    func sendChat(_ message: String, completion: @escaping (Result<[String: Any], Error>) -> Void) {
+    func sendChat(
+        _ message: String,
+        sessionID: String? = nil,
+        completion: @escaping (Result<[String: Any], Error>) -> Void
+    ) {
         let clean = message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else {
             completion(.failure(MuseRuntimeError.invalidResponse))
             return
         }
-        postChat(["message": clean, "output_modality": "text"], completion: completion)
+        postChat(["message": clean, "output_modality": "text"], sessionID: sessionID, completion: completion)
     }
 
     func sendImage(
         jpeg: Data,
         message: String = "",
+        sessionID: String? = nil,
         completion: @escaping (Result<[String: Any], Error>) -> Void
     ) {
         postMedia(
@@ -358,6 +364,7 @@ final class MuseRuntime: NSObject {
             ],
             byteCount: jpeg.count,
             message: message,
+            sessionID: sessionID,
             completion: completion
         )
     }
@@ -365,6 +372,7 @@ final class MuseRuntime: NSObject {
     func sendVoiceNote(
         wav: Data,
         message: String = "",
+        sessionID: String? = nil,
         completion: @escaping (Result<[String: Any], Error>) -> Void
     ) {
         postMedia(
@@ -376,6 +384,28 @@ final class MuseRuntime: NSObject {
             ],
             byteCount: wav.count,
             message: message,
+            sessionID: sessionID,
+            completion: completion
+        )
+    }
+
+    func sendDocument(
+        data: Data,
+        filename: String,
+        mimeType: String,
+        sessionID: String? = nil,
+        completion: @escaping (Result<[String: Any], Error>) -> Void
+    ) {
+        postMedia(
+            item: [
+                "type": "file",
+                "mime_type": mimeType,
+                "filename": filename,
+                "data_base64": data.base64EncodedString()
+            ],
+            byteCount: data.count,
+            message: "",
+            sessionID: sessionID,
             completion: completion
         )
     }
@@ -384,6 +414,7 @@ final class MuseRuntime: NSObject {
         item: [String: Any],
         byteCount: Int,
         message: String,
+        sessionID: String?,
         completion: @escaping (Result<[String: Any], Error>) -> Void
     ) {
         guard byteCount > 0, byteCount <= Self.maxMediaBytes else {
@@ -395,8 +426,48 @@ final class MuseRuntime: NSObject {
         let text: [[String: Any]] = clean.isEmpty ? [] : [["type": "text", "text": clean]]
         postChat(
             ["message": clean, "output_modality": "text", "items": text + [item]],
+            sessionID: sessionID,
             completion: completion
         )
+    }
+
+    func setChatSession(_ sessionID: String?) {
+        let clean = sessionID?.trimmingCharacters(in: .whitespacesAndNewlines)
+        queue.async {
+            guard self.chatSessionID != clean else { return }
+            self.chatSessionID = clean
+            if let streamID = self.chatSubscriptionID {
+                self.resetStream(streamID, reason: "chat changed")
+                self.chatSubscriptionID = nil
+                self.chatDecoder = MuseNDJSONDecoder()
+            }
+            self.openChatSubscription()
+        }
+    }
+
+    func readVMDocument(path: String, completion: @escaping (Result<Data, Error>) -> Void) {
+        guard let remotePath = MuseDocumentPath.remotePath(path) else {
+            completion(.failure(MuseRuntimeError.invalidResponse)); return
+        }
+        queue.async {
+            self.readVMDocumentChunk(path: remotePath, offset: 0, accumulated: Data()) { result in
+                DispatchQueue.main.async { completion(result) }
+            }
+        }
+    }
+
+    func writeVMDocument(path: String, data: Data, completion: @escaping (Result<Void, Error>) -> Void) {
+        guard let remotePath = MuseDocumentPath.remotePath(path) else {
+            completion(.failure(MuseRuntimeError.invalidResponse)); return
+        }
+        guard !data.isEmpty, data.count <= MuseDocumentPath.maxBytes else {
+            completion(.failure(MuseRuntimeError.payloadTooLarge)); return
+        }
+        queue.async {
+            self.writeVMDocumentChunk(path: remotePath, data: data, offset: 0) { result in
+                DispatchQueue.main.async { completion(result) }
+            }
+        }
     }
 
     /// Reads recent server history through the same authenticated Noise session as chat.
@@ -422,6 +493,7 @@ final class MuseRuntime: NSObject {
 
     private func postChat(
         _ fields: [String: Any],
+        sessionID: String? = nil,
         completion: @escaping (Result<[String: Any], Error>) -> Void
     ) {
         queue.async {
@@ -432,6 +504,7 @@ final class MuseRuntime: NSObject {
             do {
                 var request = fields
                 request["device_id"] = self.identity.nodeID
+                if let sessionID, !sessionID.isEmpty { request["session_id"] = sessionID }
                 let body = try JSONSerialization.data(withJSONObject: request)
                 self.performRequest(
                     method: "POST",
@@ -753,7 +826,8 @@ final class MuseRuntime: NSObject {
         chatSubscriptionID = streamID
         chatDecoder = MuseNDJSONDecoder()
         do {
-            let body = try JSONSerialization.data(withJSONObject: [:])
+            let fields: [String: Any] = chatSessionID.map { ["session_id": $0] } ?? [:]
+            let body = try JSONSerialization.data(withJSONObject: fields)
             let frame = MuseNoiseWire.applicationRequest(
                 streamID: streamID,
                 method: "POST",
@@ -794,6 +868,79 @@ final class MuseRuntime: NSObject {
                 streamID: streamID,
                 result: .success(MuseHTTPResult(status: response.status, body: pending.body))
             )
+        }
+    }
+
+    private func readVMDocumentChunk(
+        path: String,
+        offset: Int,
+        accumulated: Data,
+        completion: @escaping (Result<Data, Error>) -> Void
+    ) {
+        let body: Data
+        do { body = try JSONSerialization.data(withJSONObject: ["path": path, "offset": offset, "len": 1024]) }
+        catch { completion(.failure(error)); return }
+        performRequest(method: "POST", path: "/fs/read", body: body,
+                       headers: [MuseHTTPHeader(name: "Content-Type", value: "application/json")]) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .failure(let error): completion(.failure(error))
+            case .success(let response):
+                guard (200..<300).contains(response.status),
+                      let root = try? JSONSerialization.jsonObject(with: response.body) as? [String: Any],
+                      root["ok"] as? Bool != false else {
+                    completion(.failure(MuseRuntimeError.requestFailed(response.status))); return
+                }
+                let payload = root["result"] as? [String: Any] ?? root
+                let chunk: Data
+                if let encoded = payload["data_base64"] as? String, let decoded = Data(base64Encoded: encoded) {
+                    chunk = decoded
+                } else if let text = payload["text"] as? String, let decoded = text.data(using: .utf8) {
+                    chunk = decoded
+                } else {
+                    completion(.failure(MuseRuntimeError.invalidResponse)); return
+                }
+                var next = accumulated
+                guard next.count + chunk.count <= MuseDocumentPath.maxBytes else {
+                    completion(.failure(MuseRuntimeError.payloadTooLarge)); return
+                }
+                next.append(chunk)
+                let eof = payload["eof"] as? Bool ?? (chunk.count < 1024)
+                if eof || chunk.isEmpty { completion(.success(next)) }
+                else { self.readVMDocumentChunk(path: path, offset: offset + chunk.count, accumulated: next, completion: completion) }
+            }
+        }
+    }
+
+    private func writeVMDocumentChunk(
+        path: String,
+        data: Data,
+        offset: Int,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        let end = min(offset + 16 * 1024, data.count)
+        let chunk = data.subdata(in: offset..<end)
+        let fields: [String: Any] = [
+            "path": path, "data_base64": chunk.base64EncodedString(),
+            "overwrite": offset == 0, "append": offset > 0, "create_parent": true
+        ]
+        let body: Data
+        do { body = try JSONSerialization.data(withJSONObject: fields) }
+        catch { completion(.failure(error)); return }
+        performRequest(method: "POST", path: "/fs/write", body: body,
+                       headers: [MuseHTTPHeader(name: "Content-Type", value: "application/json")]) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .failure(let error): completion(.failure(error))
+            case .success(let response):
+                guard (200..<300).contains(response.status),
+                      let root = try? JSONSerialization.jsonObject(with: response.body) as? [String: Any],
+                      root["ok"] as? Bool != false else {
+                    completion(.failure(MuseRuntimeError.requestFailed(response.status))); return
+                }
+                if end == data.count { completion(.success(())) }
+                else { self.writeVMDocumentChunk(path: path, data: data, offset: end, completion: completion) }
+            }
         }
     }
 

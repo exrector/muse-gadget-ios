@@ -1,5 +1,7 @@
 import SwiftUI
 import UIKit
+import QuickLook
+import UniformTypeIdentifiers
 
 struct MuseChatItem: Identifiable {
     enum Author: Equatable { case user, muse, system }
@@ -11,6 +13,8 @@ struct MuseChatItem: Identifiable {
     }
     var image: UIImage?
     var museMessageID: String?
+    /// Nil is the main Muse chat. A value selects a side chat on the same account.
+    var sessionID: String?
     let createdAt: Date
     var updatedAt: Date
     /// The photo was sent from another device; only its text syncs through iCloud.
@@ -22,6 +26,7 @@ struct MuseChatItem: Identifiable {
         text: String,
         image: UIImage? = nil,
         museMessageID: String? = nil,
+        sessionID: String? = nil,
         createdAt: Date = Date(),
         updatedAt: Date? = nil,
         hasRemoteImage: Bool = false
@@ -31,9 +36,61 @@ struct MuseChatItem: Identifiable {
         self.text = text
         self.image = image
         self.museMessageID = museMessageID
+        self.sessionID = sessionID
         self.createdAt = createdAt
         self.updatedAt = updatedAt ?? createdAt
         self.hasRemoteImage = hasRemoteImage
+    }
+}
+
+struct MuseChatSession: Codable, Equatable, Identifiable {
+    let id: String
+    var title: String
+    var hasCustomTitle: Bool
+
+    init(id: String, title: String, hasCustomTitle: Bool = false) {
+        self.id = id
+        self.title = title
+        self.hasCustomTitle = hasCustomTitle
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, title, hasCustomTitle }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id)
+        title = try values.decode(String.self, forKey: .title)
+        hasCustomTitle = try values.decodeIfPresent(Bool.self, forKey: .hasCustomTitle) ?? false
+    }
+}
+
+enum MuseChatSessionReference {
+    static func id(from raw: String) -> String? {
+        let clean = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return nil }
+        let uuidPattern = #"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"#
+        if let components = URLComponents(string: clean), components.scheme != nil {
+            let preferredKeys = ["session_id", "sessionId", "chat_id", "chatId", "thread_id", "conversation_id"]
+            for key in preferredKeys {
+                if let value = components.queryItems?.first(where: { $0.name == key })?.value,
+                   let match = uuid(in: value, pattern: uuidPattern, last: true) {
+                    return match
+                }
+            }
+            if let match = uuid(in: components.path, pattern: uuidPattern, last: true) { return match }
+        }
+        if let match = uuid(in: clean, pattern: uuidPattern, last: true) { return match }
+        guard clean.count <= 64,
+              clean.range(of: #"^[A-Za-z0-9-]+$"#, options: .regularExpression) != nil else { return nil }
+        return clean
+    }
+
+    private static func uuid(in value: String, pattern: String, last: Bool) -> String? {
+        guard let expression = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let matches = expression.matches(in: value, range: NSRange(value.startIndex..., in: value))
+        guard let match = last ? matches.last : matches.first,
+              let range = Range(match.range, in: value) else { return nil }
+        return String(value[range]).lowercased()
     }
 }
 
@@ -123,6 +180,17 @@ final class MuseAppModel: ObservableObject {
             environment.chatPeers.publish(chatItems, clearedBefore: environment.chatCloud.clearedBefore)
         }
     }
+    @Published var chatSessions: [MuseChatSession] = []
+    @Published var activeChatSessionID: String?
+    @Published var isRefreshingChats = false
+    @Published var isConnectChatOpen = false
+    @Published var connectChatReference = ""
+    @Published var connectChatName = ""
+    @Published var documentFiles: [URL] = []
+    @Published var documentStatus: String?
+    @Published var isTransferringDocument = false
+    @Published var isDocumentsOpen = false
+    @Published var fullScreenReply: MuseChatItem?
     @Published var nearbyGadgetCount = 0
     @Published var isPeerSyncEnabled: Bool {
         didSet {
@@ -191,9 +259,11 @@ final class MuseAppModel: ObservableObject {
     private static let keepScreenAwakeKey = "keepScreenAwake"
     private static let voiceRecordModeKey = "voiceRecordMode"
     private static let peerSyncKey = "peerSyncEnabled"
+    private static let chatSessionsKey = "museChatSessions"
+    private static let activeChatSessionKey = "activeChatSession"
     private var voiceHintReset: DispatchWorkItem?
     private var waitingForSettingsReturn = false
-    private let chatTimeline = MuseChatTimeline()
+    private var chatTimeline = MuseChatTimeline()
     private var replyItemIDs: [String: UUID] = [:]
     private var replyTimeout: DispatchWorkItem?
     private var recordingTimer: Timer?
@@ -205,6 +275,10 @@ final class MuseAppModel: ObservableObject {
         self.environment = environment
         let history = environment.chatStore.load()
         chatItems = history
+        var savedSessions = Self.loadChatSessions()
+        Self.discoverChatSessions(in: history, sessions: &savedSessions)
+        chatSessions = savedSessions
+        activeChatSessionID = UserDefaults.standard.string(forKey: Self.activeChatSessionKey)
         for item in history {
             if let messageID = item.museMessageID { replyItemIDs[messageID] = item.id }
         }
@@ -231,9 +305,136 @@ final class MuseAppModel: ObservableObject {
 
         refreshPermissions()
         bindServices()
+        refreshDocuments()
+        environment.runtime.setChatSession(activeChatSessionID)
     }
 
     var deviceName: String { environment.identity.bluetoothName }
+
+    var visibleChatItems: [MuseChatItem] { chatItems.filter { $0.sessionID == activeChatSessionID } }
+
+    var activeChatTitle: String {
+        guard let activeChatSessionID else { return PalL10n.text("Основной чат") }
+        return chatSessions.first(where: { $0.id == activeChatSessionID })?.title
+            ?? PalL10n.text("Дополнительный чат")
+    }
+
+    var latestMuseReply: MuseChatItem? {
+        visibleChatItems.last(where: { $0.author == .muse && !$0.text.isEmpty })
+    }
+
+    func createSideChat() {
+        guard !isSendingChat, !isAwaitingReply else { return }
+        let session = MuseChatSession(
+            id: UUID().uuidString.lowercased(),
+            title: PalL10n.text("Новый чат")
+        )
+        chatSessions.append(session)
+        persistChatSessions()
+        selectChat(session.id)
+    }
+
+    func selectChat(_ sessionID: String?) {
+        guard !isSendingChat, !isAwaitingReply, activeChatSessionID != sessionID else { return }
+        activeChatSessionID = sessionID
+        if let sessionID { UserDefaults.standard.set(sessionID, forKey: Self.activeChatSessionKey) }
+        else { UserDefaults.standard.removeObject(forKey: Self.activeChatSessionKey) }
+        chatTimeline = MuseChatTimeline()
+        replyItemIDs = Dictionary(uniqueKeysWithValues: visibleChatItems.compactMap { item in
+            item.museMessageID.map { ($0, item.id) }
+        })
+        environment.runtime.setChatSession(sessionID)
+    }
+
+    func refreshDocuments() { documentFiles = environment.documents.files() }
+
+    func downloadDocument(_ name: String) {
+        guard !isTransferringDocument, let remote = MuseDocumentPath.remotePath(name) else {
+            documentStatus = PalL10n.text("Введите безопасное имя файла."); return
+        }
+        isTransferringDocument = true
+        documentStatus = PalL10n.text("Получаем файл из Muse…")
+        environment.runtime.readVMDocument(path: remote) { [weak self] result in
+            guard let self else { return }
+            self.isTransferringDocument = false
+            switch result {
+            case .success(let data):
+                do {
+                    _ = try self.environment.documents.save(data, named: remote)
+                    self.refreshDocuments()
+                    self.documentStatus = PalL10n.text("Файл сохранён на устройстве.")
+                } catch { self.documentStatus = Self.describe(error) }
+            case .failure(let error): self.documentStatus = Self.describe(error)
+            }
+        }
+    }
+
+    func uploadDocument(_ url: URL) {
+        guard !isTransferringDocument else { return }
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+        guard let data = try? Data(contentsOf: url, options: .mappedIfSafe),
+              !data.isEmpty, data.count <= MuseDocumentPath.maxBytes,
+              let remote = MuseDocumentPath.remotePath(url.lastPathComponent) else {
+            documentStatus = PalL10n.text("Файл недоступен или больше 1 МБ."); return
+        }
+        isTransferringDocument = true
+        documentStatus = PalL10n.text("Отправляем файл в Muse…")
+        environment.runtime.writeVMDocument(path: remote, data: data) { [weak self] result in
+            guard let self else { return }
+            self.isTransferringDocument = false
+            switch result {
+            case .success:
+                _ = try? self.environment.documents.save(data, named: remote)
+                self.refreshDocuments()
+                self.documentStatus = PalL10n.text("Файл доступен Muse.")
+            case .failure(let error): self.documentStatus = Self.describe(error)
+            }
+        }
+    }
+
+    func removeLocalDocument(_ url: URL) {
+        environment.documents.remove(url)
+        refreshDocuments()
+    }
+
+    private func persistChatSessions() {
+        if let data = try? JSONEncoder().encode(chatSessions) {
+            UserDefaults.standard.set(data, forKey: Self.chatSessionsKey)
+        }
+    }
+
+    private static func loadChatSessions() -> [MuseChatSession] {
+        guard let data = UserDefaults.standard.data(forKey: chatSessionsKey) else { return [] }
+        return (try? JSONDecoder().decode([MuseChatSession].self, from: data)) ?? []
+    }
+
+    private static func discoverChatSessions(in items: [MuseChatItem], sessions: inout [MuseChatSession]) {
+        let orderedIDs = items.compactMap(\.sessionID).reduce(into: [String]()) { ids, id in
+            if !ids.contains(id) { ids.append(id) }
+        }
+        for id in orderedIDs {
+            let title = automaticChatTitle(items.first { $0.sessionID == id && $0.author == .user }?.text)
+                ?? automaticChatTitle(items.first { $0.sessionID == id }?.text)
+                ?? PalL10n.text("Дополнительный чат")
+            if let index = sessions.firstIndex(where: { $0.id == id }), !sessions[index].hasCustomTitle {
+                sessions[index].title = title
+            } else if !sessions.contains(where: { $0.id == id }) {
+                sessions.append(MuseChatSession(id: id, title: title))
+            }
+        }
+        if let data = try? JSONEncoder().encode(sessions) { UserDefaults.standard.set(data, forKey: chatSessionsKey) }
+    }
+
+    private static func automaticChatTitle(_ text: String?) -> String? {
+        guard let text else { return nil }
+        let clean = text
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return nil }
+        return clean.count <= 42 ? clean : String(clean.prefix(41)) + "…"
+    }
 
     var pairedAccount: String? {
         let value = environment.credentialStore.loadDeviceCredentials()?.username ?? ""
@@ -397,6 +598,7 @@ final class MuseAppModel: ObservableObject {
         ) { [weak self] _ in
             guard let self else { return }
             self.environment.runtime.resumeIfNeeded()
+            if self.runtimeState == .registered { self.syncServerHistory() }
             self.environment.chatCloud.synchronize()
             self.applyCloudHistory()
             self.startPeerSyncIfAllowed()
@@ -557,11 +759,11 @@ final class MuseAppModel: ObservableObject {
     func sendChat(_ text: String) {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty, canSendToMuse else { return }
-        let item = MuseChatItem(author: .user, text: clean)
+        let item = MuseChatItem(author: .user, text: clean, sessionID: activeChatSessionID)
         chatItems.append(item)
         pendingUserItemID = item.id
         let generation = beginRequest()
-        environment.runtime.sendChat(clean) { [weak self] result in
+        environment.runtime.sendChat(clean, sessionID: activeChatSessionID) { [weak self] result in
             self?.finishRequest(result, generation: generation)
         }
     }
@@ -582,16 +784,51 @@ final class MuseAppModel: ObservableObject {
                     self.finishRequest(.failure(MuseRuntimeError.payloadTooLarge), generation: generation)
                     return
                 }
-                let item = MuseChatItem(author: .user, text: clean, image: preview)
+                let item = MuseChatItem(
+                    author: .user,
+                    text: clean,
+                    image: preview,
+                    sessionID: self.activeChatSessionID
+                )
                 self.chatItems.append(item)
                 self.pendingUserItemID = item.id
                 self.environment.runtime.sendImage(
                     jpeg: jpeg,
-                    message: clean
+                    message: clean,
+                    sessionID: self.activeChatSessionID
                 ) { [weak self] result in
                     self?.finishRequest(result, generation: generation)
                 }
             }
+        }
+    }
+
+    func sendDocument(_ url: URL) {
+        guard canSendToMuse else { return }
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+        guard let data = try? Data(contentsOf: url, options: .mappedIfSafe),
+              !data.isEmpty, data.count <= 2 * 1024 * 1024 else {
+            alertMessage = PalL10n.text("Документ недоступен или больше 2 МБ.")
+            return
+        }
+        let filename = url.lastPathComponent.isEmpty ? "document" : url.lastPathComponent
+        let mime = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+        let item = MuseChatItem(
+            author: .user,
+            text: "📎 " + filename,
+            sessionID: activeChatSessionID
+        )
+        chatItems.append(item)
+        pendingUserItemID = item.id
+        let generation = beginRequest()
+        environment.runtime.sendDocument(
+            data: data,
+            filename: filename,
+            mimeType: mime,
+            sessionID: activeChatSessionID
+        ) { [weak self] result in
+            self?.finishRequest(result, generation: generation)
         }
     }
 
@@ -690,12 +927,17 @@ final class MuseAppModel: ObservableObject {
     }
 
     private func send(_ note: MusePendingVoiceNote) {
-        let item = MuseChatItem(author: .user, text: PalL10n.format("voice.note_format", note.seconds))
+        let item = MuseChatItem(
+            author: .user,
+            text: PalL10n.format("voice.note_format", note.seconds),
+            sessionID: activeChatSessionID
+        )
         chatItems.append(item)
         pendingUserItemID = item.id
         let generation = beginRequest()
         environment.runtime.sendVoiceNote(
-            wav: note.wav
+            wav: note.wav,
+            sessionID: activeChatSessionID
         ) { [weak self] result in
             self?.finishRequest(result, generation: generation)
         }
@@ -781,7 +1023,11 @@ final class MuseAppModel: ObservableObject {
             pendingUserItemID = nil
             chatTimeline.abandonRequest()
             finishWaitingForReply()
-            chatItems.append(MuseChatItem(author: .system, text: Self.describe(error)))
+            chatItems.append(MuseChatItem(
+                author: .system,
+                text: Self.describe(error),
+                sessionID: activeChatSessionID
+            ))
         }
     }
 
@@ -807,7 +1053,12 @@ final class MuseAppModel: ObservableObject {
                    let index = chatItems.firstIndex(where: { $0.id == itemID }) {
                     chatItems[index].text = text
                 } else if !text.isEmpty {
-                    let item = MuseChatItem(author: .muse, text: text, museMessageID: messageID)
+                    let item = MuseChatItem(
+                        author: .muse,
+                        text: text,
+                        museMessageID: messageID,
+                        sessionID: activeChatSessionID
+                    )
                     replyItemIDs[messageID] = item.id
                     chatItems.append(item)
                 }
@@ -835,9 +1086,11 @@ final class MuseAppModel: ObservableObject {
     private func syncServerHistory() {
         guard !serverHistorySyncInFlight else { return }
         serverHistorySyncInFlight = true
-        environment.runtime.fetchChatHistory(limit: 20) { [weak self] result in
+        isRefreshingChats = true
+        environment.runtime.fetchChatHistory(limit: 50) { [weak self] result in
             guard let self else { return }
             self.serverHistorySyncInFlight = false
+            self.isRefreshingChats = false
             guard case .success(let data) = result else { return }
             let server = MuseServerHistory.parse(data)
             guard !server.isEmpty else { return }
@@ -849,12 +1102,52 @@ final class MuseAppModel: ObservableObject {
             let fingerprint = { (items: [MuseChatItem]) in
                 items.map { "\($0.id)|\($0.museMessageID ?? "")|\($0.text)|\($0.updatedAt.timeIntervalSince1970)" }
             }
+            Self.discoverChatSessions(in: merged, sessions: &self.chatSessions)
             guard fingerprint(merged) != fingerprint(self.chatItems) else { return }
             self.chatItems = merged
             self.replyItemIDs = Dictionary(uniqueKeysWithValues: merged.compactMap { item in
                 item.museMessageID.map { ($0, item.id) }
             })
         }
+    }
+
+    func refreshChatSessions() {
+        syncServerHistory()
+    }
+
+    func beginConnectingChat() {
+        connectChatReference = UIPasteboard.general.string ?? ""
+        connectChatName = ""
+        isConnectChatOpen = true
+    }
+
+    func connectExistingChat() {
+        guard let id = MuseChatSessionReference.id(from: connectChatReference) else {
+            alertMessage = PalL10n.text("Вставьте ссылку на чат Muse или его ID.")
+            return
+        }
+        if let index = chatSessions.firstIndex(where: { $0.id == id }) {
+            let name = connectChatName.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !name.isEmpty {
+                chatSessions[index].title = name
+                chatSessions[index].hasCustomTitle = true
+                persistChatSessions()
+            }
+            isConnectChatOpen = false
+            selectChat(id)
+            alertMessage = PalL10n.text("Этот чат уже подключён. Я открыл его.")
+            return
+        }
+        let name = connectChatName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let shortID = String(id.prefix(8))
+        chatSessions.append(MuseChatSession(
+            id: id,
+            title: name.isEmpty ? PalL10n.format("connected_chat.title_format", shortID) : name,
+            hasCustomTitle: !name.isEmpty
+        ))
+        persistChatSessions()
+        isConnectChatOpen = false
+        selectChat(id)
     }
 
     private func publishWidget() {
@@ -956,6 +1249,30 @@ struct MuseAppView: View {
             Button("Понятно", role: .cancel) { model.alertMessage = nil }
         } message: {
             Text(model.alertMessage ?? "")
+        }
+        .sheet(isPresented: $model.isConnectChatOpen) {
+            NavigationView {
+                Form {
+                    Section {
+                        TextField(PalL10n.text("Ссылка или ID чата"), text: $model.connectChatReference)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled(true)
+                        TextField(PalL10n.text("Название на этом устройстве (необязательно)"), text: $model.connectChatName)
+                    } footer: {
+                        Text(PalL10n.text("Скопируйте ссылку на дополнительный чат в Muse. Pal Again извлечёт из неё ID и будет отправлять сообщения именно в этот чат."))
+                    }
+                }
+                .navigationTitle(PalL10n.text("Подключить чат"))
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button(PalL10n.text("Отмена")) { model.isConnectChatOpen = false }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button(PalL10n.text("Подключить"), action: model.connectExistingChat)
+                    }
+                }
+            }
         }
     }
 }
@@ -1677,6 +1994,7 @@ private struct MuseChatView: View {
     @ObservedObject var model: MuseAppModel
     @State private var draft = ""
     @State private var mediaPicker: MediaPicker?
+    @State private var importsDocument = false
     @FocusState private var isComposerFocused: Bool
 
     private static let bottomAnchor = "chat-bottom"
@@ -1698,7 +2016,7 @@ private struct MuseChatView: View {
         GeometryReader { geometry in
             switch ScreenLayout(size: geometry.size) {
             case .phone:
-                chat(onPhone: true)
+                chat(onPhone: true, phoneLandscape: geometry.size.width > geometry.size.height)
             case .iPadUpright:
                 VStack(spacing: 0) {
                     MuseAvatarTopBand(model: model)
@@ -1715,16 +2033,13 @@ private struct MuseChatView: View {
         }
     }
 
-    private func chat(onPhone: Bool) -> some View {
+    private func chat(onPhone: Bool, phoneLandscape: Bool = false) -> some View {
         VStack(spacing: 0) {
             if onPhone {
-                MuseChatHeader(model: model)
-            } else {
-                // Keeps the scrolling chat below the status bar, which the header does otherwise.
-                Color.clear.frame(height: 1)
+                MuseChatHeader(model: model, card: phoneLandscape ? model.card : nil)
             }
 
-            if onPhone, let card = model.card {
+            if onPhone, !phoneLandscape, let card = model.card {
                 MuseWidgetCard(card: card, compact: true) { model.card = nil }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 4)
@@ -1748,7 +2063,7 @@ private struct MuseChatView: View {
                         ChatBubble(text: model.caption, isMuse: true)
                     }
 
-                    ForEach(model.chatItems) { item in
+                    ForEach(model.visibleChatItems) { item in
                         ChatBubble(
                             text: item.hasRemoteImage && item.image == nil
                                 ? [PalL10n.text("📷 Фото с другого устройства"), item.text].filter { !$0.isEmpty }.joined(separator: "\n")
@@ -1777,10 +2092,10 @@ private struct MuseChatView: View {
             .onAppear {
                 proxy.scrollTo(Self.bottomAnchor, anchor: .bottom)
             }
-            .onChange(of: model.chatItems.count) { _ in
+            .onChange(of: model.visibleChatItems.count) { _ in
                 withAnimation { proxy.scrollTo(Self.bottomAnchor, anchor: .bottom) }
             }
-            .onChange(of: model.chatItems.last?.text) { _ in
+            .onChange(of: model.visibleChatItems.last?.text) { _ in
                 proxy.scrollTo(Self.bottomAnchor, anchor: .bottom)
             }
             }
@@ -1831,6 +2146,9 @@ private struct MuseChatView: View {
                             mediaPicker = .library
                         } label: {
                             Label("Выбрать из галереи", systemImage: "photo")
+                        }
+                        Button { importsDocument = true } label: {
+                            Label(PalL10n.text("Выбрать документ"), systemImage: "doc")
                         }
                     } label: {
                         Image(systemName: "plus")
@@ -1904,6 +2222,12 @@ private struct MuseChatView: View {
                 MusePhotoPicker(onFinish: finishPicking).ignoresSafeArea()
             }
         }
+        .fileImporter(isPresented: $importsDocument, allowedContentTypes: [.data]) { result in
+            if case .success(let url) = result { model.sendDocument(url) }
+        }
+        .fullScreenCover(item: $model.fullScreenReply) { item in
+            MuseFullScreenReply(item: item) { model.fullScreenReply = nil }
+        }
     }
 
     private var hasDraft: Bool {
@@ -1952,14 +2276,16 @@ private struct MuseAvatarFace: View {
 private struct MuseSettingsButton: View {
     @ObservedObject var model: MuseAppModel
     var showsTitle = true
+    var fillsWidth = false
 
     var body: some View {
         Button { model.isSettingsOpen = true } label: {
             if showsTitle {
                 Label(PalL10n.text("Настройки"), systemImage: "gearshape.fill")
                     .font(.subheadline.weight(.semibold))
+                    .foregroundColor(MuseTheme.accent)
                     .padding(.horizontal, 12)
-                    .frame(minHeight: 44)
+                    .frame(maxWidth: fillsWidth ? .infinity : nil, minHeight: 44)
                     .background(MuseTheme.elevated)
                     .clipShape(Capsule())
             } else {
@@ -1969,41 +2295,163 @@ private struct MuseSettingsButton: View {
                     .accessibilityLabel(PalL10n.text("Настройки"))
             }
         }
+        .frame(maxWidth: fillsWidth ? .infinity : nil)
     }
 }
 
-private struct MuseAvatarNameAndStatus: View {
+/// Shrinks ordinary long names, then scrolls names that still cannot fit at the minimum scale.
+private struct MuseAdaptiveName: View {
+    let name: String
+    let pointSize: CGFloat
+    let minimumScale: CGFloat
+    var centered = false
+    @State private var marqueeStartedAt = Date()
+
+    private var uiFont: UIFont { .systemFont(ofSize: pointSize, weight: .semibold) }
+    private var naturalWidth: CGFloat {
+        ceil((name as NSString).size(withAttributes: [.font: uiFont]).width)
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            if naturalWidth * minimumScale <= proxy.size.width {
+                Text(name)
+                    .font(.system(size: pointSize, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(minimumScale)
+                    .allowsTightening(true)
+                    .frame(
+                        maxWidth: .infinity,
+                        maxHeight: .infinity,
+                        alignment: centered ? .center : .leading
+                    )
+            } else {
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+                    let travel = max(0, naturalWidth - proxy.size.width)
+                    let pause: TimeInterval = 1.25
+                    let movement = max(1, TimeInterval(travel / 24))
+                    let cycle = pause * 2 + movement * 2
+                    let elapsed = max(0, context.date.timeIntervalSince(marqueeStartedAt))
+                        .truncatingRemainder(dividingBy: cycle)
+                    let offset: CGFloat = {
+                        if elapsed < pause { return 0 }
+                        if elapsed < pause + movement {
+                            return -travel * CGFloat((elapsed - pause) / movement)
+                        }
+                        if elapsed < pause * 2 + movement { return -travel }
+                        return -travel * CGFloat(1 - (elapsed - pause * 2 - movement) / movement)
+                    }()
+                    Text(name)
+                        .font(.system(size: pointSize, weight: .semibold))
+                        .fixedSize(horizontal: true, vertical: false)
+                        .offset(x: offset)
+                        .frame(maxHeight: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .frame(height: ceil(pointSize * 1.3))
+        .clipped()
+        .accessibilityLabel(name)
+        .onChange(of: name) { _ in marqueeStartedAt = Date() }
+    }
+}
+
+/// Portrait iPad keeps identity and controls in three compact rows beside the avatar.
+private struct MusePortraitIdentityControls: View {
     @ObservedObject var model: MuseAppModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(model.agentIdentity?.name.isEmpty == false ? model.agentIdentity!.name : "Muse")
-                .font(.title2.weight(.semibold))
-                .lineLimit(1)
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 3) {
+            MuseAdaptiveName(
+                name: model.agentIdentity?.name.isEmpty == false ? model.agentIdentity!.name : "Muse",
+                pointSize: 22,
+                minimumScale: 0.5,
+                centered: true
+            )
+            HStack(spacing: 0) {
                 Circle()
                     .fill(model.runtimeState == .registered ? MuseTheme.mint : Color.orange)
-                    .frame(width: 9, height: 9)
-                    .accessibilityHidden(true)
-                Text(model.chatStatus)
-                    .font(.body.weight(.medium))
-                    .foregroundColor(MuseTheme.secondary)
-                    .lineLimit(2)
+                    .frame(width: 18, height: 18)
+                    .frame(width: 40, height: 44)
+                    .accessibilityLabel(model.chatStatus)
+                MuseCompactChatTools(model: model)
             }
+            MuseSettingsButton(model: model, fillsWidth: true)
         }
-        .accessibilityElement(children: .combine)
+        .frame(width: 120, alignment: .leading)
+    }
+}
+
+/// Two compact chat actions shared by every layout. Files belong to the composer's + menu.
+private struct MuseCompactChatTools: View {
+    @ObservedObject var model: MuseAppModel
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Menu {
+                Button { model.selectChat(nil) } label: {
+                    Label(PalL10n.text("Основной чат"), systemImage: model.activeChatSessionID == nil ? "checkmark" : "bubble.left")
+                }
+                ForEach(model.chatSessions) { session in
+                    Button { model.selectChat(session.id) } label: {
+                        Label(session.title, systemImage: model.activeChatSessionID == session.id ? "checkmark" : "bubble.left.and.bubble.right")
+                    }
+                }
+                Divider()
+                Button(action: model.beginConnectingChat) {
+                    Label(PalL10n.text("Подключить чат"), systemImage: "link")
+                }
+                Button(action: model.refreshChatSessions) {
+                    Label(PalL10n.text("Обновить чаты"), systemImage: "arrow.clockwise")
+                }
+                .disabled(model.isRefreshingChats)
+                Button(action: model.createSideChat) {
+                    Label(PalL10n.text("Новый чат"), systemImage: "plus.bubble")
+                }
+            } label: {
+                Image(systemName: model.activeChatSessionID == nil ? "bubble.left" : "bubble.left.and.bubble.right")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(MuseTheme.accent)
+                    .frame(width: 40, height: 44)
+            }
+            .disabled(model.isSendingChat || model.isAwaitingReply)
+            .accessibilityLabel(model.activeChatTitle)
+
+            Button { model.fullScreenReply = model.latestMuseReply } label: {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(MuseTheme.accent)
+                    .frame(width: 40, height: 44)
+            }
+            .disabled(model.latestMuseReply == nil)
+            .accessibilityLabel(PalL10n.text("Ответ на весь экран"))
+        }
     }
 }
 
 /// What Muse puts on the screen beside the chat: its card, its picture and its caption.
 private struct MuseScreenItems: View {
     @ObservedObject var model: MuseAppModel
+    var usesCompactCard = false
+    var cardMaxWidth: CGFloat?
+    var showsCard = true
+    var fillsCompactCard = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                if let card = model.card {
-                    MuseWidgetCard(card: card) { model.card = nil }
+                if showsCard, let card = model.card {
+                    MuseWidgetCard(
+                        card: card,
+                        compact: usesCompactCard,
+                        fillsCompactSpace: fillsCompactCard
+                    ) { model.card = nil }
+                        .frame(
+                            maxWidth: cardMaxWidth,
+                            minHeight: fillsCompactCard ? 133 : nil,
+                            maxHeight: fillsCompactCard ? 133 : nil,
+                            alignment: .topLeading
+                        )
                 }
                 if let image = model.drawnImage {
                     MuseDrawnImagePanel(image: image) { model.drawnImage = nil }
@@ -2028,10 +2476,21 @@ private struct MuseAvatarSidePanel: View {
                 .aspectRatio(1, contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                 .frame(maxWidth: .infinity)
-            HStack(alignment: .top) {
-                MuseAvatarNameAndStatus(model: model)
-                Spacer(minLength: 8)
-                MuseSettingsButton(model: model)
+            HStack(spacing: 0) {
+                MuseAdaptiveName(
+                    name: model.agentIdentity?.name.isEmpty == false ? model.agentIdentity!.name : "Muse",
+                    pointSize: 22,
+                    minimumScale: 0.5,
+                    centered: true
+                )
+                .frame(maxWidth: .infinity, minHeight: 44)
+                Circle()
+                    .fill(model.runtimeState == .registered ? MuseTheme.mint : Color.orange)
+                    .frame(width: 18, height: 18)
+                    .frame(width: 40, height: 44)
+                    .accessibilityLabel(model.chatStatus)
+                MuseCompactChatTools(model: model)
+                MuseSettingsButton(model: model, showsTitle: false)
             }
             MuseScreenItems(model: model)
         }
@@ -2050,18 +2509,13 @@ private struct MuseAvatarTopBand: View {
             MuseAvatarFace(model: model, markSize: 72)
                 .frame(width: 133, height: 133)
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top) {
-                    MuseAvatarNameAndStatus(model: model)
-                    Spacer(minLength: 8)
-                    MuseSettingsButton(model: model)
-                }
-                MuseScreenItems(model: model)
-            }
+            MusePortraitIdentityControls(model: model)
+            MuseScreenItems(model: model, usesCompactCard: true, fillsCompactCard: true)
+                .frame(maxWidth: .infinity, minHeight: 133, maxHeight: 133, alignment: .topLeading)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: 165)
+        .frame(height: 165, alignment: .top)
         .background(MuseTheme.bar)
         .overlay(alignment: .bottom) { Divider() }
     }
@@ -2069,6 +2523,7 @@ private struct MuseAvatarTopBand: View {
 
 private struct MuseChatHeader: View {
     @ObservedObject var model: MuseAppModel
+    var card: MuseCard?
 
     private var status: String { model.chatStatus }
 
@@ -2080,19 +2535,20 @@ private struct MuseChatHeader: View {
     var body: some View {
         HStack(spacing: 10) {
             MuseAvatarFace(model: model, markSize: 34)
-            .frame(width: 44, height: 44)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .frame(width: 44, height: 44)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             // The dot alone says connected, which leaves a small screen's width to the name.
             Circle()
                 .fill(model.runtimeState == .registered ? MuseTheme.mint : Color.orange)
-                .frame(width: 12, height: 12)
+                .frame(width: 18, height: 18)
                 .accessibilityLabel(model.chatStatus)
             // The status is offset rather than stacked, so the name stays put when it comes and goes.
             ZStack(alignment: .leading) {
-                Text(model.agentIdentity?.name.isEmpty == false ? model.agentIdentity!.name : "Muse")
-                    .font(.headline)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                MuseAdaptiveName(
+                    name: model.agentIdentity?.name.isEmpty == false ? model.agentIdentity!.name : "Muse",
+                    pointSize: 17,
+                    minimumScale: 0.55
+                )
                 if showsStatusLine {
                     Text(status)
                         .font(.caption2.weight(.medium))
@@ -2101,12 +2557,17 @@ private struct MuseChatHeader: View {
                         .offset(y: 17)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: card == nil ? .infinity : 140, alignment: .leading)
+            if let card {
+                MuseWidgetCard(card: card, compact: true) { model.card = nil }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             if model.isAwaitingReply {
                 ProgressView()
                     .scaleEffect(0.8)
                     .accessibilityLabel("Muse отвечает…")
             }
+            MuseCompactChatTools(model: model)
             MuseSettingsButton(model: model, showsTitle: false)
         }
         .padding(.horizontal, 16)
@@ -2116,10 +2577,152 @@ private struct MuseChatHeader: View {
     }
 }
 
+private struct MuseFullScreenReply: View {
+    let item: MuseChatItem
+    let close: () -> Void
+    @State private var textSize: CGFloat = 24
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                Text(MuseChatMarkdown.attributed(item.text))
+                    .font(.system(size: textSize, weight: .regular, design: .rounded))
+                    .frame(maxWidth: 760, alignment: .leading)
+                    .padding(28)
+                    .frame(maxWidth: .infinity, alignment: .top)
+            }
+            .background(MuseTheme.background.ignoresSafeArea())
+            .navigationTitle(PalL10n.text("Ответ Muse"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItemGroup(placement: .navigationBarLeading) {
+                    Button { textSize = max(17, textSize - 2) } label: {
+                        Image(systemName: "textformat.size.smaller")
+                    }
+                    Button { textSize = min(44, textSize + 2) } label: {
+                        Image(systemName: "textformat.size.larger")
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(PalL10n.text("Закрыть"), action: close)
+                }
+            }
+        }
+        .navigationViewStyle(.stack)
+    }
+}
+
+private struct MuseDocumentsView: View {
+    @ObservedObject var model: MuseAppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var remoteName = ""
+    @State private var importsDocument = false
+    @State private var preview: MuseDocumentPreview?
+
+    var body: some View {
+        NavigationView {
+            List {
+                Section {
+                    TextField(PalL10n.text("Имя файла, например notes.txt"), text: $remoteName)
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
+                    Button {
+                        model.downloadDocument(remoteName)
+                    } label: {
+                        Label(PalL10n.text("Получить из Muse"), systemImage: "arrow.down.doc")
+                    }
+                    .disabled(model.isTransferringDocument || remoteName.trimmingCharacters(in: .whitespaces).isEmpty)
+                    Button { importsDocument = true } label: {
+                        Label(PalL10n.text("Выбрать и отправить"), systemImage: "arrow.up.doc")
+                    }
+                    .disabled(model.isTransferringDocument)
+                } header: {
+                    Text(PalL10n.text("Обмен с Muse"))
+                } footer: {
+                    Text(PalL10n.text("Файлы до 1 МБ хранятся только в отдельной папке Pal Again. Сервер Muse может запретить файловый маршрут для вашего токена."))
+                }
+
+                if model.isTransferringDocument || model.documentStatus != nil {
+                    Section {
+                        HStack(spacing: 12) {
+                            if model.isTransferringDocument { ProgressView() }
+                            Text(model.documentStatus ?? "")
+                                .foregroundColor(MuseTheme.secondary)
+                        }
+                    }
+                }
+
+                Section(PalL10n.text("На этом устройстве")) {
+                    if model.documentFiles.isEmpty {
+                        Text(PalL10n.text("Сохранённых документов пока нет."))
+                            .foregroundColor(MuseTheme.secondary)
+                    }
+                    ForEach(model.documentFiles, id: \.self) { url in
+                        Button { preview = MuseDocumentPreview(url: url) } label: {
+                            Label(url.lastPathComponent, systemImage: "doc.text")
+                        }
+                        .swipeActions {
+                            Button(role: .destructive) { model.removeLocalDocument(url) } label: {
+                                Label(PalL10n.text("Удалить"), systemImage: "trash")
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle(PalL10n.text("Документы"))
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(PalL10n.text("Готово")) { dismiss() }
+                }
+            }
+            .fileImporter(isPresented: $importsDocument, allowedContentTypes: [.data]) { result in
+                if case .success(let url) = result { model.uploadDocument(url) }
+            }
+            .sheet(item: $preview) { item in
+                MuseQuickLook(url: item.url)
+            }
+        }
+        .navigationViewStyle(.stack)
+        .onAppear(perform: model.refreshDocuments)
+    }
+}
+
+private struct MuseDocumentPreview: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
+private struct MuseQuickLook: UIViewControllerRepresentable {
+    let url: URL
+
+    func makeCoordinator() -> Coordinator { Coordinator(url: url) }
+
+    func makeUIViewController(context: Context) -> QLPreviewController {
+        let controller = QLPreviewController()
+        controller.dataSource = context.coordinator
+        return controller
+    }
+
+    func updateUIViewController(_ controller: QLPreviewController, context: Context) {
+        context.coordinator.url = url
+        controller.reloadData()
+    }
+
+    final class Coordinator: NSObject, QLPreviewControllerDataSource {
+        var url: URL
+        init(url: URL) { self.url = url }
+        func numberOfPreviewItems(in controller: QLPreviewController) -> Int { 1 }
+        func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem {
+            url as NSURL
+        }
+    }
+}
+
 private struct MuseWidgetCard: View {
     let card: MuseCard
-    /// One row, for a phone, where a full card would leave little room for the chat.
+    /// A single-line preview for narrow layouts; tapping it reveals the complete body above the chat.
     var compact = false
+    var fillsCompactSpace = false
     let dismiss: () -> Void
     @State private var isExpanded = false
 
@@ -2145,17 +2748,25 @@ private struct MuseWidgetCard: View {
     private func compactRow(at date: Date) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
-                Image(systemName: iconName)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(MuseTheme.accent)
-                Text(card.title)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                if !card.body.isEmpty {
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.caption2.weight(.bold))
-                        .foregroundColor(MuseTheme.secondary)
+                Button {
+                    if !card.body.isEmpty { isExpanded.toggle() }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: iconName)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(MuseTheme.accent)
+                        Text(card.title)
+                            .font(.subheadline.weight(.semibold))
+                            .lineLimit(1)
+                        if !card.body.isEmpty {
+                            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                                .font(.caption2.weight(.bold))
+                                .foregroundColor(MuseTheme.secondary)
+                        }
+                    }
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel(PalL10n.text(isExpanded ? "Свернуть карточку" : "Раскрыть карточку"))
                 Spacer(minLength: 4)
                 if let value = remaining(at: date) {
                     Text(timerText(value))
@@ -2173,22 +2784,81 @@ private struct MuseWidgetCard: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Закрыть карточку")
+                .accessibilityLabel(PalL10n.text("Закрыть карточку"))
             }
             if let duration = card.durationSeconds, let value = remaining(at: date) {
                 ProgressView(value: duration - value, total: duration).tint(MuseTheme.accent)
             } else if let progress = card.progress {
                 ProgressView(value: progress).tint(MuseTheme.accent)
             }
-            if isExpanded, !card.body.isEmpty {
-                Text(card.body)
-                    .font(.footnote)
-                    .foregroundColor(MuseTheme.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            if fillsCompactSpace, !card.body.isEmpty {
+                Button { isExpanded = true } label: {
+                    Text(card.body)
+                        .font(.footnote)
+                        .foregroundColor(MuseTheme.secondary)
+                        .lineLimit(3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(PalL10n.text("Раскрыть карточку"))
             }
         }
-        .contentShape(Rectangle())
-        .onTapGesture { if !card.body.isEmpty { isExpanded.toggle() } }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .frame(
+            maxWidth: .infinity,
+            maxHeight: fillsCompactSpace ? .infinity : nil,
+            alignment: .topLeading
+        )
+        .background(MuseTheme.elevated)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .popover(isPresented: $isExpanded, arrowEdge: .top) {
+            expandedCard(at: date)
+        }
+    }
+
+    private func expandedCard(at date: Date) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: iconName)
+                        .font(.headline)
+                        .foregroundColor(MuseTheme.accent)
+                    Text(card.title)
+                        .font(.headline)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+                    Button { isExpanded = false } label: {
+                        Image(systemName: "xmark")
+                            .font(.caption.weight(.bold))
+                            .frame(width: 30, height: 30)
+                            .background(MuseTheme.elevated)
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(PalL10n.text("Свернуть карточку"))
+                }
+                if let value = remaining(at: date) {
+                    Text(timerText(value))
+                        .font(.system(.title2, design: .monospaced).weight(.semibold))
+                        .foregroundColor(value == 0 ? .red : MuseTheme.accent)
+                }
+                if let duration = card.durationSeconds, let value = remaining(at: date) {
+                    ProgressView(value: duration - value, total: duration).tint(MuseTheme.accent)
+                } else if let progress = card.progress {
+                    ProgressView(value: progress).tint(MuseTheme.accent)
+                }
+                if !card.body.isEmpty {
+                    Text(card.body)
+                        .font(.body)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+            }
+            .padding(18)
+        }
+        .frame(idealWidth: 420, maxWidth: 520, idealHeight: 320, maxHeight: 520)
+        .background(MuseTheme.background)
     }
 
     var body: some View {
@@ -2230,7 +2900,7 @@ private struct MuseWidgetCard: View {
                         Text(card.body)
                             .font(.subheadline)
                             .foregroundColor(MuseTheme.secondary)
-                            .lineLimit(3)
+                            .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
                     }
                 }
@@ -2369,6 +3039,7 @@ private struct MuseSettingsView: View {
     @State private var showForgetConfirmation = false
     @State private var showClearHistoryConfirmation = false
     @State private var showAbout = false
+    @State private var showHelp = false
     @State private var showReport = false
     @State private var showShortcuts = false
     @State private var showLocalDevices = false
@@ -2584,6 +3255,16 @@ private struct MuseSettingsView: View {
                 }
                 .museCard()
 
+                Button { showHelp = true } label: {
+                    SettingsNavigationRow(
+                        icon: "questionmark.circle.fill",
+                        title: "Помощь и руководство",
+                        detail: "Подключение, чаты, сообщения, голос и разрешения"
+                    )
+                }
+                .buttonStyle(.plain)
+                .museCard()
+
                 Button { showAbout = true } label: {
                     SettingsNavigationRow(
                         icon: "info.circle.fill",
@@ -2635,6 +3316,9 @@ private struct MuseSettingsView: View {
         .sheet(isPresented: $showAbout) {
             PalAboutView()
         }
+        .sheet(isPresented: $showHelp) {
+            PalHelpView()
+        }
         .confirmationDialog(
             "Очистить историю чата?",
             isPresented: $showClearHistoryConfirmation,
@@ -2682,6 +3366,84 @@ private struct MuseSettingsView: View {
         return model.approvedDevices.isEmpty
             ? PalL10n.text("Доступ есть, новые устройства потребуют подтверждения")
             : PalL10n.format("settings.approved_count_format", model.approvedDevices.count)
+    }
+}
+
+private struct PalHelpView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    private let topics: [(icon: String, title: String, text: String)] = [
+        (
+            "link.badge.plus",
+            "Подключение к Muse",
+            "При первом запуске сохраните свой SDK Token, выдайте запрошенные разрешения и добавьте найденный гаджет в приложении Muse. После этого Pal Again подключается автоматически."
+        ),
+        (
+            "bubble.left.and.bubble.right.fill",
+            "Основной и дополнительные чаты",
+            "«Новый чат» создаёт отдельный чат после первого сообщения. «Подключить чат» принимает ссылку или ID уже существующего чата Muse. «Обновить чаты» перечитывает доступную гаджету историю. Названия подключённых чатов хранятся на этом устройстве, потому что Muse не передаёт гаджету их аккаунтные названия."
+        ),
+        (
+            "plus.circle.fill",
+            "Сообщения и вложения",
+            "Пишите в нижнем поле. Через плюс можно сделать или выбрать фотографию и отправить небольшой документ. Кнопка справа записывает голосовую заметку или отправляет подготовленное сообщение."
+        ),
+        (
+            "mic.fill",
+            "Голосовые заметки",
+            "В настройках можно выбрать запись нажатием или удержанием. Если включено подтверждение, после записи на месте микрофона появляется круглая кнопка отправки."
+        ),
+        (
+            "hand.raised.fill",
+            "Разрешения и команды",
+            "Камера, микрофон, геопозиция, Bluetooth и локальная сеть используются только для соответствующих функций. Опасные быстрые команды и новые устройства локальной сети требуют вашего подтверждения."
+        ),
+        (
+            "wrench.and.screwdriver.fill",
+            "Если что-то не работает",
+            "Сначала проверьте зелёный статус подключения. Затем откройте системные настройки разрешений или нажмите «Обновить чаты». Технический отчёт можно подготовить внизу настроек — сообщения и токены в него не входят."
+        )
+    ]
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    StepIntro(
+                        eyebrow: "PAL AGAIN",
+                        title: "Помощь и руководство",
+                        text: "Короткие ответы о функциях, которые не обязаны быть очевидными с первого запуска."
+                    )
+                    ForEach(Array(topics.enumerated()), id: \.offset) { _, topic in
+                        HStack(alignment: .top, spacing: 14) {
+                            Image(systemName: topic.icon)
+                                .font(.title3)
+                                .foregroundColor(MuseTheme.accent)
+                                .frame(width: 28)
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(PalL10n.key(topic.title)).font(.headline)
+                                Text(PalL10n.key(topic.text))
+                                    .font(.subheadline)
+                                    .foregroundColor(MuseTheme.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .museCard()
+                    }
+                }
+                .padding(20)
+            }
+            .background(MuseTheme.background.ignoresSafeArea())
+            .navigationTitle(PalL10n.text("Помощь"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(PalL10n.text("Готово")) { dismiss() }
+                }
+            }
+        }
+        .navigationViewStyle(.stack)
     }
 }
 

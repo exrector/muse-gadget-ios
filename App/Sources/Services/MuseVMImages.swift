@@ -607,3 +607,74 @@ extension Notification.Name {
     static let museAvatarChanged = Notification.Name("MuseGadgetLegacy.avatarChanged")
     static let museDrawnImageChanged = Notification.Name("MuseGadgetLegacy.drawnImageChanged")
 }
+
+/// A deliberately narrow user-visible part of the VM filesystem. The daemon accepts home-relative
+/// paths, but Pal Again never exposes that whole namespace to the UI.
+enum MuseDocumentPath {
+    static let root = "pal-again-documents"
+    static let maxBytes = 1_048_576
+
+    static func remotePath(_ raw: String) -> String? {
+        var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.hasPrefix(root + "/") { value.removeFirst(root.count + 1) }
+        guard !value.isEmpty, value.utf8.count <= 180, !value.hasPrefix("/"), !value.contains("\0") else {
+            return nil
+        }
+        let parts = value.split(separator: "/", omittingEmptySubsequences: false)
+        guard !parts.isEmpty,
+              parts.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." && !$0.hasPrefix(".") }) else {
+            return nil
+        }
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_ ."))
+        guard parts.allSatisfy({ String($0).unicodeScalars.allSatisfy(allowed.contains) }) else { return nil }
+        return root + "/" + parts.joined(separator: "/")
+    }
+
+    static func localName(for remotePath: String) -> String? {
+        let name = (remotePath as NSString).lastPathComponent
+        return remotePath.hasPrefix(root + "/") && !name.isEmpty ? name : nil
+    }
+}
+
+final class MuseDocumentStore {
+    private let directory: URL
+
+    init(directory: URL? = nil) {
+        self.directory = directory ?? FileManager.default
+            .urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Pal Again Documents", isDirectory: true)
+    }
+
+    func files() -> [URL] {
+        (try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
+            options: [.skipsHiddenFiles]
+        ))?.filter { !$0.hasDirectoryPath }.sorted {
+            let left = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            let right = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            return left > right
+        } ?? []
+    }
+
+    func save(_ data: Data, named name: String) throws -> URL {
+        guard data.count <= MuseDocumentPath.maxBytes,
+              let remote = MuseDocumentPath.remotePath(name),
+              let localName = MuseDocumentPath.localName(for: remote) else {
+            throw MuseRuntimeError.payloadTooLarge
+        }
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true,
+            attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]
+        )
+        let destination = directory.appendingPathComponent(localName, isDirectory: false)
+        try data.write(to: destination, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        return destination
+    }
+
+    func remove(_ url: URL) {
+        guard url.deletingLastPathComponent().standardizedFileURL == directory.standardizedFileURL else { return }
+        try? FileManager.default.removeItem(at: url)
+    }
+}

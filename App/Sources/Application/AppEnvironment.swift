@@ -60,6 +60,7 @@ final class AppEnvironment {
     let pairing: PairingCoordinator
     let runtime: MuseRuntime
     let chatStore = MuseChatStore()
+    let documents = MuseDocumentStore()
     let chatCloud = MuseChatCloudSync()
     let chatPeers: MuseChatPeerSync
     private let backgroundGrace = MuseBackgroundGrace()

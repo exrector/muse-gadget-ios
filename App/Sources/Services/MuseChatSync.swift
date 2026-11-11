@@ -4,6 +4,7 @@ struct MuseServerChatMessage: Equatable {
     let author: MuseChatItem.Author
     let text: String
     let messageID: String
+    var sessionID: String? = nil
     let createdAt: Date
 }
 
@@ -13,7 +14,7 @@ struct MuseServerChatMessage: Equatable {
 enum MuseServerHistory {
     static func parse(_ data: Data, now: Date = Date()) -> [MuseServerChatMessage] {
         guard let root = try? JSONSerialization.jsonObject(with: data) else { return [] }
-        var raw: [(author: MuseChatItem.Author, text: String, id: String, date: Date?)] = []
+        var raw: [(author: MuseChatItem.Author, text: String, id: String, sessionID: String?, date: Date?)] = []
         collect(root, into: &raw)
         var seen = Set<String>()
         let unique = raw.filter { seen.insert($0.id).inserted }
@@ -22,6 +23,7 @@ enum MuseServerHistory {
                 author: message.author,
                 text: message.text,
                 messageID: message.id,
+                sessionID: message.sessionID,
                 createdAt: message.date ?? now.addingTimeInterval(TimeInterval(index - unique.count))
             )
         }.sorted { $0.createdAt == $1.createdAt ? $0.messageID < $1.messageID : $0.createdAt < $1.createdAt }
@@ -29,17 +31,17 @@ enum MuseServerHistory {
 
     private static func collect(
         _ value: Any,
-        into result: inout [(author: MuseChatItem.Author, text: String, id: String, date: Date?)]
+        into result: inout [(author: MuseChatItem.Author, text: String, id: String, sessionID: String?, date: Date?)]
     ) {
         if let object = value as? [String: Any] {
             if let role = object["role"] as? String,
                let author = author(role),
                let id = string(object["id"]) ?? string(object["message_id"]),
                let text = text(from: object), !text.isEmpty {
-                result.append((author, text, id, date(from: object)))
+                result.append((author, text, id, sessionID(from: object), date(from: object)))
                 return
             }
-            for key in ["messages", "history", "items", "results", "data", "result"] {
+            for key in ["chat_events", "messages", "history", "items", "results", "data", "result"] {
                 if let child = object[key] { collect(child, into: &result) }
             }
         } else if let array = value as? [Any] {
@@ -69,7 +71,27 @@ enum MuseServerHistory {
         return parts.isEmpty ? nil : parts.joined(separator: "\n")
     }
 
+    private static func sessionID(from object: [String: Any]) -> String? {
+        let payload = object["payload"] as? [String: Any]
+        let context = object["chat_context"] as? [String: Any]
+        let payloadContext = payload?["chat_context"] as? [String: Any]
+        let isThread = bool(object["is_thread"]) ?? bool(payload?["is_thread"])
+        // Main-chat events carry a session ID too. An explicit non-thread marker keeps that
+        // internal ID from appearing in the UI as a selectable side chat.
+        guard isThread != false else { return nil }
+        return string(object["session_id"])
+            ?? string(payload?["session_id"])
+            ?? string(context?["chat_id"])
+            ?? string(payloadContext?["chat_id"])
+    }
+
     private static func date(from object: [String: Any]) -> Date? {
+        if let number = object["occurred_at_ms"] as? NSNumber {
+            return Date(timeIntervalSince1970: number.doubleValue / 1_000)
+        }
+        if let string = object["occurred_at_ms"] as? String, let raw = Double(string) {
+            return Date(timeIntervalSince1970: raw / 1_000)
+        }
         for key in ["created_at", "createdAt", "timestamp", "time"] {
             if let number = object[key] as? NSNumber {
                 let raw = number.doubleValue
@@ -90,6 +112,12 @@ enum MuseServerHistory {
         let clean = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return clean.isEmpty ? nil : clean
     }
+
+    private static func bool(_ value: Any?) -> Bool? {
+        if let value = value as? Bool { return value }
+        if let value = value as? NSNumber { return value.boolValue }
+        return nil
+    }
 }
 
 struct MuseSyncedMessage: Codable, Equatable {
@@ -97,6 +125,7 @@ struct MuseSyncedMessage: Codable, Equatable {
     let author: String
     let text: String
     let museMessageID: String?
+    var sessionID: String? = nil
     let createdAt: Date
     let updatedAt: Date
     let hasImage: Bool
@@ -123,6 +152,7 @@ enum MuseChatMerge {
             }
             if let index = items.firstIndex(where: {
                 $0.museMessageID == nil && $0.author == message.author && $0.text == message.text
+                    && $0.sessionID == message.sessionID
                     && abs($0.createdAt.timeIntervalSince(message.createdAt)) < 120
             }) {
                 items[index].museMessageID = message.messageID
@@ -132,6 +162,7 @@ enum MuseChatMerge {
                 author: message.author,
                 text: message.text,
                 museMessageID: message.messageID,
+                sessionID: message.sessionID,
                 createdAt: message.createdAt
             ))
         }
@@ -159,6 +190,7 @@ enum MuseChatMerge {
                     author: author,
                     text: message.text,
                     museMessageID: message.museMessageID,
+                    sessionID: message.sessionID,
                     createdAt: message.createdAt,
                     updatedAt: message.updatedAt,
                     hasRemoteImage: message.hasImage
@@ -180,6 +212,7 @@ enum MuseChatMerge {
                     author: item.author.storedName,
                     text: item.text,
                     museMessageID: item.museMessageID,
+                    sessionID: item.sessionID,
                     createdAt: item.createdAt,
                     updatedAt: item.updatedAt,
                     hasImage: item.image != nil || item.hasRemoteImage

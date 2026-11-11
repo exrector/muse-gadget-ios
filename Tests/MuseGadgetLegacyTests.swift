@@ -554,6 +554,48 @@ final class MuseGadgetLegacyTests: XCTestCase {
         XCTAssertEqual(MuseChatMerge.mergeServer(local: merged, server: parsed, clearedBefore: nil).count, 2)
     }
 
+    func testServerHistoryKeepsSideChatSession() {
+        let json = #"{"result":{"messages":[{"id":"a1","role":"assistant","session_id":"side-1","text":"Hi"}]}}"#
+        let parsed = MuseServerHistory.parse(Data(json.utf8))
+        XCTAssertEqual(parsed.first?.sessionID, "side-1")
+        XCTAssertEqual(
+            MuseChatMerge.mergeServer(local: [], server: parsed, clearedBefore: nil).first?.sessionID,
+            "side-1"
+        )
+    }
+
+    func testServerHistoryReadsLiveChatEventsAndDoesNotExposeMainSession() {
+        let json = #"{"result":{"chat_events":[{"message_id":"u1","role":"user","display_text":"Account side chat","occurred_at_ms":20000,"payload":{"session_id":"side-live","is_thread":true}},{"message_id":"a1","role":"assistant","display_text":"Main reply","occurred_at_ms":21000,"payload":{"session_id":"main-internal","is_thread":false}}]}}"#
+        let parsed = MuseServerHistory.parse(Data(json.utf8))
+
+        XCTAssertEqual(parsed.map(\.messageID), ["u1", "a1"])
+        XCTAssertEqual(parsed.map(\.sessionID), ["side-live", nil])
+        XCTAssertEqual(parsed.first?.createdAt, Date(timeIntervalSince1970: 20))
+    }
+
+    func testChatReferenceAcceptsAnIDOrMuseLink() {
+        let id = "ABE174C7-1234-4ABC-8DEF-1234567890AB"
+        let account = "11111111-2222-4333-8444-555555555555"
+        XCTAssertEqual(MuseChatSessionReference.id(from: id), id.lowercased())
+        XCTAssertEqual(
+            MuseChatSessionReference.id(from: "https://muse.ai/account/\(account)/chat/\(id)?source=share"),
+            id.lowercased()
+        )
+        XCTAssertEqual(
+            MuseChatSessionReference.id(from: "https://muse.ai/chat?session_id=\(id)&account_id=\(account)"),
+            id.lowercased()
+        )
+        XCTAssertNil(MuseChatSessionReference.id(from: "https://muse.ai/chat/"))
+    }
+
+    func testDocumentPathStaysInsidePalAgainFolder() {
+        XCTAssertEqual(MuseDocumentPath.remotePath("notes.txt"), "pal-again-documents/notes.txt")
+        XCTAssertEqual(MuseDocumentPath.remotePath("folder/photo 1.jpg"), "pal-again-documents/folder/photo 1.jpg")
+        XCTAssertNil(MuseDocumentPath.remotePath("../secret"))
+        XCTAssertNil(MuseDocumentPath.remotePath("/absolute"))
+        XCTAssertNil(MuseDocumentPath.remotePath(".hidden"))
+    }
+
     func testServerHistoryRespectsLocalClearDate() {
         let old = MuseServerChatMessage(
             author: .muse, text: "old", messageID: "a1", createdAt: Date(timeIntervalSince1970: 1)
