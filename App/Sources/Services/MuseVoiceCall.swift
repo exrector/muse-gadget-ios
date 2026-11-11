@@ -9,6 +9,10 @@ import Foundation
 /// stops talking. As in the SDK's hands-free call, the microphone sends raw audio and is closed
 /// while Muse's voice plays, plus the speaker's lag and a short tail, so Muse does not hear
 /// itself; replies wait for 600 ms of audio before playing, like the SDK's voice player.
+enum MuseVoiceCallError: Error {
+    case microphoneNotReady
+}
+
 final class MuseVoiceCall: ObservableObject {
     enum Phase: Equatable {
         case idle
@@ -130,6 +134,7 @@ final class MuseVoiceCall: ObservableObject {
     private var timer: Timer?
     private var engineRunning = false
     private var routeObserver: NSObjectProtocol?
+    private var configurationObserver: NSObjectProtocol?
 
     // Shared with the audio thread, under `lock`.
     private let lock = NSLock()
@@ -334,8 +339,8 @@ final class MuseVoiceCall: ObservableObject {
                 let pcm = MuseVoiceCall.downsample48to24(pcm48)
                 DispatchQueue.main.async { self?.play(pcm) }
             }
-            media.onVideo = { [weak self] nals in
-                DispatchQueue.main.async { self?.show(nals) }
+            media.onVideo = { [weak self] nals, timestamp in
+                DispatchQueue.main.async { self?.show(nals, timestamp: timestamp) }
             }
             self.video.onNeedsKeyframe = { [weak media] in media?.requestKeyframe() }
             self.video.onSize = { [weak self] size in self?.videoAspect = size.width / size.height }
@@ -594,17 +599,15 @@ final class MuseVoiceCall: ObservableObject {
             engine.attach(player)
             engine.connect(player, to: engine.mainMixerNode, format: playbackFormat)
         }
-        let input = engine.inputNode
-        if input.isVoiceProcessingEnabled {
-            try? input.setVoiceProcessingEnabled(false)
+        if engine.inputNode.isVoiceProcessingEnabled {
+            try? engine.inputNode.setVoiceProcessingEnabled(false)
         }
-        let format = input.outputFormat(forBus: 0)
-        input.removeTap(onBus: 0)
-        input.installTap(onBus: 0, bufferSize: 2_048, format: format) { [weak self] buffer, _ in
-            self?.capture(buffer)
-        }
-        engine.prepare()
-        try engine.start()
+        try startEngine()
+        // iOS stops the engine when the audio setup changes (a route switch, say) and does not
+        // start it again; without this the microphone fell silent for the rest of a call.
+        configurationObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
+        ) { [weak self] _ in self?.restartEngine(reason: "configuration") }
         routeToSpeakerIfBuiltIn()
         let route = AVAudioSession.sharedInstance().currentRoute.outputs.map(\.portType.rawValue).joined(separator: "+")
         trace("route=\(route),volume=\(Int(AVAudioSession.sharedInstance().outputVolume * 100))")
@@ -635,10 +638,47 @@ final class MuseVoiceCall: ObservableObject {
         try? session.overrideOutputAudioPort(.speaker)
     }
 
+    /// Installs the microphone tap on the input's current format and starts the engine.
+    private func startEngine() throws {
+        let input = engine.inputNode
+        // The hardware's format right now: after a configuration change the old one no longer
+        // matches, and a tap on a mismatched format makes AVAudioEngine raise an exception.
+        let format = input.inputFormat(forBus: 0)
+        guard format.sampleRate > 0, format.channelCount > 0 else { throw MuseVoiceCallError.microphoneNotReady }
+        input.removeTap(onBus: 0)
+        input.installTap(onBus: 0, bufferSize: 2_048, format: format) { [weak self] buffer, _ in
+            self?.capture(buffer)
+        }
+        engine.prepare()
+        try engine.start()
+    }
+
+    private func restartEngine(reason: String) {
+        guard engineRunning, phase.isActive else { return }
+        trace("engine_restart=\(reason)")
+        engine.stop()
+        do {
+            try startEngine()
+            routeToSpeakerIfBuiltIn()
+            // The player's queue went with the stopped engine.
+            unplayed = 0
+            audibleUnplayed = 0
+            playbackGeneration += 1
+            player.play()
+        } catch {
+            // The microphone is not ready yet; iOS sends another change when it is.
+            trace("engine_restart_failed=\(MuseDiagnostics.label(error))")
+        }
+    }
+
     private func stopAudio() {
         if let routeObserver {
             NotificationCenter.default.removeObserver(routeObserver)
             self.routeObserver = nil
+        }
+        if let configurationObserver {
+            NotificationCenter.default.removeObserver(configurationObserver)
+            self.configurationObserver = nil
         }
         if engineRunning {
             engine.inputNode.removeTap(onBus: 0)
@@ -733,9 +773,9 @@ final class MuseVoiceCall: ObservableObject {
         }
     }
 
-    private func show(_ nals: [Data]) {
+    private func show(_ nals: [Data], timestamp: UInt32) {
         guard phase.isActive, media != nil else { return }
-        video.enqueue(nals)
+        video.enqueue(nals, rtpTimestamp: timestamp)
         if !hasVideo, video.framesShown > 0 {
             hasVideo = true
             trace("video_first")

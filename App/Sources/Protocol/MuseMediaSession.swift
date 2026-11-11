@@ -52,7 +52,8 @@ final class MuseMediaSession {
     /// Mono 48 kHz PCM16 decoded from Muse's Opus packets.
     var onAudio: ((Data) -> Void)?
     /// Muse's video: the NAL units of each complete H.264 access unit.
-    var onVideo: (([Data]) -> Void)?
+    /// The NAL units and the RTP timestamp (90 kHz) of each access unit.
+    var onVideo: (([Data], UInt32) -> Void)?
     /// Connectivity was lost: no consent answers for 30 s, or the chosen TCP path closed.
     var onLost: (() -> Void)?
     let queue = DispatchQueue(label: "MuseGadgetLegacy.media", qos: .userInteractive)
@@ -285,7 +286,7 @@ final class MuseMediaSession {
             if h264.needsKeyframe { requestKeyframe() }
             if let unit {
                 stats.videoUnits += 1
-                onVideo?(unit)
+                onVideo?(unit, packet.timestamp)
             }
         default:
             break

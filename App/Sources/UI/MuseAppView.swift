@@ -223,6 +223,8 @@ final class MuseAppModel: ObservableObject {
         didSet { UserDefaults.standard.set(videoCallsWithAvatar, forKey: MuseVoiceCall.videoCallsKey) }
     }
     @Published var isVoiceCallOpen = false
+    /// True when the chat has room to show a call beside it (an iPad), so no card is presented.
+    @Published var callIsInline = false
     /// The call button wakes up 2 s after Muse is connected, so a tap right after launch or a
     /// reconnect never lands on a connection that is still settling.
     @Published private(set) var isCallReady = false
@@ -1226,9 +1228,11 @@ final class MuseAppModel: ObservableObject {
         sendChat(PalL10n.format("avatar.call_request_format", environment.identity.displayName))
     }
 
-    /// Closes the call card; `voiceCallDismissed` then ends the call.
+    /// Closes the call. A card's dismissal then ends it; a call shown beside the chat ends here.
     func closeVoiceCall() {
+        let wasInline = callIsInline
         isVoiceCallOpen = false
+        if wasInline { voiceCallDismissed() }
     }
 
     /// Runs once whenever the call card goes away, by a button or by a swipe.
@@ -1348,7 +1352,10 @@ struct MuseAppView: View {
             Text(PalL10n.text("Приложение может отправлять разработчику отчёты о сбоях и зависаниях с коротким журналом этапов работы, чтобы быстрее находить ошибки. Текст чата, токены, имя гаджета, файлы, фото и аудио никогда не отправляются. Это можно выключить в настройках."))
         }
         // A sheet: a centred card on iPad, nearly the whole screen on an iPhone.
-        .sheet(isPresented: $model.isVoiceCallOpen, onDismiss: model.voiceCallDismissed) {
+        .sheet(isPresented: Binding(
+            get: { model.isVoiceCallOpen && !model.callIsInline },
+            set: { if !$0 { model.isVoiceCallOpen = false } }
+        ), onDismiss: model.voiceCallDismissed) {
             MuseVoiceCallView(model: model, call: model.voiceCall)
         }
         .sheet(isPresented: $model.isConnectChatOpen) {
@@ -2119,19 +2126,40 @@ private struct MuseChatView: View {
             case .phone:
                 chat(onPhone: true, phoneLandscape: geometry.size.width > geometry.size.height)
             case .iPadUpright:
+                // The call covers the avatar band and grows over the chat's top; the band and its
+                // animations stay as they are underneath, so nothing stops or restarts.
                 VStack(spacing: 0) {
                     MuseAvatarTopBand(model: model)
                     chat(onPhone: false)
                 }
+                .overlay(alignment: .top) {
+                    if model.isVoiceCallOpen {
+                        MuseVoiceCallView(model: model, call: model.voiceCall, inline: true)
+                            .frame(height: geometry.size.height * 0.45)
+                            .overlay(alignment: .bottom) { Divider() }
+                    }
+                }
             case .iPadSideways:
                 HStack(spacing: 0) {
+                    // The call covers the avatar panel, which keeps running underneath.
                     MuseAvatarSidePanel(model: model)
+                        .overlay {
+                            if model.isVoiceCallOpen {
+                                MuseVoiceCallView(model: model, call: model.voiceCall, inline: true)
+                            }
+                        }
                         .frame(width: geometry.size.width * 0.38)
                     Divider()
                     chat(onPhone: false)
                 }
             }
         }
+        // Where a call shows: beside the chat on an iPad, as a card over it on a phone.
+        .background(GeometryReader { proxy in
+            Color.clear
+                .onAppear { model.callIsInline = ScreenLayout(size: proxy.size) != .phone }
+                .onChange(of: proxy.size) { model.callIsInline = ScreenLayout(size: $0) != .phone }
+        })
     }
 
     private func chat(onPhone: Bool, phoneLandscape: Bool = false) -> some View {
@@ -3046,6 +3074,9 @@ private struct VoiceCallButton: View {
 private struct MuseVoiceCallView: View {
     @ObservedObject var model: MuseAppModel
     @ObservedObject var call: MuseVoiceCall
+    /// On an iPad the call takes the avatar's own place beside the chat, on its background.
+    var inline = false
+    @Environment(\.colorScheme) private var colorScheme
 
     private var status: String {
         switch call.phase {
@@ -3084,10 +3115,12 @@ private struct MuseVoiceCallView: View {
             Spacer(minLength: 12)
             if call.hasVideo {
                 // Muse's own video in a media call: its avatar, talking in sync with its voice.
+                // No frame or corners: on the call's white background Muse's video, which comes
+                // on white, blends in instead of sitting in it as a white card.
                 MuseVideoSurface(renderer: call.video)
                     .aspectRatio(call.videoAspect, contentMode: .fit)
-                    .frame(maxWidth: 340, maxHeight: 420)
-                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    .frame(maxWidth: inline ? .infinity : 340, maxHeight: inline ? .infinity : 420)
+                    .layoutPriority(1)
             } else {
             ZStack {
                 if let data = model.agentAvatar, let image = UIImage(data: data) {
@@ -3162,7 +3195,12 @@ private struct MuseVoiceCallView: View {
             Spacer(minLength: 24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(MuseTheme.background.ignoresSafeArea())
+        .padding(.horizontal, inline ? 16 : 0)
+        .background(Group {
+            if call.hasVideo { Color.white } else if inline { MuseTheme.bar } else { MuseTheme.background }
+        }.ignoresSafeArea())
+        // Text and buttons stay readable on the white of Muse's video in dark mode too.
+        .environment(\.colorScheme, call.hasVideo ? .light : colorScheme)
         // A swipe must not leave the microphone open behind a closed card.
         .interactiveDismissDisabled(call.phase.isActive)
     }
@@ -3185,7 +3223,8 @@ private struct MuseVideoSurface: UIViewRepresentable {
 
     func makeUIView(context: Context) -> MuseVideoLayerView {
         let view = MuseVideoLayerView()
-        view.backgroundColor = .black
+        // The space beside the picture shows whatever is behind it, not black bars.
+        view.backgroundColor = .clear
         view.renderer = renderer
         return view
     }
