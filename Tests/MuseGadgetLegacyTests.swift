@@ -12,6 +12,26 @@ final class MuseGadgetLegacyTests: XCTestCase {
         XCTAssertEqual(identity.bluetoothName, "MuseGadgetAABBCC")
     }
 
+    func testFreshInstallClearsKeychainButAnUpdateKeepsIt() throws {
+        let suite = "FreshInstallReset.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var clears = 0
+
+        // A new install: nothing in UserDefaults, so the Keychain left by a deleted copy goes.
+        XCTAssertTrue(FreshInstallReset.runIfNeeded(defaults: defaults) { clears += 1 })
+        XCTAssertEqual(clears, 1)
+        // Later launches of the same install leave it alone.
+        XCTAssertFalse(FreshInstallReset.runIfNeeded(defaults: defaults) { clears += 1 })
+        XCTAssertEqual(clears, 1)
+
+        // An update from a version without the marker already has a device identity.
+        defaults.removeObject(forKey: FreshInstallReset.markerKey)
+        _ = DeviceIdentityStore(defaults: defaults).loadOrCreate()
+        XCTAssertFalse(FreshInstallReset.runIfNeeded(defaults: defaults) { clears += 1 })
+        XCTAssertEqual(clears, 1)
+    }
+
     func testBLEFramingRoundTrip() throws {
         let payload = Data((0..<600).map { UInt8($0 % 251) })
         let frames = try BLEFraming.encode(payload, mtu: 80)

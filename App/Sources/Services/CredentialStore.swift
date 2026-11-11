@@ -45,6 +45,15 @@ final class CredentialStore {
         SecItemDelete(baseQuery(account: deviceCredentialsAccount) as CFDictionary)
     }
 
+    /// Removes the SDK token and the pairing. Used when the app has been installed again.
+    func clearAll() {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service
+        ]
+        SecItemDelete(query as CFDictionary)
+    }
+
     private func save(_ data: Data, account: String) throws {
         let query = baseQuery(account: account)
         let attributes: [String: Any] = [
@@ -79,3 +88,23 @@ final class CredentialStore {
     }
 }
 
+
+/// iOS keeps Keychain items after the app is deleted, while UserDefaults and files go with it.
+/// Without this, a reinstalled app would find the old SDK token and pairing, skip the first
+/// setup steps and mix the old pairing with a new device identity.
+enum FreshInstallReset {
+    static let markerKey = "MuseGadgetLegacy.installMarker.v1"
+    /// Written by every version since the first build, so its presence means an update.
+    static let identityKey = "MuseGadgetLegacy.deviceIdentity.v1"
+
+    /// Returns true when the Keychain was cleared. Must run before the device identity is created.
+    @discardableResult
+    static func runIfNeeded(defaults: UserDefaults = .standard, clearKeychain: () -> Void) -> Bool {
+        guard !defaults.bool(forKey: markerKey) else { return false }
+        defaults.set(true, forKey: markerKey)
+        // An update from a version without the marker keeps everything it had.
+        guard defaults.object(forKey: identityKey) == nil else { return false }
+        clearKeychain()
+        return true
+    }
+}

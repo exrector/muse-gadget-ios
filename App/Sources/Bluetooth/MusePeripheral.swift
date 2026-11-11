@@ -41,11 +41,9 @@ final class MusePeripheral: NSObject {
     func start() {
         shouldAdvertise = true
         if manager == nil {
-            manager = CBPeripheralManager(
-                delegate: self,
-                queue: .main,
-                options: [CBPeripheralManagerOptionRestoreIdentifierKey: "MuseGadgetLegacy.peripheral"]
-            )
+            // No restore identifier: CoreBluetooth throws in this initializer when one is passed
+            // without the bluetooth-peripheral background mode, which the app does not declare.
+            manager = CBPeripheralManager(delegate: self, queue: .main)
         } else if manager.state == .poweredOn {
             publishServiceIfNeeded()
         }
@@ -193,12 +191,4 @@ extension MusePeripheral: CBPeripheralManagerDelegate {
     func peripheralManagerIsReady(toUpdateSubscribers peripheral: CBPeripheralManager) {
         drain()
     }
-
-    func peripheralManager(
-        _ peripheral: CBPeripheralManager,
-        willRestoreState dict: [String: Any]
-    ) {
-        delegate?.musePeripheral(self, didChange: .bluetoothState("restored"))
-    }
 }
-

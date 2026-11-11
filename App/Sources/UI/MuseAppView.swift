@@ -3319,10 +3319,11 @@ private struct MuseSettingsView: View {
         .sheet(isPresented: $showHelp) {
             PalHelpView()
         }
-        .confirmationDialog(
+        // An alert rather than a confirmation dialog: on iPad the dialog becomes a popover
+        // anchored to this whole screen and may never appear.
+        .alert(
             "Очистить историю чата?",
-            isPresented: $showClearHistoryConfirmation,
-            titleVisibility: .visible
+            isPresented: $showClearHistoryConfirmation
         ) {
             Button("Очистить", role: .destructive) { model.clearChatHistory() }
             Button("Отмена", role: .cancel) {}
@@ -3331,10 +3332,11 @@ private struct MuseSettingsView: View {
                  ? "Сообщения удалятся с этого устройства и с других ваших гаджетов, с которыми включена синхронизация. Переписка в самом Muse останется."
                  : "Сообщения и фото удалятся с этого устройства. Переписка в самом Muse останется."))
         }
-        .confirmationDialog(
+        // An alert rather than a confirmation dialog: on iPad the dialog becomes a popover
+        // anchored to this whole screen and may never appear.
+        .alert(
             "Удалить сохранённую пару?",
-            isPresented: $showForgetConfirmation,
-            titleVisibility: .visible
+            isPresented: $showForgetConfirmation
         ) {
             Button("Удалить пару", role: .destructive) { model.forgetPairing() }
             Button("Отмена", role: .cancel) {}

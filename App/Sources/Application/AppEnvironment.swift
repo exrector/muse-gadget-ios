@@ -66,8 +66,9 @@ final class AppEnvironment {
     private let backgroundGrace = MuseBackgroundGrace()
 
     init() {
-        let identity = DeviceIdentityStore().loadOrCreate()
         let credentialStore = CredentialStore()
+        FreshInstallReset.runIfNeeded { credentialStore.clearAll() }
+        let identity = DeviceIdentityStore().loadOrCreate()
         let permissions = PermissionCenter()
         let nativeServices = NativeCommandServices(permissions: permissions)
         let grants = MuseGrantStore()
