@@ -2402,12 +2402,15 @@ private struct MuseChatView: View {
     }
 
     private func chat(onPhone: Bool, phoneLandscape: Bool = false) -> some View {
-        VStack(spacing: 0) {
+        // On an iPad a call covers the panel where Muse's card, picture and caption go, so while
+        // it is open they show above the chat, as on a phone.
+        let screenInChat = onPhone || (model.isVoiceCallOpen && model.callIsInline)
+        return VStack(spacing: 0) {
             if onPhone {
                 MuseChatHeader(model: model, card: phoneLandscape ? model.card : nil)
             }
 
-            if onPhone, !phoneLandscape, let card = model.card {
+            if screenInChat, !phoneLandscape, let card = model.card {
                 MuseWidgetCard(card: card, compact: true) { model.card = nil }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 4)
@@ -2416,7 +2419,7 @@ private struct MuseChatView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
 
-            if onPhone, let image = model.drawnImage {
+            if screenInChat, let image = model.drawnImage {
                 MuseDrawnImagePanel(image: image) { model.drawnImage = nil }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
@@ -2427,7 +2430,7 @@ private struct MuseChatView: View {
             ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 18) {
-                    if onPhone, !model.caption.isEmpty {
+                    if screenInChat, !model.caption.isEmpty {
                         ChatBubble(text: model.caption, isMuse: true)
                     }
 

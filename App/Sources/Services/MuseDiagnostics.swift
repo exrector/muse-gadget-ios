@@ -84,7 +84,10 @@ final class MuseDiagnostics: NSObject, ObservableObject {
 
     private static let consentKey = "palDiagnosticsConsent"
     private static let endpoint = URL(string: "https://pal-again-diagnostics.exrector.workers.dev/v1/reports")!
-    private static let maxBreadcrumbs = 100
+    /// A call notes its microphone every 5 s, so 100 steps covered barely a minute of one.
+    private static let maxBreadcrumbs = 400
+    /// The diagnostics backend refuses a report with more than 100 steps (DiagnosticsBackend/src/index.ts).
+    private static let maxUploadedBreadcrumbs = 100
     private static let maxDiagnosticBytes = 192 * 1024
     private let queue = DispatchQueue(label: "com.exrector.palagain.diagnostics", qos: .utility)
     private let encoder: JSONEncoder = {
@@ -208,7 +211,7 @@ final class MuseDiagnostics: NSObject, ObservableObject {
             kind: kind,
             reason: reason,
             diagnostic: diagnostic,
-            breadcrumbs: Array(breadcrumbs.suffix(Self.maxBreadcrumbs))
+            breadcrumbs: Array(breadcrumbs.suffix(Self.maxUploadedBreadcrumbs))
         )
         guard let data = try? encoder.encode(report) else { return }
         let url = pendingDirectory.appendingPathComponent("\(report.reportID.uuidString.lowercased()).json")
