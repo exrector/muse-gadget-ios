@@ -796,6 +796,7 @@ final class MuseRuntime: NSObject {
                         }
                         return .success(object)
                     }
+                    if case .success = mapped { self.queue.async { self.openChatSubscription() } }
                     DispatchQueue.main.async { completion(mapped) }
                 }
             } catch {
@@ -1161,7 +1162,9 @@ final class MuseRuntime: NSObject {
             guard (200..<300).contains(response.status) else {
                 log("Muse chat subscription returned HTTP \(response.status)")
                 connectivity.note("chat_http_\(response.status)")
-                closeChatSubscription(streamID: streamID, reconnect: true)
+                // 404: the gadget's own chat does not exist in Muse until its first message, so the
+                // subscription waits for that message instead of asking again every 5 s.
+                closeChatSubscription(streamID: streamID, reconnect: response.status != 404)
                 return
             }
             handleChatData(response.body, end: response.endBody, streamID: streamID)
