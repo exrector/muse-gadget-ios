@@ -36,6 +36,8 @@ final class PairingCoordinator: NSObject {
     var onStateChange: ((State) -> Void)?
     var onLog: ((String) -> Void)?
     var onCredentialsStored: ((DeviceCredentials) -> Void)?
+    /// Only a pairing completed over Bluetooth, not a saved one found again.
+    var onNewPairing: (() -> Void)?
 
     private let identity: DeviceIdentity
     private let credentials: CredentialStore
@@ -200,6 +202,7 @@ final class PairingCoordinator: NSObject {
         }
         state = .paired
         log("Device credentials stored in Keychain; pairing complete")
+        DispatchQueue.main.async { self.onNewPairing?() }
     }
 
     private func sendJSON(_ object: [String: Any], completion: (() -> Void)? = nil) throws {

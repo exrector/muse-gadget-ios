@@ -358,6 +358,24 @@ final class MuseAppModel: ObservableObject {
         visibleChatItems.last(where: { $0.author == .muse && !$0.text.isEmpty })
     }
 
+    /// A newly paired gadget gets a chat of its own, named after it, so its messages, calls and
+    /// Muse's replies stay out of the main chat. Muse creates the chat with its first message.
+    private static let gadgetChatKey = "gadgetChatSession"
+    func ensureGadgetChat() {
+        guard UserDefaults.standard.string(forKey: Self.gadgetChatKey) == nil else { return }
+        let session = MuseChatSession(id: UUID().uuidString.lowercased(), title: environment.identity.displayName)
+        UserDefaults.standard.set(session.id, forKey: Self.gadgetChatKey)
+        chatSessions.append(session)
+        persistChatSessions()
+        selectChat(session.id)
+        environment.diagnostics.record("gadget_chat", detail: "created")
+    }
+
+    /// True once Muse has the open chat, that is, once a message in it has an ID from Muse.
+    var openChatExistsInMuse: Bool {
+        activeChatSessionID == nil || visibleChatItems.contains { $0.museMessageID != nil }
+    }
+
     func createSideChat() {
         guard !isSendingChat, !isAwaitingReply else { return }
         let session = MuseChatSession(
@@ -495,6 +513,7 @@ final class MuseAppModel: ObservableObject {
                 self.applyIdleTimerPolicy()
             }
         }
+        environment.pairing.onNewPairing = { [weak self] in self?.ensureGadgetChat() }
         environment.pairing.onLog = { [weak self] message in
             guard let self else { return }
             self.diagnostics.append(message)
@@ -1342,8 +1361,10 @@ final class MuseAppModel: ObservableObject {
         guard isCallReady, !isRecordingVoice, !isVoiceCallOpen else { return }
         isVoiceCallOpen = true
         UIApplication.shared.isIdleTimerDisabled = true
-        environment.diagnostics.record("call", detail: activeChatSessionID == nil ? "thread=main" : "thread=side")
-        voiceCall.start(threadID: activeChatSessionID)
+        // A chat Muse has not created yet cannot take a call, so until then it goes to the main one.
+        let thread = openChatExistsInMuse ? activeChatSessionID : nil
+        environment.diagnostics.record("call", detail: thread == nil ? "thread=main" : "thread=side")
+        voiceCall.start(threadID: thread)
     }
 
     static let callSpeakingAnimation = "call_speaking"

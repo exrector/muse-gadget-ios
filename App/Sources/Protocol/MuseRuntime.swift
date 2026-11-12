@@ -579,8 +579,12 @@ final class MuseRuntime: NSObject {
         )
     }
 
+    /// The chat the app has open, for messages the app sends on its own, such as the avatar request.
+    private(set) var openChatSessionID: String?
+
     func setChatSession(_ sessionID: String?) {
         let clean = sessionID?.trimmingCharacters(in: .whitespacesAndNewlines)
+        openChatSessionID = clean?.isEmpty == false ? clean : nil
         queue.async {
             guard self.chatSessionID != clean else { return }
             self.chatSessionID = clean

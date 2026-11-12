@@ -118,7 +118,11 @@ final class AppEnvironment {
             DispatchQueue.main.async { diagnostics?.record("link", detail: code) }
         }
         vmImages.askMuseForAvatar = {
-            runtime.sendChat(PalL10n.format("avatar.request_format", identity.displayName)) { _ in }
+            // Into the gadget's own chat, which this first message creates in Muse.
+            runtime.sendChat(
+                PalL10n.format("avatar.request_format", identity.displayName),
+                sessionID: runtime.openChatSessionID
+            ) { _ in }
         }
         // A build stopped by the app leaving the screen goes on from where it was.
         activeObserver = NotificationCenter.default.addObserver(
@@ -144,6 +148,7 @@ final class AppEnvironment {
         runtime.connectivity.onEvent = nil
         runtime.stopPathMonitor()
         pairing.onCredentialsStored = nil
+        pairing.onNewPairing = nil
         vmImages.readVMFile = nil
         vmImages.askMuseForAvatar = nil
         if let activeObserver { NotificationCenter.default.removeObserver(activeObserver) }
