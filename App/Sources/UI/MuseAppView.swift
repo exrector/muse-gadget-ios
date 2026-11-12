@@ -1661,6 +1661,8 @@ private struct MuseMark: View {
     }
 }
 
+private var isPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
+
 private struct StepIntro: View {
     let eyebrow: String
     let title: String
@@ -1689,13 +1691,13 @@ private struct WelcomeStep: View {
         VStack(alignment: .leading, spacing: 24) {
             StepIntro(
                 eyebrow: "Добро пожаловать",
-                title: "Старый iPhone — новый гаджет для Muse",
+                title: isPad ? "Старый iPad — новый гаджет для Muse" : "Старый iPhone — новый гаджет для Muse",
                 text: "Пять простых шагов. Мы спрячем Bluetooth, ключи и протоколы под капот и будем объяснять только то, что нужно нажать."
             )
 
             VStack(spacing: 16) {
                 FeatureLine(icon: "message.fill", title: "Muse как чат", text: "Сообщения и ответы — на главном экране.")
-                FeatureLine(icon: "square.grid.2x2.fill", title: "Возможности iPhone", text: "Экран, голос, камера, геопозиция и датчики.")
+                FeatureLine(icon: "square.grid.2x2.fill", title: isPad ? "Возможности iPad" : "Возможности iPhone", text: "Экран, голос, камера, геопозиция и датчики.")
                 FeatureLine(icon: "lock.shield.fill", title: "Личные данные защищены", text: "Ключ хранится только в системной Связке ключей.")
             }
             .museCard()
@@ -1885,7 +1887,9 @@ private struct NetworkStep: View {
             StepIntro(
                 eyebrow: "Шаг 4",
                 title: "Проверьте сеть Wi‑Fi",
-                text: "Muse и этот iPhone должны видеть одну сеть. Мы подставим её имя автоматически, когда iOS это разрешает."
+                text: isPad
+                    ? "Muse и этот iPad должны видеть одну сеть. Мы подставим её имя автоматически, когда iPadOS это разрешает."
+                    : "Muse и этот iPhone должны видеть одну сеть. Мы подставим её имя автоматически, когда iOS это разрешает."
             )
 
             VStack(alignment: .leading, spacing: 14) {

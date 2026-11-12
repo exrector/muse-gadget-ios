@@ -376,3 +376,6 @@
 "presentation.form" = "📝 Muse sent a form. Fill it in in the Muse app.";
 "presentation.attachment" = "📎 Muse sent an attachment. Open it in the Muse app.";
 "Сервер Muse не разрешает этому гаджету обмен файлами, поэтому кнопки выключены. Документ можно отправить в чат через +, а сохранённые файлы ниже остаются доступны." = "Muse's server does not allow this gadget to exchange files, so these buttons are off. You can still send a document to the chat with +, and saved files below stay available.";
+"Старый iPad — новый гаджет для Muse" = "Your old iPad, now a new Muse gadget";
+"Возможности iPad" = "iPad capabilities";
+"Muse и этот iPad должны видеть одну сеть. Мы подставим её имя автоматически, когда iPadOS это разрешает." = "Muse and this iPad must be able to see the same network. We fill in its name automatically when iPadOS allows it.";
