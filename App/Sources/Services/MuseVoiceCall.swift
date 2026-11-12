@@ -308,7 +308,7 @@ final class MuseVoiceCall: ObservableObject {
     private func join(host: String, port: Int, vipCode: Int32, cosmos: Bool) {
         trace("join")
         let offer = MuseCallJoinOffer.make(threadID: threadID, edgeHost: host, edgePort: port, vipType: vipCode, video: true)
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "payload_b64": offer.payload.base64EncodedString(),
             "call_id": callID,
             "call_media_type": "video",
@@ -318,6 +318,9 @@ final class MuseVoiceCall: ObservableObject {
             "proactive_greeting_enabled": Self.greets,
             "enable_media_to_cosmos": cosmos
         ]
+        // As video_call.py on Meta's branch: the thread goes in the JOIN's session parameters and
+        // in the request body too. With only the first, the call stayed in the main chat.
+        if let threadID { body["thread_id"] = threadID }
         runtime.postJSON(path: "/voice/calls/join", fields: body) { [weak self] response in
             guard let self, self.phase == .connecting else { return }
             guard case .success(let reply) = response,
@@ -526,6 +529,8 @@ final class MuseVoiceCall: ObservableObject {
         switch type {
         case "hatch.voice.session":
             threadID = event["thread_id"] as? String
+            // Whether Muse put the call in the chat it was asked for, never the IDs themselves.
+            trace("thread=" + (threadID == nil ? "none" : (threadID == requestedThread ? "match" : "other")))
             withGate { gateReady = true }
             lastActivity = Date()
             phase = .listening
