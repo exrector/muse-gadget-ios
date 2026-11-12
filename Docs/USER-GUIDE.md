@@ -59,7 +59,7 @@ During the conversation:
 
 With **Video with Muse's Avatar (Beta)** on, which is the default, the conversation is a video call: Muse shows its face and its lips move with its voice, as in the Muse app. It uses about 1 Mbit/s. With it off the conversation is voice only, and the avatar plays its talking animation while Muse's voice is heard.
 
-On an iPad the call takes the avatar's square, with its buttons over the picture; Muse's card, picture and caption stay in view beside it. In a call without video your sentences and Muse's appear in the chat as they are said. On an iPhone it opens as a card, and you can turn the phone on its side for a larger picture.
+On an iPad the call takes the avatar's square, with its buttons over the picture; Muse's card, picture and caption stay in view beside it. **In a call without video your sentences and Muse's appear in the chat as they are said. In a video call the chat fills in only after you hang up**, because Muse's video calls carry no text until the SDK adds it. On an iPhone it opens as a card, and you can turn the phone on its side for a larger picture.
 
 A conversation ends by itself after 45 seconds of silence or after 15 minutes. **Call Again** starts a new one. The chat refreshes afterwards.
 
