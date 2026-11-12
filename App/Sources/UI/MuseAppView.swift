@@ -1423,7 +1423,11 @@ final class MuseAppModel: ObservableObject {
         guard isCallReady, !isRecordingVoice, !isVoiceCallOpen else { return }
         isVoiceCallOpen = true
         UIApplication.shared.isIdleTimerDisabled = true
-        // A chat Muse has not created yet cannot take a call, so until then it goes to the main one.
+        startCallInOpenChat()
+    }
+
+    /// A chat Muse has not created yet cannot take a call, so until then it goes to the main one.
+    func startCallInOpenChat() {
         let thread = openChatExistsInMuse ? activeChatSessionID : nil
         environment.diagnostics.record("call", detail: thread == nil ? "thread=main" : "thread=side")
         voiceCall.start(threadID: thread)
@@ -3499,7 +3503,7 @@ private struct MuseVoiceCallView: View {
                 }
                 roundButton("phone.down.fill", label: "Завершить разговор", color: .red) { model.closeVoiceCall() }
             } else {
-                roundButton("phone.fill", label: "Позвонить снова", color: MuseTheme.accent) { call.start() }
+                roundButton("phone.fill", label: "Позвонить снова", color: MuseTheme.accent) { model.startCallInOpenChat() }
                 roundButton("xmark", label: "Закрыть", color: MuseTheme.elevated) { model.closeVoiceCall() }
             }
         }
