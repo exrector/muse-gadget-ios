@@ -28,7 +28,8 @@ final class MuseChatTimeline {
     private struct LateRequest {
         var ids: Set<String>
         let since: Date
-        var idleSince: Date?
+        var busy = true
+        var lastStatus: Date
     }
 
     static let lateIdleExpiry: TimeInterval = 10
@@ -49,6 +50,10 @@ final class MuseChatTimeline {
     private var holding = false
     private var late: LateRequest?
     private var presented: Set<String> = []
+    /// Messages of the current turn, which a late reply may answer instead of the request itself.
+    private var turnMessages: Set<String> = []
+    /// Content-free notes for the diagnostics log: why a late request was forgotten or a row skipped.
+    var onNote: ((String) -> Void)?
     /// True while Muse's latest status for the current request says it is working on it.
     private(set) var isMuseWorking = false
     var now: () -> Date = Date.init
@@ -80,10 +85,12 @@ final class MuseChatTimeline {
         pending.removeAll()
         isMuseWorking = false
         guard !userIDs.isEmpty else { return false }
-        let open = replies.filter { !$0.value.done && !$0.value.late }.map(\.key)
-        late = LateRequest(ids: userIDs.union(open), since: now(), idleSince: nil)
-        for id in open { replies[id]?.late = true }
+        // As the ESP32's pending_arm: the request and every message its turn already showed.
+        let ids = userIDs.union(turnMessages)
+        late = LateRequest(ids: ids, since: now(), lastStatus: now())
+        for id in turnMessages { replies[id]?.late = true }
         userIDs.removeAll()
+        turnMessages.removeAll()
         return true
     }
 
@@ -95,13 +102,18 @@ final class MuseChatTimeline {
     private func expireLateRequest() {
         guard let request = late else { return }
         let time = now()
-        if time.timeIntervalSince(request.since) > Self.lateMaxAge { late = nil; return }
-        if let idle = request.idleSince, time.timeIntervalSince(idle) > Self.lateIdleExpiry { late = nil }
+        if time.timeIntervalSince(request.since) > Self.lateMaxAge {
+            late = nil; onNote?("late_forgotten:age"); return
+        }
+        if !request.busy, time.timeIntervalSince(request.lastStatus) > Self.lateIdleExpiry {
+            late = nil; onNote?("late_forgotten:idle")
+        }
     }
 
     func acknowledge(_ response: [String: Any]) -> [MuseChatUpdate] {
         let result = response["result"] as? [String: Any] ?? response
         userIDs.removeAll()
+        turnMessages.removeAll()
         for key in ["message_id", "reply_to_message_id"] {
             if let value = result[key] as? String, !value.isEmpty { userIDs.insert(value) }
         }
@@ -179,9 +191,11 @@ final class MuseChatTimeline {
 
     private func status(name: String, payload: [String: Any]) -> [MuseChatUpdate] {
         let parent = Self.parent(of: payload)
-        if isLate(parent), late != nil {
-            if Self.isBusy(name: name, payload: payload) { late?.idleSince = nil }
-            else if late?.idleSince == nil { late?.idleSince = now() }
+        // As the ESP32's pending_event: with no turn of its own, a status that names the late
+        // request or names no request at all says whether Muse is still working on it.
+        if late != nil, isLate(parent) || (parent == nil && userIDs.isEmpty) {
+            late?.busy = Self.isBusy(name: name, payload: payload)
+            late?.lastStatus = now()
             return []
         }
         guard !userIDs.isEmpty else { return [] }
@@ -219,7 +233,12 @@ final class MuseChatTimeline {
         if replies[messageID]?.late == true || (replies[messageID] == nil && isLate(parent)) {
             return lateMessage(name: name, messageID: messageID, payload: payload)
         }
-        guard !userIDs.isEmpty else { return [] }
+        guard !userIDs.isEmpty else {
+            if late != nil, name == "message.assistant" {
+                onNote?(parent == nil ? "late_skip:no_parent" : "late_skip:other_parent")
+            }
+            return []
+        }
         var reply = replies[messageID]
         if let parent, !userIDs.contains(parent), replies[parent] == nil {
             if reply == nil { ignore(messageID) }
@@ -230,6 +249,7 @@ final class MuseChatTimeline {
             track(messageID)
             reply = Reply()
         }
+        turnMessages.insert(messageID)
         guard var current = reply else { return [] }
 
         current = Self.updated(current, name: name, messageID: messageID, payload: payload)
@@ -263,7 +283,7 @@ final class MuseChatTimeline {
         current = Self.updated(current, name: name, messageID: messageID, payload: payload)
         replies[messageID] = current
         late?.ids.insert(messageID)
-        if current.done { late = nil }
+        if current.done { late = nil; onNote?("late_reply_done") }
         guard !current.text.isEmpty else { return [] }
         return [.lateReply(messageID: messageID, text: current.text, done: current.done)]
     }

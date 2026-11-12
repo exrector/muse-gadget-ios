@@ -1530,6 +1530,41 @@ final class MuseGadgetLegacyTests: XCTestCase {
         ])).isEmpty)
     }
 
+    func testStatusesWithoutAParentKeepALateRequestAlive() {
+        var clock = Date(timeIntervalSince1970: 1_000)
+        let timeline = acknowledgedTimeline()
+        timeline.now = { clock }
+        timeline.detachCurrentRequest()
+        _ = timeline.feed(chatEvent("agent.status", ["reply_to_message_id": "user-1", "activity_code": "idle"]))
+        clock += 8
+        _ = timeline.feed(chatEvent("task.status", ["status": "running"]))
+        clock += 60
+        XCTAssertTrue(timeline.isWaitingForLateReply)
+        XCTAssertEqual(timeline.feed(chatEvent("message.assistant", [
+            "message_id": "answer", "reply_to_message_id": "user-1", "display_text": "done"
+        ])), [.lateReply(messageID: "answer", text: "done", done: true)])
+    }
+
+    func testLateReplyMayAnswerAMessageItsTurnAlreadyShowed() {
+        let timeline = acknowledgedTimeline()
+        _ = timeline.feed(chatEvent("delta.message_done", [
+            "message_id": "first", "reply_to_message_id": "user-1", "content": "Looking into it"
+        ]))
+        timeline.detachCurrentRequest()
+        XCTAssertEqual(timeline.feed(chatEvent("message.assistant", [
+            "message_id": "second", "reply_to_message_id": "first", "display_text": "Here it is"
+        ])), [.lateReply(messageID: "second", text: "Here it is", done: true)])
+    }
+
+    func testSkippedLateRowsAreNoted() {
+        let timeline = acknowledgedTimeline()
+        var notes: [String] = []
+        timeline.onNote = { notes.append($0) }
+        timeline.detachCurrentRequest()
+        _ = timeline.feed(chatEvent("message.assistant", ["message_id": "x", "display_text": "?"]))
+        XCTAssertEqual(notes, ["late_skip:no_parent"])
+    }
+
     func testLateRequestIsForgottenAfterThirtyMinutes() {
         var clock = Date(timeIntervalSince1970: 1_000)
         let timeline = acknowledgedTimeline()

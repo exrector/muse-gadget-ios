@@ -529,6 +529,9 @@ final class MuseAppModel: ObservableObject {
         ) { [weak self] note in
             self?.card = note.object as? MuseCard
         }
+        chatTimeline.onNote = { [weak self] note in
+            self?.environment.diagnostics.record("late", detail: note)
+        }
         environment.runtime.onChatRecord = { [weak self] record in
             guard let self else { return }
             self.apply(self.chatTimeline.feed(record))
