@@ -638,12 +638,17 @@ final class MuseRuntime: NSObject {
     }
 
     /// Reads recent server history through the same authenticated Noise session as chat.
-    func fetchChatHistory(limit: Int = 20, completion: @escaping (Result<Data, Error>) -> Void) {
+    /// `session_id` is not documented for this route; a late-reply check tries it for a side chat.
+    func fetchChatHistory(limit: Int = 20, sessionID: String? = nil, completion: @escaping (Result<Data, Error>) -> Void) {
         queue.async {
             let bounded = min(max(limit, 1), 50)
+            var path = "/chat/history?limit=\(bounded)"
+            if let sessionID, let encoded = sessionID.addingPercentEncoding(withAllowedCharacters: .alphanumerics) {
+                path += "&session_id=\(encoded)"
+            }
             self.performRequest(
                 method: "GET",
-                path: "/chat/history?limit=\(bounded)",
+                path: path,
                 body: Data(),
                 headers: []
             ) { result in
@@ -1299,6 +1304,7 @@ final class MuseRuntime: NSObject {
 
     private func closeChatSubscription(streamID: Int64, reconnect: Bool) {
         guard chatSubscriptionID == streamID else { return }
+        connectivity.note("chat_closed")
         chatSubscriptionID = nil
         chatDecoder = MuseNDJSONDecoder()
         if reconnect { scheduleChatSubscriptionReconnect() }

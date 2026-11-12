@@ -1527,7 +1527,8 @@ final class MuseGadgetLegacyTests: XCTestCase {
         XCTAssertEqual(timeline.feed(chatEvent("message.assistant", [
             "message_id": "answer", "reply_to_message_id": "user-1", "display_text": "after two minutes"
         ])), [.lateReply(messageID: "answer", text: "after two minutes", done: true)])
-        XCTAssertEqual(notes, ["late_idle", "late_reply_done"])
+        XCTAssertEqual(notes.filter { !$0.hasPrefix("ev:") }, ["late_idle", "late_reply_done"])
+        XCTAssertTrue(notes.contains("ev:message.assistant:p=late:s=none"))
     }
 
     func testStatusesWithoutAParentKeepALateRequestAlive() {
@@ -1562,7 +1563,7 @@ final class MuseGadgetLegacyTests: XCTestCase {
         timeline.onNote = { notes.append($0) }
         timeline.detachCurrentRequest()
         _ = timeline.feed(chatEvent("message.assistant", ["message_id": "x", "display_text": "?"]))
-        XCTAssertEqual(notes, ["late_skip:no_parent"])
+        XCTAssertEqual(notes, ["ev:message.assistant:p=none:s=none", "late_skip:no_parent"])
     }
 
     func testLateRequestIsForgottenAfterThirtyMinutes() {

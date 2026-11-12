@@ -1123,6 +1123,46 @@ final class MuseAppModel: ObservableObject {
         guard bound else { return }
         environment.diagnostics.record("reply_detached")
         chatItems.append(MuseChatItem(author: .system, text: PalL10n.text(note), sessionID: activeChatSessionID))
+        checkHistoryForLateReply(attempt: 0, since: Date())
+    }
+
+    /// A safety net the ESP32 lacks: while a late reply is awaited, read the chat's history every 45 s
+    /// for ten minutes. The result is noted without content; replies from this chat are merged in.
+    private func checkHistoryForLateReply(attempt: Int, since: Date) {
+        guard attempt < 14 else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 45) { [weak self] in
+            guard let self, self.chatTimeline.isWaitingForLateReply else { return }
+            let session = self.chatTimeline.currentSessionID
+            self.environment.runtime.fetchChatHistory(limit: 10, sessionID: session) { [weak self] result in
+                guard let self else { return }
+                switch result {
+                case .failure(let error):
+                    let status: String
+                    if case MuseRuntimeError.requestFailed(let code) = error { status = String(code) } else { status = "error" }
+                    self.environment.diagnostics.record("late", detail: "hist:\(status)")
+                case .success(let data):
+                    let messages = MuseServerHistory.parse(data)
+                    let inChat = messages.filter { session == nil || $0.sessionID == session }
+                    let known = Set(self.chatItems.compactMap(\.museMessageID))
+                    let newReplies = inChat.filter {
+                        $0.author == .muse && $0.createdAt > since && !known.contains($0.messageID)
+                    }
+                    self.environment.diagnostics.record(
+                        "late", detail: "hist:200:n=\(messages.count):chat=\(inChat.count):new=\(newReplies.count)"
+                    )
+                    if !newReplies.isEmpty {
+                        self.chatItems = MuseChatMerge.mergeServer(
+                            local: self.chatItems, server: newReplies,
+                            clearedBefore: self.environment.chatCloud.clearedBefore
+                        )
+                        self.replyItemIDs = Dictionary(uniqueKeysWithValues: self.chatItems.compactMap { item in
+                            item.museMessageID.map { ($0, item.id) }
+                        })
+                    }
+                }
+                self.checkHistoryForLateReply(attempt: attempt + 1, since: since)
+            }
+        }
     }
 
     private func finishWaitingForReply() {

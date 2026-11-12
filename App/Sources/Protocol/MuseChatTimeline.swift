@@ -53,6 +53,9 @@ final class MuseChatTimeline {
     private var presented: Set<String> = []
     /// Messages of the current turn, which a late reply may answer instead of the request itself.
     private var turnMessages: Set<String> = []
+    private var lateEventNotes = 0
+    /// The chat the current or late request belongs to.
+    var currentSessionID: String? { sessionID }
     /// Content-free notes for the diagnostics log: why a late request was forgotten or a row skipped.
     var onNote: ((String) -> Void)?
     /// True while Muse's latest status for the current request says it is working on it.
@@ -89,6 +92,7 @@ final class MuseChatTimeline {
         // As the ESP32's pending_arm: the request and every message its turn already showed.
         let ids = userIDs.union(turnMessages)
         late = LateRequest(ids: ids, since: now(), lastStatus: now())
+        lateEventNotes = 0
         for id in turnMessages { replies[id]?.late = true }
         userIDs.removeAll()
         turnMessages.removeAll()
@@ -134,6 +138,15 @@ final class MuseChatTimeline {
         guard event["type"] as? String == "event",
               let payload = event["payload"] as? [String: Any] else { return [] }
         let eventSession = (payload["session_id"] as? String) ?? (event["session_id"] as? String)
+        // While a late request is remembered, every event is noted without content, to see what Muse
+        // sends for a long task: its kind, whom it answers and which chat it is in.
+        if late != nil, lateEventNotes < 120, let name = event["event"] as? String {
+            lateEventNotes += 1
+            let parent = Self.parent(of: payload) ?? Self.parent(of: payload["data"] as? [String: Any] ?? [:])
+            let whom = parent == nil ? "none" : (isLate(parent) ? "late" : (userIDs.contains(parent!) ? "cur" : "other"))
+            let chat = eventSession == nil ? "none" : (eventSession == sessionID ? "same" : "other")
+            onNote?("ev:\(name.prefix(40)):p=\(whom):s=\(chat)")
+        }
         if let eventSession, !eventSession.isEmpty, let sessionID, eventSession != sessionID { return [] }
         if holding {
             if pending.count < Self.maxPendingEvents { pending.append(event) }
