@@ -80,7 +80,7 @@ Tap the chat-bubble button beside the Muse name:
 - **Refresh Chats** reloads recent chats that the gadget credential is allowed to see.
 - **Connect Chat** attaches a chat created in the main Muse app. Copy that chat's link in Muse, open **Connect Chat** in Pal Again, paste it, and optionally give it a local name.
 
-Muse does not send the account's chat titles to gadget credentials. A connected chat therefore uses the local name you enter, or a short name made from its ID. You can rename it later by connecting the same link again and entering a name. There is no one-chat limit: every distinct chat link or ID becomes a separate entry. If the same chat is pasted twice, Pal Again opens the existing entry instead of duplicating it.
+A chat you delete in the Muse app leaves this list the next time the gadget connects or you tap **Refresh Chats**; if it was the gadget's own chat, the gadget starts a new one. Muse does not send the account's chat titles to gadget credentials. A connected chat therefore uses the local name you enter, or a short name made from its ID. You can rename it later by connecting the same link again and entering a name. There is no one-chat limit: every distinct chat link or ID becomes a separate entry. If the same chat is pasted twice, Pal Again opens the existing entry instead of duplicating it.
 
 ## What Muse can do with the gadget
 

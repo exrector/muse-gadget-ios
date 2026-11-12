@@ -542,6 +542,7 @@ final class MuseAppModel: ObservableObject {
             self.environment.diagnostics.record("runtime_state", detail: MuseDiagnostics.label(state))
             if state == .registered {
                 self.sendGadgetGreetingIfNeeded()
+                self.pruneDeletedChats()
                 self.syncServerHistory()
                 self.environment.runtime.probeFileAccess { [weak self] allowed in
                     if let allowed { self?.vmFilesAllowed = allowed }
@@ -1320,7 +1321,50 @@ final class MuseAppModel: ObservableObject {
         }
     }
 
+    /// The gadget cannot list the account's chats (muse-gadget-sdk#336), so it cannot see one deleted
+    /// in the Muse app. A chat that existed, having messages with IDs from Muse, is asked for its
+    /// history: when Muse no longer has it (404, or no messages at all), it leaves the list with its
+    /// messages here. Runs on connecting and on Refresh Chats.
+    private func pruneDeletedChats() {
+        let existed = chatSessions.filter { session in
+            chatItems.contains { $0.sessionID == session.id && $0.museMessageID != nil }
+        }
+        for session in existed {
+            environment.runtime.fetchChatHistory(limit: 1, sessionID: session.id) { [weak self] result in
+                guard let self else { return }
+                let gone: Bool
+                switch result {
+                case .failure(MuseRuntimeError.requestFailed(let status)): gone = status == 404
+                case .failure: gone = false
+                case .success(let data): gone = MuseServerHistory.parse(data).isEmpty
+                }
+                guard gone else { return }
+                self.environment.diagnostics.record("chat_pruned")
+                self.removeChatLocally(session.id)
+            }
+        }
+    }
+
+    private func removeChatLocally(_ sessionID: String) {
+        if activeChatSessionID == sessionID {
+            let gadget = UserDefaults.standard.string(forKey: Self.gadgetChatKey)
+            let next = gadget != sessionID && chatSessions.contains(where: { $0.id == gadget }) ? gadget : nil
+            guard !isSendingChat, !isAwaitingReply else { return }
+            selectChat(next)
+        }
+        chatSessions.removeAll { $0.id == sessionID }
+        persistChatSessions()
+        chatItems.removeAll { $0.sessionID == sessionID }
+        if UserDefaults.standard.string(forKey: Self.gadgetChatKey) == sessionID {
+            // The gadget's own chat was deleted in Muse: it gets a new one, greeted as after pairing.
+            UserDefaults.standard.removeObject(forKey: Self.gadgetChatKey)
+            ensureGadgetChat()
+            sendGadgetGreetingIfNeeded()
+        }
+    }
+
     func refreshChatSessions() {
+        pruneDeletedChats()
         syncServerHistory()
     }
 
