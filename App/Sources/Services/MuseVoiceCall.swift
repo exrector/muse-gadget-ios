@@ -561,10 +561,13 @@ final class MuseVoiceCall: ObservableObject {
             if let text = event["transcript"] as? String, !text.isEmpty {
                 heard = text
                 onTranscript?(true, text)
+            } else {
+                trace("heard_text=missing")
             }
         case "response.audio_transcript.done", "response.output_audio_transcript.done":
             let text = ((event["transcript"] as? String) ?? reply).trimmingCharacters(in: .whitespacesAndNewlines)
             if !fenced, !text.isEmpty { onTranscript?(false, text) }
+            trace(text.isEmpty ? "reply_text=missing" : (fenced ? "reply_text=fenced" : "reply_text=ok"))
         case "hatch.voice.turn_started":
             isMuseReady = true
             missedSentence = false
