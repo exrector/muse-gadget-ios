@@ -365,10 +365,27 @@ final class MuseAppModel: ObservableObject {
         guard UserDefaults.standard.string(forKey: Self.gadgetChatKey) == nil else { return }
         let session = MuseChatSession(id: UUID().uuidString.lowercased(), title: environment.identity.displayName)
         UserDefaults.standard.set(session.id, forKey: Self.gadgetChatKey)
+        UserDefaults.standard.set(true, forKey: Self.gadgetGreetingKey)
         chatSessions.append(session)
         persistChatSessions()
         selectChat(session.id)
         environment.diagnostics.record("gadget_chat", detail: "created")
+    }
+
+    /// The gadget chat's first message, sent once after a new pairing. Muse names a chat after its
+    /// first message, so this gives the chat a name that says what it is, and tells Muse too.
+    private static let gadgetGreetingKey = "gadgetChatGreetingPending"
+    private func sendGadgetGreetingIfNeeded() {
+        guard UserDefaults.standard.bool(forKey: Self.gadgetGreetingKey),
+              let chat = UserDefaults.standard.string(forKey: Self.gadgetChatKey),
+              activeChatSessionID == chat else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            guard let self, self.canSendToMuse, !self.isAwaitingReply,
+                  UserDefaults.standard.bool(forKey: Self.gadgetGreetingKey) else { return }
+            UserDefaults.standard.set(false, forKey: Self.gadgetGreetingKey)
+            self.environment.diagnostics.record("gadget_chat", detail: "greeting")
+            self.sendChat(PalL10n.format("gadget_chat.greeting_format", self.environment.identity.displayName))
+        }
     }
 
     /// True once Muse has the open chat, that is, once a message in it has an ID from Muse.
@@ -524,6 +541,7 @@ final class MuseAppModel: ObservableObject {
             self.runtimeState = state
             self.environment.diagnostics.record("runtime_state", detail: MuseDiagnostics.label(state))
             if state == .registered {
+                self.sendGadgetGreetingIfNeeded()
                 self.syncServerHistory()
                 self.environment.runtime.probeFileAccess { [weak self] allowed in
                     if let allowed { self?.vmFilesAllowed = allowed }

@@ -379,3 +379,4 @@
 "Старый iPad — новый гаджет для Muse" = "Your old iPad, now a new Muse gadget";
 "Возможности iPad" = "iPad capabilities";
 "Muse и этот iPad должны видеть одну сеть. Мы подставим её имя автоматически, когда iPadOS это разрешает." = "Muse and this iPad must be able to see the same network. We fill in its name automatically when iPadOS allows it.";
+"gadget_chat.greeting_format" = "This is the chat of the gadget %@ (Pal Again). Its messages and calls go here.";

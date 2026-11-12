@@ -92,3 +92,4 @@
 "presentation.image" = "🖼 Muse прислал изображение. Гаджет пока не может его показать, откройте его в приложении Muse.";
 "presentation.form" = "📝 Muse прислал форму. Заполните её в приложении Muse.";
 "presentation.attachment" = "📎 Muse прислал вложение. Откройте его в приложении Muse.";
+"gadget_chat.greeting_format" = "Это чат гаджета %@ (Pal Again). Здесь его переписка и звонки.";

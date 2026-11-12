@@ -29,7 +29,7 @@ Setup is five steps, and the app walks you through them.
 
 When Muse asks for a Wi-Fi network and shows only **Other**, enter the exact name of the network the gadget is on, and its password if asked. The app ignores what it receives there and keeps using the connection it already has.
 
-The chat opens when pairing finishes, in a chat of the gadget's own named after it, such as "iPad DB2F" (2.0), so its conversation, calls and Muse's replies stay out of your main chat. Muse creates that chat with the gadget's first message. Wait for **Connected to Muse VM** at the top before you try anything.
+The chat opens when pairing finishes, in a chat of the gadget's own named after it, such as "iPad DB2F" (2.0), so its conversation, calls and Muse's replies stay out of your main chat. Right after pairing the gadget sends one message there, "This is the chat of the gadget … (Pal Again)", which creates the chat in Muse and gives it a name that says what it is. Wait for **Connected to Muse VM** at the top before you try anything.
 
 If you opened the guide again from Settings and a pairing is already saved, **Back** at the top returns to the chat without changing anything (2.0).
 
