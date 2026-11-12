@@ -1151,6 +1151,8 @@ final class MuseAppModel: ObservableObject {
                         "late", detail: "hist:200:n=\(messages.count):chat=\(inChat.count):new=\(newReplies.count)"
                     )
                     if !newReplies.isEmpty {
+                        self.chatTimeline.forgetLateRequest(reason: "history")
+                        self.environment.diagnostics.record("late_reply", detail: "history")
                         self.chatItems = MuseChatMerge.mergeServer(
                             local: self.chatItems, server: newReplies,
                             clearedBefore: self.environment.chatCloud.clearedBefore

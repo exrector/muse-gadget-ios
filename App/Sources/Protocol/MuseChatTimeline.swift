@@ -99,6 +99,13 @@ final class MuseChatTimeline {
         return true
     }
 
+    /// The reply came another way, such as from the chat's history.
+    func forgetLateRequest(reason: String) {
+        guard late != nil else { return }
+        late = nil
+        onNote?("late_forgotten:" + reason)
+    }
+
     var isWaitingForLateReply: Bool {
         expireLateRequest()
         return late != nil
@@ -140,7 +147,7 @@ final class MuseChatTimeline {
         let eventSession = (payload["session_id"] as? String) ?? (event["session_id"] as? String)
         // While a late request is remembered, every event is noted without content, to see what Muse
         // sends for a long task: its kind, whom it answers and which chat it is in.
-        if late != nil, lateEventNotes < 120, let name = event["event"] as? String {
+        if late != nil, lateEventNotes < 60, let name = event["event"] as? String, name != "delta.text_append" {
             lateEventNotes += 1
             let parent = Self.parent(of: payload) ?? Self.parent(of: payload["data"] as? [String: Any] ?? [:])
             let whom = parent == nil ? "none" : (isLate(parent) ? "late" : (userIDs.contains(parent!) ? "cur" : "other"))

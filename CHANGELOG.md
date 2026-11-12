@@ -15,7 +15,7 @@ Tested through its own [TestFlight link](https://testflight.apple.com/join/C3nYX
 - **Reset App** in Settings removes the SDK token, the pairing, the chat, the avatar, files, access granted to Muse, settings and the device identity, and opens the first setup step. iOS permissions stay, because only iOS Settings can change them.
 - **Back** in the setup guide while a saved pairing exists, so opening the guide or starting a token replacement by accident no longer needs an app restart.
 - **The gadget describes itself** as the SDK now asks: `device_family: gadget`, `model_id` `pal-again-iphone` or `pal-again-ipad`, a model name such as "iPhone 6s", and a new `device.guide` command that tells Muse what this gadget is and what it cannot do.
-- **Late replies are kept.** If Muse still says it is working 20 seconds after taking a message, the gadget stops waiting and says so; the answer appears in the chat when it comes, even after the next message. **Stop** works the same way, since Muse has no way to cancel a chat reply. The request is remembered for 30 minutes. Unlike the ESP32 firmware, the gadget does not forget it 10 s after Muse says it is idle: on the iPad Muse said so and answered two minutes later.
+- **Late replies are kept**, and while one is awaited the gadget also reads the chat's history every 45 seconds, because Muse's live events for a long task may not name the request. If Muse still says it is working 20 seconds after taking a message, the gadget stops waiting and says so; the answer appears in the chat when it comes, even after the next message. **Stop** works the same way, since Muse has no way to cancel a chat reply. The request is remembered for 30 minutes. Unlike the ESP32 firmware, the gadget does not forget it 10 s after Muse says it is idle: on the iPad Muse said so and answered two minutes later.
 - **Media and forms from Muse** show a line saying what Muse sent and its fallback text. Gadgets cannot fetch the files themselves (muse-gadget-sdk#186).
 - **Connection history** in `device.health` and the diagnostics steps: network changes, each stage of connecting, drops, and after a silent drop whether the internet itself was reachable. Codes only, never addresses or content.
 
@@ -30,7 +30,7 @@ Tested through its own [TestFlight link](https://testflight.apple.com/join/C3nYX
 - The first sentence of a call is heard. Calls no longer send the SDK's `mcu-wearable` hint, which made Muse drop the opening sentences ([muse-gadget-sdk#344](https://github.com/facebookincubator/muse-gadget-sdk/issues/344)).
 - Muse stays audible after an iPad is turned during a call.
 - A crash when the diagnostics object was released while MetricKit still held it.
-- A connection that died without an error could hang for minutes: a ping now times out after 15 seconds and the gadget reconnects.
+- A connection that died without an error could hang for minutes: a ping now times out after 15 seconds, and connecting has to reach registration within 30 seconds, after which the gadget reconnects.
 - The Documents screen turns off exchange with Muse when Muse's server refuses the file route to the gadget, instead of failing on each try.
 
 ### Known limits

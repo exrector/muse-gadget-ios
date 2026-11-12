@@ -297,6 +297,8 @@ final class MuseRuntime: NSObject {
     private let pathMonitor = NWPathMonitor()
     private var lastPath: String?
     private var pingTimeout: DispatchWorkItem?
+    private var connectTimeout: DispatchWorkItem?
+    static let connectTimeoutSeconds: TimeInterval = 30
     var onStateChange: ((MuseRuntimeState) -> Void)?
     var onLog: ((String) -> Void)?
     var onUnpaired: (() -> Void)?
@@ -930,6 +932,23 @@ final class MuseRuntime: NSObject {
         task.taskDescription = String(generation)
         webSocket = task
         task.resume()
+        // URLRequest's timeout does not reliably end a WebSocket upgrade that never answers: on the
+        // iPad (2026-11-12) the gadget sat in "connecting" for minutes. Registration must finish in
+        // 30 s, or the connection is dropped and tried again.
+        connectTimeout?.cancel()
+        let timeout = DispatchWorkItem { [weak self] in
+            guard let self, task === self.webSocket else { return }
+            switch self.state {
+            case .connecting, .handshaking, .registering:
+                self.connectivity.note("connect_timeout")
+                self.fail("Muse VM connection timed out", reconnect: true)
+                self.checkInternet()
+            default:
+                break
+            }
+        }
+        connectTimeout = timeout
+        queue.asyncAfter(deadline: .now() + Self.connectTimeoutSeconds, execute: timeout)
     }
 
     private func beginHandshake() {
@@ -1825,6 +1844,8 @@ final class MuseRuntime: NSObject {
         ping = nil
         pingTimeout?.cancel()
         pingTimeout = nil
+        connectTimeout?.cancel()
+        connectTimeout = nil
         webSocket?.cancel(with: .goingAway, reason: nil)
         webSocket = nil
         handshake = nil
