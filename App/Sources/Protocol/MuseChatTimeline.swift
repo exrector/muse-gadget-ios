@@ -6,6 +6,8 @@ enum MuseChatUpdate: Equatable {
     case lateReply(messageID: String, text: String, done: Bool)
     /// Muse sent media or a form, which a gadget cannot fetch; `text` is what can be shown instead.
     case presentation(id: String, text: String, late: Bool)
+    /// A finished message of Muse's in this chat that answers no request of this gadget.
+    case otherMessage
     case activity(String?)
     case finished
 }
@@ -160,8 +162,11 @@ final class MuseChatTimeline {
             return []
         }
         expireLateRequest()
-        // Nothing to bind to yet: earlier main-chat traffic belongs to other clients.
-        guard !userIDs.isEmpty || late != nil, let name = event["event"] as? String else { return [] }
+        guard let name = event["event"] as? String else { return [] }
+        let finishedMessage = (name == "message.assistant" && payload["display_text_ready"] as? Bool != false)
+            && payload["role"] as? String != "user"
+        // Nothing to bind to: the message came from elsewhere, so the app reads the chat's history.
+        guard !userIDs.isEmpty || late != nil else { return finishedMessage ? [.otherMessage] : [] }
         switch name {
         case "agent.status", "task.status":
             return status(name: name, payload: payload)
@@ -262,16 +267,17 @@ final class MuseChatTimeline {
         guard !userIDs.isEmpty else {
             if late != nil, name == "message.assistant" {
                 onNote?(parent == nil ? "late_skip:no_parent" : "late_skip:other_parent")
+                return [.otherMessage]
             }
             return []
         }
         var reply = replies[messageID]
         if let parent, !userIDs.contains(parent), replies[parent] == nil {
             if reply == nil { ignore(messageID) }
-            return []
+            return name == "message.assistant" ? [.otherMessage] : []
         }
         if reply == nil {
-            if ignored.contains(messageID) { return [] }
+            if ignored.contains(messageID) { return name == "message.assistant" ? [.otherMessage] : [] }
             track(messageID)
             reply = Reply()
         }

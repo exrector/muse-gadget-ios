@@ -111,6 +111,8 @@ final class MuseVoiceCall: ObservableObject {
     private var lines = MuseNDJSONLines()
     private var callID = ""
     private var threadID: String?
+    /// The chat the call should join, as the SDK's `--thread-id`; nil is the primary thread.
+    private var requestedThread: String?
     private var startedAt = Date()
     private var lastActivity = Date()
     private var queueEnd: TimeInterval = 0
@@ -168,8 +170,9 @@ final class MuseVoiceCall: ObservableObject {
 
     // MARK: Starting and ending
 
-    func start() {
+    func start(threadID: String? = nil) {
         guard !phase.isActive else { return }
+        requestedThread = threadID?.isEmpty == false ? threadID : nil
         heard = ""
         reply = ""
         phase = .connecting
@@ -221,7 +224,7 @@ final class MuseVoiceCall: ObservableObject {
 
     private func connect() {
         callID = UUID().uuidString.lowercased()
-        threadID = nil
+        threadID = requestedThread
         startedAt = Date()
         lastActivity = Date()
         stopRequested = false
@@ -243,13 +246,15 @@ final class MuseVoiceCall: ObservableObject {
         // No `device: "mcu-wearable"`, which the SDK sends: with it Muse filtered speech as on a
         // wearable and dropped a call's first sentences (hatch.voice.input_suppressed), see
         // facebookincubator/muse-gadget-sdk#344. Without it the first sentence is heard.
-        let start: [String: Any] = [
+        var start: [String: Any] = [
             "type": "hatch.voice.call.start",
             "call_id": callID,
             "call_media_type": "audio",
             "device_id": runtime.deviceNodeID,
             "proactive_greeting_enabled": Self.greets
         ]
+        // As the SDK's voice_call.py: an optional thread_id in the admission targets that chat.
+        if let threadID { start["thread_id"] = threadID }
         let admission = MuseVoiceEvents.line(start)
             + MuseVoiceEvents.line(["type": "hatch.voice.capability.offer", "end_call_stop": 1])
 
@@ -302,7 +307,7 @@ final class MuseVoiceCall: ObservableObject {
 
     private func join(host: String, port: Int, vipCode: Int32, cosmos: Bool) {
         trace("join")
-        let offer = MuseCallJoinOffer.make(threadID: nil, edgeHost: host, edgePort: port, vipType: vipCode, video: true)
+        let offer = MuseCallJoinOffer.make(threadID: threadID, edgeHost: host, edgePort: port, vipType: vipCode, video: true)
         let body: [String: Any] = [
             "payload_b64": offer.payload.base64EncodedString(),
             "call_id": callID,

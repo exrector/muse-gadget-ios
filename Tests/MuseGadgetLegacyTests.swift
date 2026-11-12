@@ -332,10 +332,10 @@ final class MuseGadgetLegacyTests: XCTestCase {
         XCTAssertTrue(timeline.feed(chatEvent("delta.text_append", [
             "message_id": "foreign", "reply_to_message_id": "someone-else", "text": "x"
         ])).isEmpty)
-        // An ignored message stays ignored even when a later event names no parent.
-        XCTAssertTrue(timeline.feed(chatEvent("message.assistant", [
+        // An ignored message is never shown as a reply; finished, it asks for the chat's history.
+        XCTAssertEqual(timeline.feed(chatEvent("message.assistant", [
             "message_id": "foreign", "display_text": "x"
-        ])).isEmpty)
+        ])), [.otherMessage])
         XCTAssertTrue(timeline.feed(chatEvent("delta.text_append", [
             "message_id": "side", "session_id": "other-chat", "text": "x"
         ])).isEmpty)
@@ -344,9 +344,12 @@ final class MuseGadgetLegacyTests: XCTestCase {
         ])).isEmpty)
     }
 
-    func testTimelineIgnoresEverythingBeforeTheFirstRequest() {
-        XCTAssertTrue(MuseChatTimeline().feed(chatEvent("message.assistant", [
+    func testTimelineShowsNoReplyBeforeTheFirstRequestButAsksForHistory() {
+        XCTAssertEqual(MuseChatTimeline().feed(chatEvent("message.assistant", [
             "message_id": "old", "display_text": "history"
+        ])), [.otherMessage])
+        XCTAssertTrue(MuseChatTimeline().feed(chatEvent("delta.text_append", [
+            "message_id": "old", "text": "partial"
         ])).isEmpty)
     }
 

@@ -1117,6 +1117,20 @@ final class MuseAppModel: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 120, execute: work)
     }
 
+    /// A message in the open chat that answers no request of this gadget, such as one Muse posted
+    /// after a call or a request from the Muse app: the live events don't say which, so the chat's
+    /// history is read a moment later, once the message is finished.
+    private var historySyncWork: DispatchWorkItem?
+    private func scheduleHistorySync() {
+        historySyncWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.environment.diagnostics.record("history_sync", detail: "other_message")
+            self?.syncServerHistory()
+        }
+        historySyncWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
+    }
+
     private func letGoOfReply(note: String) {
         let bound = chatTimeline.detachCurrentRequest()
         finishWaitingForReply()
@@ -1217,6 +1231,8 @@ final class MuseAppModel: ObservableObject {
                 replyItemIDs[id] = item.id
                 chatItems.append(item)
                 environment.diagnostics.record("presentation", detail: late ? "late" : "current")
+            case .otherMessage:
+                scheduleHistorySync()
             case .activity(let text):
                 museActivity = text?.isEmpty == false ? text : nil
             case .finished:
@@ -1243,7 +1259,7 @@ final class MuseAppModel: ObservableObject {
         guard !serverHistorySyncInFlight else { return }
         serverHistorySyncInFlight = true
         isRefreshingChats = true
-        environment.runtime.fetchChatHistory(limit: 50) { [weak self] result in
+        environment.runtime.fetchChatHistory(limit: 50, sessionID: activeChatSessionID) { [weak self] result in
             guard let self else { return }
             self.serverHistorySyncInFlight = false
             self.isRefreshingChats = false
@@ -1326,7 +1342,8 @@ final class MuseAppModel: ObservableObject {
         guard isCallReady, !isRecordingVoice, !isVoiceCallOpen else { return }
         isVoiceCallOpen = true
         UIApplication.shared.isIdleTimerDisabled = true
-        voiceCall.start()
+        environment.diagnostics.record("call", detail: activeChatSessionID == nil ? "thread=main" : "thread=side")
+        voiceCall.start(threadID: activeChatSessionID)
     }
 
     static let callSpeakingAnimation = "call_speaking"
