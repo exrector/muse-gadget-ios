@@ -3564,9 +3564,9 @@ private struct MuseVoiceCallView: View {
                 roundButton(call.isMuted ? "mic.slash.fill" : "mic.fill",
                             label: call.isMuted ? "Включить микрофон" : "Выключить микрофон",
                             color: MuseTheme.elevated) { call.isMuted.toggle() }
-                if call.phase == .speaking {
-                    roundButton("hand.raised.fill", label: "Перебить", color: MuseTheme.elevated) { call.interrupt() }
-                }
+                // Always in place, so the buttons never shift; it works only while Muse speaks.
+                roundButton("hand.raised.fill", label: "Перебить", color: MuseTheme.elevated,
+                            enabled: call.phase == .speaking) { call.interrupt() }
                 roundButton("phone.down.fill", label: "Завершить разговор", color: .red) { model.closeVoiceCall() }
             } else {
                 roundButton("phone.fill", label: "Позвонить снова", color: MuseTheme.accent) { model.startCallInOpenChat() }
@@ -3575,7 +3575,8 @@ private struct MuseVoiceCallView: View {
         }
     }
 
-    private func roundButton(_ icon: String, label: String, color: Color, action: @escaping () -> Void) -> some View {
+    private func roundButton(_ icon: String, label: String, color: Color, enabled: Bool = true,
+                             action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.title2)
@@ -3585,6 +3586,8 @@ private struct MuseVoiceCallView: View {
                 .background(color)
                 .clipShape(Circle())
         }
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.35)
         .accessibilityLabel(PalL10n.text(label))
     }
 }
