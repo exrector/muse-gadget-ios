@@ -16,6 +16,76 @@ struct CommandResult {
 
 typealias CommandHandler = ([String: Any], @escaping (CommandResult) -> Void) -> Void
 
+/// How this gadget describes itself to Muse, as the SDK's protocols/DEVICE.md asks: device_family
+/// "gadget", a stable model_id with a prefix of our own, a model name people know, and the
+/// Markdown guide that `device.guide` returns.
+enum MuseDeviceDescription {
+    static let deviceFamily = "gadget"
+    static let guideCommand = "device.guide"
+    static let maxGuideBytes = 4096
+
+    /// Names the hardware class, not the build: `pal-again-iphone`, `pal-again-ipad`.
+    static func modelID(isPad: Bool) -> String { isPad ? "pal-again-ipad" : "pal-again-iphone" }
+
+    /// "iPhone 6s", "iPad (6th generation)"; an unknown identifier keeps it, as "iPhone (iPhone18,2)".
+    static func modelName(machine: String, isPad: Bool) -> String {
+        if let known = knownModels[machine] { return known }
+        let family = isPad ? "iPad" : "iPhone"
+        let clean = String(machine.unicodeScalars.filter { (0x20...0x7e).contains($0.value) && $0 != "\"" && $0 != "\\" }
+            .map(Character.init).prefix(100))
+        return clean.isEmpty ? family : "\(family) (\(clean))"
+    }
+
+    private static let knownModels: [String: String] = [
+        "iPhone8,1": "iPhone 6s", "iPhone8,2": "iPhone 6s Plus", "iPhone8,4": "iPhone SE",
+        "iPhone9,1": "iPhone 7", "iPhone9,3": "iPhone 7", "iPhone9,2": "iPhone 7 Plus", "iPhone9,4": "iPhone 7 Plus",
+        "iPhone10,1": "iPhone 8", "iPhone10,4": "iPhone 8", "iPhone10,2": "iPhone 8 Plus", "iPhone10,5": "iPhone 8 Plus",
+        "iPhone10,3": "iPhone X", "iPhone10,6": "iPhone X", "iPhone11,2": "iPhone XS", "iPhone11,4": "iPhone XS Max",
+        "iPhone11,6": "iPhone XS Max", "iPhone11,8": "iPhone XR", "iPhone12,1": "iPhone 11",
+        "iPhone12,3": "iPhone 11 Pro", "iPhone12,5": "iPhone 11 Pro Max", "iPhone12,8": "iPhone SE (2nd generation)",
+        "iPad5,1": "iPad mini 4", "iPad5,2": "iPad mini 4", "iPad5,3": "iPad Air 2", "iPad5,4": "iPad Air 2",
+        "iPad6,11": "iPad (5th generation)", "iPad6,12": "iPad (5th generation)",
+        "iPad7,5": "iPad (6th generation)", "iPad7,6": "iPad (6th generation)",
+        "iPad7,11": "iPad (7th generation)", "iPad7,12": "iPad (7th generation)",
+        "iPad11,1": "iPad mini (5th generation)", "iPad11,2": "iPad mini (5th generation)",
+        "iPad11,3": "iPad Air (3rd generation)", "iPad11,4": "iPad Air (3rd generation)",
+        "iPad6,3": "iPad Pro (9.7-inch)", "iPad6,4": "iPad Pro (9.7-inch)",
+        "iPad6,7": "iPad Pro (12.9-inch)", "iPad6,8": "iPad Pro (12.9-inch)"
+    ]
+
+    static let guide = """
+# Pal Again
+
+An iPhone or iPad running Pal Again, an app that makes the device a Muse gadget. It keeps an encrypted Link session with Muse over the device's own internet connection. Muse uses it only through the commands it lists; each command's description says what it does and returns.
+
+## What it is for
+
+A screen, speaker, microphone, camera and set of sensors next to the owner, with a chat with Muse on its screen. The owner can also type, send photos, voice notes and documents, and talk with Muse live by voice or video from the app. Those reach Muse as chat messages, not as commands.
+
+## Using it
+
+- It works only while Pal Again is open on screen. iOS suspends apps in the background, so commands then fail with `foreground_required`. Ask the owner to open the app rather than retrying.
+- Protected features need an iOS permission the owner already gave. A command never shows a permission prompt; it fails with `permission_required`, and only the owner can allow it in iOS Settings.
+- `display.set_caption` and `display.show_card` put text on the screen; a card stays until `display.clear_card`. `display.draw_file` shows a picture from the VM above the chat until `display.clear_image`.
+- `display.set_avatar`, `display.set_name` and `display.play_avatar` set Muse's own face and name on this gadget. Change them only when the owner asks.
+- `audio.speak` uses the device's speaker. `voice.record` records about two seconds from its microphone, only while the app is on screen.
+- `shortcuts.run` runs an Apple Shortcut by its exact name. The first time a name is used the owner must tap Allow on the device; until then it fails. `shortcuts.list` returns only names already allowed: iOS does not let apps see the owner's shortcuts.
+- `lan.discover` lists devices that announce themselves on the local network. `lan.request` sends one HTTP or HTTPS request, only to private IPv4 addresses and `.local` names, and the first request to each device needs the owner's tap. WebSocket, MQTT, UDP and raw sockets are not available.
+
+## Hardware differences
+
+- iPads have no vibration motor: `haptics.impact` returns `haptics_unavailable`.
+- Devices without a flash return `torch_unavailable` from `torch.set`.
+- `device.health` reports battery, thermal state, storage, permissions, the app version and recent connection events.
+
+## Limits
+
+- No shell, no files outside the app's own folder, no reading the owner's photos, messages or other apps.
+- Up to four commands run at once; more are refused with `device busy`.
+- If the gadget stops answering, the owner reopens Pal Again; it reconnects by itself.
+"""
+}
+
 final class IOSCommandRegistry {
     private var definitions: [String: CommandDefinition] = [:]
     private var handlers: [String: CommandHandler] = [:]
@@ -83,6 +153,15 @@ final class IOSCommandRegistry {
         images: MuseVMImageService
     ) -> IOSCommandRegistry {
         let registry = IOSCommandRegistry()
+
+        registry.register(CommandDefinition(
+            name: MuseDeviceDescription.guideCommand,
+            summary: "This device's usage guide (Markdown): what it is, its controls and limits.",
+            parameters: [:],
+            timeoutMS: 5_000
+        )) { _, completion in
+            completion(CommandResult(success: true, value: ["format": "markdown", "guide": MuseDeviceDescription.guide]))
+        }
 
         registry.register(CommandDefinition(
             name: "device.health",

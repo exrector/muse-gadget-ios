@@ -10,6 +10,8 @@ import UIKit
 /// Retained, bounded implementations for commands that touch native iOS services.
 /// Permission prompts remain an explicit UI responsibility; remote invocations fail closed.
 final class NativeCommandServices {
+    /// The newest connection events, for `device.health`.
+    var connectivityEvents: (() -> [[String: Any]])?
     private let permissions: PermissionCenter
     private let speech: NativeSpeechService
     private let location = NativeLocationService()
@@ -52,7 +54,8 @@ final class NativeCommandServices {
             "app_version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0",
             "app_build": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0",
             "foreground": UIApplication.shared.applicationState == .active,
-            "permissions": permissions
+            "permissions": permissions,
+            "connectivity_events": connectivityEvents?() ?? []
         ]
     }
 

@@ -189,6 +189,8 @@ final class MuseAppModel: ObservableObject {
     @Published var documentFiles: [URL] = []
     @Published var documentStatus: String?
     @Published var isTransferringDocument = false
+    /// False when Muse's server refuses the file route to this gadget, so exchange is hidden.
+    @Published var vmFilesAllowed: Bool?
     @Published var isDocumentsOpen = false
     @Published var fullScreenReply: MuseChatItem?
     @Published var nearbyGadgetCount = 0
@@ -298,6 +300,7 @@ final class MuseAppModel: ObservableObject {
     private var chatTimeline = MuseChatTimeline()
     private var replyItemIDs: [String: UUID] = [:]
     private var replyTimeout: DispatchWorkItem?
+    private var replyDetach: DispatchWorkItem?
     private var recordingTimer: Timer?
     private var requestGeneration = 0
     private var pendingUserItemID: UUID?
@@ -396,7 +399,9 @@ final class MuseAppModel: ObservableObject {
                     self.refreshDocuments()
                     self.documentStatus = PalL10n.text("Файл сохранён на устройстве.")
                 } catch { self.documentStatus = Self.describe(error) }
-            case .failure(let error): self.documentStatus = Self.describe(error)
+            case .failure(let error):
+                if case MuseRuntimeError.requestFailed(403) = error { self.vmFilesAllowed = false }
+                self.documentStatus = Self.describe(error)
             }
         }
     }
@@ -420,7 +425,9 @@ final class MuseAppModel: ObservableObject {
                 _ = try? self.environment.documents.save(data, named: remote)
                 self.refreshDocuments()
                 self.documentStatus = PalL10n.text("Файл доступен Muse.")
-            case .failure(let error): self.documentStatus = Self.describe(error)
+            case .failure(let error):
+                if case MuseRuntimeError.requestFailed(403) = error { self.vmFilesAllowed = false }
+                self.documentStatus = Self.describe(error)
             }
         }
     }
@@ -497,7 +504,12 @@ final class MuseAppModel: ObservableObject {
             guard let self else { return }
             self.runtimeState = state
             self.environment.diagnostics.record("runtime_state", detail: MuseDiagnostics.label(state))
-            if state == .registered { self.syncServerHistory() }
+            if state == .registered {
+                self.syncServerHistory()
+                self.environment.runtime.probeFileAccess { [weak self] allowed in
+                    if let allowed { self?.vmFilesAllowed = allowed }
+                }
+            }
             self.updateCallReadiness(state)
         }
         environment.runtime.onLog = { [weak self] message in
@@ -1080,16 +1092,41 @@ final class MuseAppModel: ObservableObject {
         }
     }
 
+    /// As the SDK's ESP32 firmware does (b4bee64): 20 s after Muse took the request, if it still says
+    /// it is working, the gadget stops waiting and keeps the reply for when it comes. A reply that has
+    /// not come after 120 s is kept the same way.
     private func scheduleReplyTimeout() {
         replyTimeout?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.finishWaitingForReply() }
+        replyDetach?.cancel()
+        let generation = requestGeneration
+        let detach = DispatchWorkItem { [weak self] in
+            guard let self, generation == self.requestGeneration, self.isAwaitingReply,
+                  self.chatTimeline.isMuseWorking else { return }
+            self.letGoOfReply(note: "Muse ещё работает над этим. Ответ появится здесь, когда будет готов.")
+        }
+        replyDetach = detach
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20, execute: detach)
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, generation == self.requestGeneration, self.isAwaitingReply else { return }
+            self.letGoOfReply(note: "Muse пока не ответил. Если ответ придёт позже, он появится здесь.")
+        }
         replyTimeout = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 120, execute: work)
+    }
+
+    private func letGoOfReply(note: String) {
+        let bound = chatTimeline.detachCurrentRequest()
+        finishWaitingForReply()
+        guard bound else { return }
+        environment.diagnostics.record("reply_detached")
+        chatItems.append(MuseChatItem(author: .system, text: PalL10n.text(note), sessionID: activeChatSessionID))
     }
 
     private func finishWaitingForReply() {
         replyTimeout?.cancel()
         replyTimeout = nil
+        replyDetach?.cancel()
+        replyDetach = nil
         isAwaitingReply = false
         museActivity = nil
     }
@@ -1115,6 +1152,26 @@ final class MuseAppModel: ObservableObject {
                     finishWaitingForReply()
                 }
                 else if !text.isEmpty { museActivity = nil }
+            case .lateReply(let messageID, let text, let done):
+                if let itemID = replyItemIDs[messageID],
+                   let index = chatItems.firstIndex(where: { $0.id == itemID }) {
+                    chatItems[index].text = text
+                } else if !text.isEmpty {
+                    let item = MuseChatItem(author: .muse, text: text, museMessageID: messageID, sessionID: activeChatSessionID)
+                    replyItemIDs[messageID] = item.id
+                    chatItems.append(item)
+                    environment.diagnostics.record("late_reply")
+                }
+                _ = done
+            case .presentation(let id, let text, let late):
+                guard replyItemIDs[id] == nil else { break }
+                let lines = text.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+                let marker = PalL10n.text(String(lines.first ?? ""))
+                let body = lines.count > 1 ? "\n" + lines[1] : ""
+                let item = MuseChatItem(author: .muse, text: marker + body, sessionID: activeChatSessionID)
+                replyItemIDs[id] = item.id
+                chatItems.append(item)
+                environment.diagnostics.record("presentation", detail: late ? "late" : "current")
             case .activity(let text):
                 museActivity = text?.isEmpty == false ? text : nil
             case .finished:
@@ -1123,13 +1180,18 @@ final class MuseAppModel: ObservableObject {
         }
     }
 
+    /// Stops waiting, not Muse: Muse has no cancel route for chat, so its reply still arrives later.
     func stopCurrentReply() {
         guard isSendingChat || isAwaitingReply else { return }
         requestGeneration += 1
         pendingUserItemID = nil
         isSendingChat = false
-        chatTimeline.stopCurrentReply()
-        finishWaitingForReply()
+        if chatTimeline.hasBoundRequest {
+            letGoOfReply(note: "Ожидание остановлено. Если Muse всё же ответит, ответ появится здесь.")
+        } else {
+            chatTimeline.stopCurrentReply()
+            finishWaitingForReply()
+        }
     }
 
     private func syncServerHistory() {
@@ -2787,15 +2849,18 @@ private struct MuseDocumentsView: View {
                     } label: {
                         Label(PalL10n.text("Получить из Muse"), systemImage: "arrow.down.doc")
                     }
-                    .disabled(model.isTransferringDocument || remoteName.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(model.isTransferringDocument || model.vmFilesAllowed == false
+                              || remoteName.trimmingCharacters(in: .whitespaces).isEmpty)
                     Button { importsDocument = true } label: {
                         Label(PalL10n.text("Выбрать и отправить"), systemImage: "arrow.up.doc")
                     }
-                    .disabled(model.isTransferringDocument)
+                    .disabled(model.isTransferringDocument || model.vmFilesAllowed == false)
                 } header: {
                     Text(PalL10n.text("Обмен с Muse"))
                 } footer: {
-                    Text(PalL10n.text("Файлы до 1 МБ хранятся только в отдельной папке Pal Again. Сервер Muse может запретить файловый маршрут для вашего токена."))
+                    Text(PalL10n.text(model.vmFilesAllowed == false
+                        ? "Сервер Muse не разрешает этому гаджету обмен файлами, поэтому кнопки выключены. Документ можно отправить в чат через +, а сохранённые файлы ниже остаются доступны."
+                        : "Файлы до 1 МБ хранятся только в отдельной папке Pal Again. Сервер Muse может запретить файловый маршрут для вашего токена."))
                 }
 
                 if model.isTransferringDocument || model.documentStatus != nil {

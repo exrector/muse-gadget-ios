@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import os
 import UIKit
 
@@ -266,7 +267,36 @@ final class MuseDuplexStream {
     }
 }
 
+/// Connection events kept in memory, as the SDK's ESP32 firmware keeps them (481743f): the newest 40
+/// go into `device.health` as `connectivity_events`, and each also goes to the diagnostics steps.
+/// Short codes only: never addresses, network names, tokens or content.
+final class MuseConnectivityLog {
+    static let capacity = 128
+    var onEvent: ((String) -> Void)?
+    private let lock = NSLock()
+    private var events: [(at: Date, code: String)] = []
+
+    func note(_ code: String) {
+        let clean = String(code.unicodeScalars.filter { (0x20...0x7e).contains($0.value) }.map(Character.init).prefix(80))
+        lock.lock()
+        events.append((Date(), clean))
+        if events.count > Self.capacity { events.removeFirst(events.count - Self.capacity) }
+        lock.unlock()
+        onEvent?(clean)
+    }
+
+    func recent(_ count: Int = 40) -> [[String: Any]] {
+        lock.lock(); defer { lock.unlock() }
+        let formatter = ISO8601DateFormatter()
+        return events.suffix(count).map { ["at": formatter.string(from: $0.at), "event": $0.code] }
+    }
+}
+
 final class MuseRuntime: NSObject {
+    let connectivity = MuseConnectivityLog()
+    private let pathMonitor = NWPathMonitor()
+    private var lastPath: String?
+    private var pingTimeout: DispatchWorkItem?
     var onStateChange: ((MuseRuntimeState) -> Void)?
     var onLog: ((String) -> Void)?
     var onUnpaired: (() -> Void)?
@@ -364,6 +394,43 @@ final class MuseRuntime: NSObject {
         self.credentialStore = credentialStore
         self.api = api
         super.init()
+        pathMonitor.pathUpdateHandler = { [weak self] path in
+            guard let self else { return }
+            let kind: String
+            if path.status != .satisfied { kind = "net_none" }
+            else if path.usesInterfaceType(.wifi) { kind = "net_wifi" }
+            else if path.usesInterfaceType(.cellular) { kind = "net_cellular" }
+            else if path.usesInterfaceType(.wiredEthernet) { kind = "net_wired" }
+            else { kind = "net_other" }
+            guard kind != self.lastPath else { return }
+            self.lastPath = kind
+            self.connectivity.note(kind)
+        }
+        pathMonitor.start(queue: queue)
+    }
+
+    /// After a silent drop, tells a dead internet connection from Muse being unreachable: a
+    /// connect-only TCP probe to 1.1.1.1, then 8.8.8.8, on port 443, as the ESP32 firmware does.
+    private func checkInternet(hosts: [String] = ["1.1.1.1", "8.8.8.8"]) {
+        guard let host = hosts.first else { connectivity.note("internet_unreachable"); return }
+        let connection = NWConnection(host: NWEndpoint.Host(host), port: 443, using: .tcp)
+        var finished = false
+        let finish: (Bool) -> Void = { [weak self] reachable in
+            guard let self, !finished else { return }
+            finished = true
+            connection.cancel()
+            if reachable { self.connectivity.note("internet_ok") }
+            else { self.checkInternet(hosts: Array(hosts.dropFirst())) }
+        }
+        connection.stateUpdateHandler = { state in
+            switch state {
+            case .ready: finish(true)
+            case .failed, .cancelled: finish(false)
+            default: break
+            }
+        }
+        connection.start(queue: queue)
+        queue.asyncAfter(deadline: .now() + 5) { finish(false) }
     }
 
     func start(credentials: DeviceCredentials) {
@@ -531,6 +598,27 @@ final class MuseRuntime: NSObject {
         queue.async {
             self.readVMDocumentChunk(path: remotePath, offset: 0, accumulated: Data()) { result in
                 DispatchQueue.main.async { completion(result) }
+            }
+        }
+    }
+
+    /// `/fs/read` and `/fs/write` are enabled per server (the SDK's Linux README). Reading a file that
+    /// does not exist answers 404 where the route is allowed and 403 where it is not. Nil: unknown.
+    func probeFileAccess(completion: @escaping (Bool?) -> Void) {
+        guard let path = MuseDocumentPath.remotePath("pal-again-access-check.txt"),
+              let body = try? JSONSerialization.data(withJSONObject: ["path": path, "offset": 0, "len": 1]) else {
+            completion(nil); return
+        }
+        queue.async {
+            self.performRequest(method: "POST", path: "/fs/read", body: body,
+                                headers: [MuseHTTPHeader(name: "Content-Type", value: "application/json")]) { [weak self] result in
+                let allowed: Bool?
+                switch result {
+                case .success(let response): allowed = response.status != 403
+                case .failure: allowed = nil
+                }
+                self?.log("File route check: \(allowed.map { $0 ? "allowed" : "refused" } ?? "unknown")")
+                DispatchQueue.main.async { completion(allowed) }
             }
         }
     }
@@ -708,6 +796,7 @@ final class MuseRuntime: NSObject {
     private func fetchVM(generation: Int) {
         guard let credentials, generation == self.generation else { return }
         state = .fetchingVM
+        connectivity.note("vm_fetch")
         if Date().timeIntervalSince(credentials.savedAt) >= Self.tokenRefreshAge, refreshAllowed() {
             refreshTokens(generation: generation) { [weak self] _ in
                 self?.lookUpVM(generation: generation)
@@ -747,6 +836,7 @@ final class MuseRuntime: NSObject {
 
     private func handleRejectedAccessToken(generation: Int) {
         log("Device token rejected by Muse; refreshing")
+        connectivity.note("token_refresh")
         // Allow one immediate retry with the refreshed token; repeated rejection must back off.
         let alreadyRejected = tokenRejected
         tokenRejected = true
@@ -825,6 +915,7 @@ final class MuseRuntime: NSObject {
         }
 
         state = .connecting
+        connectivity.note("vm_ok")
         log("Connecting to Muse VM")
         var request = URLRequest(url: url)
         request.timeoutInterval = 20
@@ -862,6 +953,7 @@ final class MuseRuntime: NSObject {
                 self.handshake = nil
                 self.transport = MuseNoiseTransport(send: split.send, receive: split.receive)
                 self.log("Noise XX session established")
+                self.connectivity.note("noise_ok")
                 try self.sendBinary(message3) { [weak self] in self?.openControlStream() }
             } catch {
                 self.fail("Noise handshake failed: \(self.safeError(error))", reconnect: true)
@@ -884,13 +976,17 @@ final class MuseRuntime: NSObject {
 
     private func sendRegistration() {
         registerID = UUID().uuidString.lowercased()
+        let isPad = UIDevice.current.userInterfaceIdiom == .pad
         let params: [String: Any] = [
             "node_id": identity.nodeID,
             "display_name": identity.displayName,
             "platform": "ios",
             "version": MuseAppVersion.current,
-            "device_family": "homehub",
-            "model_id": UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone",
+            "device_family": MuseDeviceDescription.deviceFamily,
+            "model_id": MuseDeviceDescription.modelID(isPad: isPad),
+            "metadata": ["model_name": MuseDeviceDescription.modelName(
+                machine: MuseHapticRoute.machineIdentifier, isPad: isPad
+            )],
             "is_wakeup_supported": false,
             "commands_v2": commands.commandSpecs
         ]
@@ -1022,7 +1118,10 @@ final class MuseRuntime: NSObject {
                 body: body,
                 endBody: true
             )
-            try sendEncrypted(frame) { [weak self] in self?.log("Subscribed to Muse chat") }
+            try sendEncrypted(frame) { [weak self] in
+                self?.log("Subscribed to Muse chat")
+                self?.connectivity.note("chat_subscribe")
+            }
         } catch {
             chatSubscriptionID = nil
             scheduleChatSubscriptionReconnect()
@@ -1033,6 +1132,7 @@ final class MuseRuntime: NSObject {
         if streamID == chatSubscriptionID {
             guard (200..<300).contains(response.status) else {
                 log("Muse chat subscription returned HTTP \(response.status)")
+                connectivity.note("chat_http_\(response.status)")
                 closeChatSubscription(streamID: streamID, reconnect: true)
                 return
             }
@@ -1191,6 +1291,7 @@ final class MuseRuntime: NSObject {
         } catch {
             // An oversized chat event must not take the control stream down with it.
             log("Dropped Muse chat stream: \(safeError(error))")
+            connectivity.note("chat_dropped")
             resetStream(streamID, reason: "consumer closed")
             closeChatSubscription(streamID: streamID, reconnect: true)
         }
@@ -1225,6 +1326,7 @@ final class MuseRuntime: NSObject {
                 state = .registered
                 registeredAt = Date()
                 log("Registered with Muse")
+                connectivity.note("registered")
                 schedulePing()
                 openChatSubscription()
                 fetchAgentIdentity()
@@ -1656,20 +1758,40 @@ final class MuseRuntime: NSObject {
         queue.asyncAfter(deadline: .now() + 20, execute: work)
     }
 
+    /// A pong that never comes means a dead connection: URLSession does not time a ping out by
+    /// itself, so without this a dropped link could hang for minutes (the ESP32's 481743f).
     private func sendPing() {
         guard let socket = webSocket else { return }
         let pingGeneration = generation
+        pingTimeout?.cancel()
+        let timeout = DispatchWorkItem { [weak self] in
+            guard let self, socket === self.webSocket, pingGeneration == self.generation else { return }
+            self.connectivity.note("ping_timeout")
+            self.fail("Muse VM ping timed out", reconnect: true)
+            self.checkInternet()
+        }
+        pingTimeout = timeout
+        queue.asyncAfter(deadline: .now() + Self.pingTimeoutSeconds, execute: timeout)
         socket.sendPing { [weak self] error in
             self?.queue.async {
                 guard let self, socket === self.webSocket, pingGeneration == self.generation else { return }
-                if let error { self.fail("Muse VM ping failed: \(self.safeError(error))", reconnect: true) }
-                else { self.schedulePing() }
+                self.pingTimeout?.cancel()
+                self.pingTimeout = nil
+                if let error {
+                    self.fail("Muse VM ping failed: \(self.safeError(error))", reconnect: true)
+                    self.checkInternet()
+                } else { self.schedulePing() }
             }
         }
     }
 
+    static let pingTimeoutSeconds: TimeInterval = 15
+
+    func stopPathMonitor() { pathMonitor.cancel() }
+
     private func fail(_ message: String, reconnect shouldReconnect: Bool, floor: TimeInterval = 0) {
         log(message)
+        connectivity.note("fail: " + (message.split(separator: ":").first.map(String.init) ?? message))
         state = .failed(message)
         if let registeredAt, Date().timeIntervalSince(registeredAt) >= Self.healthySession {
             reconnectFailures = 0
@@ -1695,6 +1817,8 @@ final class MuseRuntime: NSObject {
         reconnect = nil
         ping?.cancel()
         ping = nil
+        pingTimeout?.cancel()
+        pingTimeout = nil
         webSocket?.cancel(with: .goingAway, reason: nil)
         webSocket = nil
         handshake = nil

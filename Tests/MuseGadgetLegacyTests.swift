@@ -350,12 +350,13 @@ final class MuseGadgetLegacyTests: XCTestCase {
         ])).isEmpty)
     }
 
-    func testTimelineStopIgnoresLateReplyAndAcceptsNextRequest() {
+    func testTimelineStopKeepsLateReplyAndAcceptsNextRequest() {
         let timeline = acknowledgedTimeline()
         timeline.stopCurrentReply()
-        XCTAssertTrue(timeline.feed(chatEvent("delta.message_done", [
+        XCTAssertEqual(timeline.feed(chatEvent("delta.message_done", [
             "message_id": "late", "reply_to_message_id": "user-1", "content": "late"
-        ])).isEmpty)
+        ])), [.lateReply(messageID: "late", text: "late", done: true)])
+        XCTAssertFalse(timeline.isWaitingForLateReply)
         timeline.expectRequest()
         _ = timeline.acknowledge(["message_id": "user-2", "session_id": "main"])
         XCTAssertEqual(
@@ -1495,6 +1496,87 @@ final class MuseGadgetLegacyTests: XCTestCase {
 
     private func jpegCount(in directory: URL) throws -> Int {
         try FileManager.default.contentsOfDirectory(atPath: directory.path).filter { $0.hasSuffix(".jpg") }.count
+    }
+
+    func testLateReplyArrivesAfterNextRequestWithoutEndingIt() {
+        let timeline = acknowledgedTimeline()
+        _ = timeline.feed(chatEvent("agent.status", [
+            "reply_to_message_id": "user-1", "activity_code": "thinking", "activity_text": "Searching"
+        ]))
+        XCTAssertTrue(timeline.isMuseWorking)
+        XCTAssertTrue(timeline.detachCurrentRequest())
+        timeline.expectRequest()
+        _ = timeline.acknowledge(["message_id": "user-2", "session_id": "main"])
+        XCTAssertEqual(timeline.feed(chatEvent("message.assistant", [
+            "message_id": "old-answer", "reply_to_message_id": "user-1", "display_text": "found it"
+        ])), [.lateReply(messageID: "old-answer", text: "found it", done: true)])
+        XCTAssertEqual(timeline.feed(chatEvent("delta.message_done", [
+            "message_id": "new-answer", "reply_to_message_id": "user-2", "content": "now"
+        ])), [.reply(messageID: "new-answer", text: "now", done: true)])
+    }
+
+    func testLateRequestIsForgottenTenSecondsAfterMuseStopsWorking() {
+        var clock = Date(timeIntervalSince1970: 1_000)
+        let timeline = acknowledgedTimeline()
+        timeline.now = { clock }
+        timeline.detachCurrentRequest()
+        _ = timeline.feed(chatEvent("agent.status", ["reply_to_message_id": "user-1", "activity_code": "idle"]))
+        clock += 5
+        XCTAssertTrue(timeline.isWaitingForLateReply)
+        clock += 6
+        XCTAssertFalse(timeline.isWaitingForLateReply)
+        XCTAssertTrue(timeline.feed(chatEvent("delta.message_done", [
+            "message_id": "too-late", "reply_to_message_id": "user-1", "content": "x"
+        ])).isEmpty)
+    }
+
+    func testLateRequestIsForgottenAfterThirtyMinutes() {
+        var clock = Date(timeIntervalSince1970: 1_000)
+        let timeline = acknowledgedTimeline()
+        timeline.now = { clock }
+        timeline.detachCurrentRequest()
+        clock += 29 * 60
+        XCTAssertTrue(timeline.isWaitingForLateReply)
+        clock += 2 * 60
+        XCTAssertFalse(timeline.isWaitingForLateReply)
+    }
+
+    func testPresentationShowsItsFallbackTextOnce() {
+        let timeline = acknowledgedTimeline()
+        let event = chatEvent("delta.presentation", [
+            "id": "p1", "reply_to_message_id": "user-1",
+            "data": ["videos": [["mime": "video/mp4", "path": "sandbox://workspace/x.mp4"]], "fallback_text": "A short clip"]
+        ])
+        XCTAssertEqual(timeline.feed(event), [.presentation(id: "p1#video", text: "presentation.video\nA short clip", late: false)])
+        XCTAssertTrue(timeline.feed(event).isEmpty)
+        XCTAssertTrue(timeline.feed(chatEvent("delta.presentation", [
+            "id": "p2", "reply_to_message_id": "someone-else", "data": ["html": "<form></form>"]
+        ])).isEmpty)
+    }
+
+    func testDeviceDescriptionFollowsTheSDKRules() {
+        let guideBytes = MuseDeviceDescription.guide.utf8.count
+        XCTAssertTrue((1...MuseDeviceDescription.maxGuideBytes).contains(guideBytes))
+        XCTAssertTrue(MuseDeviceDescription.guide.hasPrefix("# Pal Again\n"))
+        for isPad in [true, false] {
+            let id = MuseDeviceDescription.modelID(isPad: isPad)
+            XCTAssertNotNil(id.range(of: "^[a-z0-9-]{1,64}$", options: .regularExpression))
+            XCTAssertFalse(id.hasPrefix("muse-") || id.hasPrefix("esp-link"))
+        }
+        XCTAssertEqual(MuseDeviceDescription.modelName(machine: "iPhone8,1", isPad: false), "iPhone 6s")
+        XCTAssertEqual(MuseDeviceDescription.modelName(machine: "iPad7,5", isPad: true), "iPad (6th generation)")
+        let unknown = MuseDeviceDescription.modelName(machine: "iPhone99,9\"\\", isPad: false)
+        XCTAssertEqual(unknown, "iPhone (iPhone99,9)")
+        XCTAssertTrue(unknown.unicodeScalars.allSatisfy { (0x20...0x7e).contains($0.value) })
+    }
+
+    func testDeviceGuideIsAnOrdinaryCommand() {
+        let registry = IOSCommandRegistry()
+        registry.register(CommandDefinition(name: MuseDeviceDescription.guideCommand, summary: "guide", parameters: [:])) { _, done in
+            done(CommandResult(success: true, value: ["format": "markdown", "guide": MuseDeviceDescription.guide]))
+        }
+        let spec = registry.commandSpecs[MuseDeviceDescription.guideCommand] as? [String: Any]
+        XCTAssertNotNil(spec)
     }
 
     private func acknowledgedTimeline() -> MuseChatTimeline {

@@ -65,6 +65,12 @@ A conversation ends by itself after 45 seconds of silence or after 15 minutes. *
 
 Voice notes are separate and keep working as before.
 
+### When Muse takes long
+
+If Muse is still working 20 seconds after taking your message, the gadget stops waiting and says so in the chat. You can keep writing. The answer appears in the chat when Muse finishes, even after newer messages. **Stop** does the same: Muse cannot be told to stop, so its answer may still arrive.
+
+When Muse sends a voice message, a video, a picture or a form, the gadget shows what it was and Muse's short description. Open it in the Muse app: gadgets cannot download those files yet.
+
 ### Main and side chats
 
 Tap the chat-bubble button beside the Muse name:

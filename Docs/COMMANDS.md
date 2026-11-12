@@ -4,9 +4,23 @@ These are the commands the gadget registers with Muse through `link.register`. M
 
 The set is an explicit allowlist, defined in [`IOSCommandRegistry.swift`](../App/Sources/Commands/IOSCommandRegistry.swift). There is deliberately no `system.run`, `file.read` or `file.write`: iOS has no shell, and App Store rules forbid running downloaded code.
 
+## How the gadget describes itself
+
+Since version 2.0 the gadget follows the SDK's [`protocols/DEVICE.md`](https://github.com/facebookincubator/muse-gadget-sdk/blob/main/protocols/DEVICE.md):
+
+| `link.register` field | Value |
+|---|---|
+| `device_family` | `gadget`, as every device built on the SDK. Version 1.x sent `homehub` |
+| `model_id` | `pal-again-iphone` or `pal-again-ipad`. Version 1.x sent `iphone` or `ipad` |
+| `metadata.model_name` | The model people know, such as `iPhone 6s` or `iPad (6th generation)`; a model the app does not know is sent as `iPhone (iPhone18,2)` |
+
+### `device.guide`
+
+Takes no parameters and returns `{"format": "markdown", "guide": "..."}`: a guide of under 4 KB that tells Muse what this gadget is, how its commands fit together (on screen only, permissions, approvals for shortcuts and network devices), how iPhone and iPad differ, and what it cannot do. It is generic: nothing about the owner's home, devices or routines. The text is `MuseDeviceDescription.guide` in [`IOSCommandRegistry.swift`](../App/Sources/Commands/IOSCommandRegistry.swift). It works whether or not the app is on screen.
+
 ## General rules
 
-- **Visible only.** Everything except `device.health`, `display.set_caption`, `display.set_avatar`, `display.set_name`, `display.play_avatar`, `display.clear_avatar`, `display.draw_file`, `display.clear_image`, `voice.configure`, `shortcuts.list` and an already approved `lan.request` fails with `foreground_required` when the app is not on screen.
+- **Visible only.** Everything except `device.guide`, `device.health`, `display.set_caption`, `display.set_avatar`, `display.set_name`, `display.play_avatar`, `display.clear_avatar`, `display.draw_file`, `display.clear_image`, `voice.configure`, `shortcuts.list` and an already approved `lan.request` fails with `foreground_required` when the app is not on screen.
 - **No remote permission prompts.** A command that needs an iOS permission fails with `permission_required` until the user has granted it in the app.
 - **On-screen approval.** Each new shortcut name and each new local host and port needs a tap on the device. Waiting for it can take up to 20 seconds.
 - **Timeouts.** A command answers `command_timeout` after 30 seconds, unless noted below.
@@ -44,7 +58,8 @@ Reports only app-visible, non-private health:
 - battery percentage, charging state, Low Power Mode and thermal state;
 - device uptime, free/total storage visible to the app and screen brightness;
 - Pal Again version/build and whether the app is in the foreground;
-- the current Bluetooth, local-network, camera, microphone, location and motion permission states.
+- the current Bluetooth, local-network, camera, microphone, location and motion permission states;
+- `connectivity_events` (2.0): the newest 40 connection events, each with its time and a short code, as the SDK's ESP32 firmware reports them. Codes: `net_wifi`, `net_cellular`, `net_wired`, `net_other`, `net_none`, `vm_fetch`, `vm_ok`, `noise_ok`, `registered`, `chat_subscribe`, `chat_http_<status>`, `chat_dropped`, `token_refresh`, `ping_timeout`, `fail: <reason>`, and after a silent drop `internet_ok` or `internet_unreachable`. They never include addresses, network names, tokens or content.
 
 iOS does not expose Linux-style process, SMART, arbitrary filesystem or system-log diagnostics to Pal Again.
 

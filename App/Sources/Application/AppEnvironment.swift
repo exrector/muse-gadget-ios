@@ -113,6 +113,10 @@ final class AppEnvironment {
         importStagedSDKTokenIfPresent()
         vmImages.buildAvatarVideos()
         runtime.onRegistered = { vmImages.syncFromVM() }
+        nativeServices.connectivityEvents = { [weak runtime] in runtime?.connectivity.recent() ?? [] }
+        runtime.connectivity.onEvent = { [weak diagnostics] code in
+            DispatchQueue.main.async { diagnostics?.record("link", detail: code) }
+        }
         vmImages.askMuseForAvatar = {
             runtime.sendChat(PalL10n.format("avatar.request_format", identity.displayName)) { _ in }
         }
@@ -137,6 +141,8 @@ final class AppEnvironment {
     func shutdown() {
         runtime.onUnpaired = nil
         runtime.onRegistered = nil
+        runtime.connectivity.onEvent = nil
+        runtime.stopPathMonitor()
         pairing.onCredentialsStored = nil
         vmImages.readVMFile = nil
         vmImages.askMuseForAvatar = nil

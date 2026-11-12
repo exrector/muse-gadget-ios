@@ -367,3 +367,12 @@
 "Включите «Живой разговор с Muse (бета)» в настройках, и рядом с микрофоном появится кнопка с телефоном. Говорите свободно, Muse отвечает своим голосом. Пока Muse говорит, микрофон закрыт: чтобы остановить ответ, нажмите «Перебить». С настройкой «Видео с аватаром Muse (бета)» разговор идёт как видеозвонок." = "Turn on Live Conversation with Muse (Beta) in Settings, and a phone button appears beside the microphone. Speak freely; Muse answers in its own voice. The microphone is closed while Muse speaks: tap Interrupt to stop an answer. With Video with Muse's Avatar (Beta) on, the conversation is a video call.";
 "Сброс и новая пара" = "Reset and Pairing Again";
 "«Удалить пару с Muse» убирает только пару, «Сбросить приложение» возвращает гаджет к первому запуску. После любого из них удалите это устройство в приложении Muse (Settings → Devices), иначе создать пару заново не получится. Случайно открытую пошаговую настройку закрывает кнопка «Вернуться»." = "Remove Muse Pairing removes only the pairing; Reset App returns the gadget to its first launch. After either one, remove this device in the Muse app too (Settings → Devices), or it cannot be paired again. If the setup guide opens by accident, Back closes it.";
+"Muse ещё работает над этим. Ответ появится здесь, когда будет готов." = "Muse is still working on this. The answer will appear here when it's ready.";
+"Muse пока не ответил. Если ответ придёт позже, он появится здесь." = "Muse hasn't answered yet. If the answer comes later, it will appear here.";
+"Ожидание остановлено. Если Muse всё же ответит, ответ появится здесь." = "Stopped waiting. If Muse still answers, the answer will appear here.";
+"presentation.audio" = "🔊 Muse sent audio. Gadgets can't play it yet; open it in the Muse app.";
+"presentation.video" = "🎬 Muse sent a video. Gadgets can't play it yet; open it in the Muse app.";
+"presentation.image" = "🖼 Muse sent an image. Gadgets can't show it yet; open it in the Muse app.";
+"presentation.form" = "📝 Muse sent a form. Fill it in in the Muse app.";
+"presentation.attachment" = "📎 Muse sent an attachment. Open it in the Muse app.";
+"Сервер Muse не разрешает этому гаджету обмен файлами, поэтому кнопки выключены. Документ можно отправить в чат через +, а сохранённые файлы ниже остаются доступны." = "Muse's server does not allow this gadget to exchange files, so these buttons are off. You can still send a document to the chat with +, and saved files below stay available.";
