@@ -1301,6 +1301,21 @@ final class MuseAppModel: ObservableObject {
         isPaired = false
         setupStep = 0
     }
+
+    /// True while a saved pairing exists, so the setup guide can be closed without finishing it.
+    var canLeaveSetup: Bool { environment.credentialStore.loadDeviceCredentials() != nil }
+
+    func leaveSetup() {
+        guard canLeaveSetup else { return }
+        if pairingState.isBusy { stopPairing() }
+        cancelTokenReplacement()
+        isPaired = true
+        applyIdleTimerPolicy()
+    }
+
+    func resetApp() {
+        (UIApplication.shared.delegate as? AppDelegate)?.resetToFirstLaunch()
+    }
 }
 
 struct MuseAppView: View {
@@ -1541,6 +1556,12 @@ private struct MuseOnboarding: View {
                         .lineLimit(2)
                 }
                 Spacer()
+                if model.canLeaveSetup {
+                    Button("Вернуться") { withAnimation(.easeInOut) { model.leaveSetup() } }
+                        .font(.caption.weight(.bold))
+                        .buttonStyle(.bordered)
+                        .tint(MuseTheme.blue)
+                }
                 Text("\(model.setupStep + 1) / 5")
                     .font(.caption.weight(.semibold))
                     .foregroundColor(MuseTheme.secondary)
@@ -3421,6 +3442,7 @@ private struct MuseSettingsView: View {
     @ObservedObject var model: MuseAppModel
     @ObservedObject var diagnostics: MuseDiagnostics
     @State private var showForgetConfirmation = false
+    @State private var showResetConfirmation = false
     @State private var showClearHistoryConfirmation = false
     @State private var showAbout = false
     @State private var showHelp = false
@@ -3743,6 +3765,9 @@ private struct MuseSettingsView: View {
 
                 Button("Удалить пару с Muse", role: .destructive) { showForgetConfirmation = true }
                     .buttonStyle(MuseSecondaryButtonStyle(destructive: true))
+
+                Button("Сбросить приложение", role: .destructive) { showResetConfirmation = true }
+                    .buttonStyle(MuseSecondaryButtonStyle(destructive: true))
             }
             .padding(20)
         }
@@ -3777,7 +3802,16 @@ private struct MuseSettingsView: View {
             Button("Удалить пару", role: .destructive) { model.forgetPairing() }
             Button("Отмена", role: .cancel) {}
         } message: {
-            Text("Потребуется снова добавить устройство в приложении Muse. SDK Token останется в Связке ключей.")
+            Text("После этого удалите это устройство и в приложении Muse: Settings → Devices. Иначе создать пару заново не получится. SDK Token останется в Связке ключей.")
+        }
+        .alert(
+            "Сбросить приложение?",
+            isPresented: $showResetConfirmation
+        ) {
+            Button("Сбросить", role: .destructive) { model.resetApp() }
+            Button("Отмена", role: .cancel) {}
+        } message: {
+            Text("С этого устройства удалятся SDK Token, пара с Muse, чат, аватар, файлы, выданные Muse доступы и все настройки. Приложение откроется как после первой установки. Разрешения iOS приложение снять не может: их меняют в Настройках iOS. После сброса удалите это устройство и в приложении Muse: Settings → Devices.")
         }
     }
 

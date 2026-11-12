@@ -129,8 +129,15 @@ final class MuseDiagnostics: NSObject, ObservableObject {
     }
 
     deinit {
+        observers.forEach(NotificationCenter.default.removeObserver)
+    }
+
+    /// Call before letting go of this object. MetricKit removes a subscriber a moment later on
+    /// its own queue, so doing it in deinit leaves it touching an object that is already gone.
+    func stop() {
         MXMetricManager.shared.remove(self)
         observers.forEach(NotificationCenter.default.removeObserver)
+        observers = []
     }
 
     func setSharingEnabled(_ enabled: Bool) {

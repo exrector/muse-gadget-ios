@@ -65,6 +65,7 @@ final class AppEnvironment {
     let chatCloud = MuseChatCloudSync()
     let chatPeers: MuseChatPeerSync
     private let backgroundGrace = MuseBackgroundGrace()
+    private var activeObserver: NSObjectProtocol?
 
     init() {
         let diagnostics = MuseDiagnostics()
@@ -116,7 +117,7 @@ final class AppEnvironment {
             runtime.sendChat(PalL10n.format("avatar.request_format", identity.displayName)) { _ in }
         }
         // A build stopped by the app leaving the screen goes on from where it was.
-        NotificationCenter.default.addObserver(
+        activeObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.didBecomeActiveNotification,
             object: nil,
             queue: .main
@@ -129,6 +130,44 @@ final class AppEnvironment {
         runtime.onUnpaired = { pairing.forgetPairing() }
         if let credentials = credentialStore.loadDeviceCredentials() {
             runtime.start(credentials: credentials)
+        }
+    }
+
+    /// Stops everything this environment runs before a full reset, so a new one can take its place.
+    func shutdown() {
+        runtime.onUnpaired = nil
+        runtime.onRegistered = nil
+        pairing.onCredentialsStored = nil
+        vmImages.readVMFile = nil
+        vmImages.askMuseForAvatar = nil
+        if let activeObserver { NotificationCenter.default.removeObserver(activeObserver) }
+        activeObserver = nil
+        runtime.stop()
+        pairing.stop()
+        chatPeers.stop()
+        diagnostics.stop()
+        // Drops a delayed save that would otherwise write the chat back after the reset.
+        chatStore.clear()
+    }
+
+    /// Removes everything the app has stored on this device: the SDK token and the pairing in the
+    /// Keychain, every setting, the device identity, the chat, the avatar and the files.
+    /// iOS permissions are not the app's to remove, and other gadgets keep their chat history.
+    static func eraseStoredData() {
+        CredentialStore().clearAll()
+        if let bundleID = Bundle.main.bundleIdentifier {
+            UserDefaults.standard.removePersistentDomain(forName: bundleID)
+        }
+        MuseWidgetContent().save()
+        let fileManager = FileManager.default
+        if let avatar = MuseWidgetContent.avatarURL { try? fileManager.removeItem(at: avatar) }
+        var folders = [fileManager.temporaryDirectory]
+        for directory in [FileManager.SearchPathDirectory.documentDirectory, .applicationSupportDirectory, .cachesDirectory] {
+            folders += fileManager.urls(for: directory, in: .userDomainMask)
+        }
+        for folder in folders {
+            let items = (try? fileManager.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
+            items.forEach { try? fileManager.removeItem(at: $0) }
         }
     }
 

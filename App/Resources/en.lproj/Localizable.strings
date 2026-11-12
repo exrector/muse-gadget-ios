@@ -153,7 +153,12 @@
 "Сообщения и фото удалятся с этого устройства. Переписка в самом Muse останется." = "Messages and photos will be removed from this device. Your conversation in Muse will remain.";
 "Удалить сохранённую пару?" = "Remove the saved pairing?";
 "Удалить пару" = "Remove Pairing";
-"Потребуется снова добавить устройство в приложении Muse. SDK Token останется в Связке ключей." = "You will need to add this device in Muse again. Your SDK Token will remain in Keychain.";
+"После этого удалите это устройство и в приложении Muse: Settings → Devices. Иначе создать пару заново не получится. SDK Token останется в Связке ключей." = "Afterwards, remove this device in the Muse app too: Settings → Devices. Otherwise it cannot be paired again. Your SDK Token will remain in Keychain.";
+"Сбросить приложение" = "Reset App";
+"Сбросить приложение?" = "Reset the app?";
+"Сбросить" = "Reset";
+"С этого устройства удалятся SDK Token, пара с Muse, чат, аватар, файлы, выданные Muse доступы и все настройки. Приложение откроется как после первой установки. Разрешения iOS приложение снять не может: их меняют в Настройках iOS. После сброса удалите это устройство и в приложении Muse: Settings → Devices." = "This removes the SDK Token, the pairing with Muse, the chat, the avatar, files, access granted to Muse and all settings from this device. The app will open as it does after a first install. The app cannot withdraw iOS permissions: change them in iOS Settings. After the reset, remove this device in the Muse app too: Settings → Devices.";
+"Вернуться" = "Back";
 "Убрать" = "Remove";
 "Bluetooth" = "Bluetooth";
 "Найти устройство во время создания пары" = "Find this device during pairing";

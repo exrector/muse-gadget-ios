@@ -20,11 +20,13 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         tabBar.configureWithOpaqueBackground()
         UITabBar.appearance().standardAppearance = tabBar
         UITabBar.appearance().scrollEdgeAppearance = tabBar
-        window.rootViewController = UIHostingController(
-            rootView: MuseAppView(environment: appDelegate.environment)
-        )
-        window.makeKeyAndVisible()
         self.window = window
+        showRoot(environment: appDelegate.environment)
+        window.makeKeyAndVisible()
+    }
+
+    func showRoot(environment: AppEnvironment) {
+        window?.rootViewController = UIHostingController(rootView: MuseAppView(environment: environment))
     }
 
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
