@@ -1515,19 +1515,19 @@ final class MuseGadgetLegacyTests: XCTestCase {
         ])), [.reply(messageID: "new-answer", text: "now", done: true)])
     }
 
-    func testLateRequestIsForgottenTenSecondsAfterMuseStopsWorking() {
+    func testLateRequestOutlivesMuseSayingItIsIdle() {
         var clock = Date(timeIntervalSince1970: 1_000)
         let timeline = acknowledgedTimeline()
         timeline.now = { clock }
+        var notes: [String] = []
+        timeline.onNote = { notes.append($0) }
         timeline.detachCurrentRequest()
         _ = timeline.feed(chatEvent("agent.status", ["reply_to_message_id": "user-1", "activity_code": "idle"]))
-        clock += 5
-        XCTAssertTrue(timeline.isWaitingForLateReply)
-        clock += 6
-        XCTAssertFalse(timeline.isWaitingForLateReply)
-        XCTAssertTrue(timeline.feed(chatEvent("delta.message_done", [
-            "message_id": "too-late", "reply_to_message_id": "user-1", "content": "x"
-        ])).isEmpty)
+        clock += 120
+        XCTAssertEqual(timeline.feed(chatEvent("message.assistant", [
+            "message_id": "answer", "reply_to_message_id": "user-1", "display_text": "after two minutes"
+        ])), [.lateReply(messageID: "answer", text: "after two minutes", done: true)])
+        XCTAssertEqual(notes, ["late_idle", "late_reply_done"])
     }
 
     func testStatusesWithoutAParentKeepALateRequestAlive() {

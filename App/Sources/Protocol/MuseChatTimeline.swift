@@ -24,12 +24,13 @@ final class MuseChatTimeline {
 
     /// The one request the gadget let go of while Muse was still on it, as the SDK's ESP32 firmware
     /// remembers it (b4bee64): its reply is kept when it comes, and it is forgotten once that reply
-    /// is done, 10 s after Muse stops saying it is working, or 30 minutes after it was let go.
+    /// is done or 30 minutes after it was let go.
     private struct LateRequest {
         var ids: Set<String>
         let since: Date
         var busy = true
         var lastStatus: Date
+        var notedIdle = false
     }
 
     static let lateIdleExpiry: TimeInterval = 10
@@ -105,8 +106,13 @@ final class MuseChatTimeline {
         if time.timeIntervalSince(request.since) > Self.lateMaxAge {
             late = nil; onNote?("late_forgotten:age"); return
         }
-        if !request.busy, time.timeIntervalSince(request.lastStatus) > Self.lateIdleExpiry {
-            late = nil; onNote?("late_forgotten:idle")
+        // The ESP32 also forgets 10 s after Muse stops saying it is working. Measured on the iPad
+        // (2026-11-12), Muse said it was idle and answered a long task two minutes later, so the
+        // gadget keeps waiting: only an answer naming this request can match it.
+        if !request.busy, time.timeIntervalSince(request.lastStatus) > Self.lateIdleExpiry,
+           !request.notedIdle {
+            late?.notedIdle = true
+            onNote?("late_idle")
         }
     }
 
