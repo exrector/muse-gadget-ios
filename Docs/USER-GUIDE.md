@@ -4,7 +4,7 @@ Muse Gadget turns an iPhone or iPad you no longer use every day into a gadget fo
 
 Pal Again follows the language and Light/Dark appearance selected in iOS. English and Russian are included; you can override the language for Pal Again in iOS Settings without changing the language of the whole device. [Руководство на русском](USER-GUIDE.ru.md).
 
-The app is not on the App Store yet. To install it, you need to [build it yourself](BUILDING.md) with a Mac.
+Install it from the [App Store](https://apps.apple.com/us/app/pal-again/id6830354776), from the [TestFlight beta](https://testflight.apple.com/join/jWYJWgHz), or [build it yourself](BUILDING.md) with a Mac. This guide describes version 2.0, which is tested through its own [TestFlight link](https://testflight.apple.com/join/C3nYXZ7W) and replaces Pal Again 1.x on the device. What is new in 2.0 is marked as such.
 
 ## What you need
 
@@ -31,6 +31,8 @@ When Muse asks for a Wi-Fi network and shows only **Other**, enter the exact nam
 
 The chat opens when pairing finishes. Wait for **Connected to Muse VM** at the top before you try anything.
 
+If you opened the guide again from Settings and a pairing is already saved, **Back** at the top returns to the chat without changing anything (2.0).
+
 ## Chat
 
 The chat is the main screen. Messages you send here go into your main Muse chat, marked as coming from this device.
@@ -40,6 +42,28 @@ The chat is the main screen. Messages you send here go into your main Muse chat,
 - **Voice notes:** use the microphone button, up to 40 seconds. You can choose how it works in Settings under **Voice recording**:
   - **Tap:** tap to start, tap again to send.
   - **Hold:** hold while you speak, release to send.
+
+### Live conversation with Muse
+
+New in 2.0, and marked Beta. Turn on **Live Conversation with Muse (Beta)** in Settings. A phone button appears beside the microphone once Muse is connected.
+
+1. Tap the phone button. The gadget connects in a few seconds, and Muse says hello if **Muse Greets First** is on.
+2. Speak. You do not need to hold anything. Muse answers in its own voice through the loudspeaker.
+3. Tap **End Conversation** when you are done.
+
+During the conversation:
+
+- **Turn Microphone Off** mutes you, and **Turn Microphone On** brings you back.
+- **Interrupt** stops Muse's current answer. The microphone is closed while Muse speaks, so interrupting is done with this button and not by talking over it.
+- The window shows what is happening: connecting, listening, thinking or speaking.
+
+With **Video with Muse's Avatar (Beta)** on, which is the default, the conversation is a video call: Muse shows its face and its lips move with its voice, as in the Muse app. It uses about 1 Mbit/s. With it off the conversation is voice only, and the avatar plays its talking animation while Muse's voice is heard.
+
+On an iPad the call takes the place of the avatar panel beside the chat. On an iPhone it opens as a card, and you can turn the phone on its side for a larger picture.
+
+A conversation ends by itself after 45 seconds of silence or after 15 minutes. **Call Again** starts a new one. The chat refreshes afterwards.
+
+Voice notes are separate and keep working as before.
 
 ### Main and side chats
 
@@ -136,7 +160,19 @@ The gear button opens **Settings**: under the avatar on an iPad, and in the head
 | **Share Diagnostics** | Optionally sends Apple MetricKit crash and hang reports plus safe app-flow steps. It never sends chat text, tokens, the gadget name, files, photos or audio |
 | **Clear Chat History** | Deletes the saved chat |
 | **Replace SDK Token** | Stores a different token |
-| **Remove Muse Pairing** | Removes the pairing, after which you set the gadget up again |
+| **Remove Muse Pairing** | Removes the pairing and keeps the SDK token. Afterwards remove this device in the Muse app too, under Settings > Devices, or it cannot be paired again |
+| **Run Guided Setup Again** | Opens the five setup steps. **Back** at the top returns to the chat while the pairing is saved |
+| **Reset App** (2.0) | Returns the gadget to its first-launch state, see [Reset the gadget](#reset-the-gadget) |
+
+### Reset the gadget
+
+**Reset App** at the bottom of Settings removes everything Pal Again keeps on this device: the SDK token, the pairing, the chat, the avatar, files, shortcuts and network devices you allowed, every setting and the gadget's own name. The app then opens the first setup step, as after a first install, and the gadget gets a new `MuseGadgetXXXXXX` name.
+
+- **iOS permissions stay.** An app cannot withdraw them. Change them in iOS Settings > Pal Again.
+- **Other gadgets keep their chat history.** The reset does not clear it through sync.
+- **Remove the device in Muse too.** On your main phone open Muse, go to Settings > Devices and remove this gadget. Then pair it again from step 5.
+
+Use the smaller buttons when you need less: **Clear Chat History** for the chat only, **Replace SDK Token** for the token only, and **Remove Muse Pairing** to pair again with the same token.
 
 ## Chat history
 
@@ -150,6 +186,7 @@ Clearing the history with sync on also clears it on your other synced devices. Y
 
 - **Your token and pairing data** stay in the iOS Keychain on the device.
 - **Your messages, photos and voice notes** go to Muse, encrypted in transit, when you send them.
+- **A live conversation** sends your voice to Muse only while its window is open. With video on, encrypted audio and video go directly between the gadget and Meta's media server for Muse. See the [privacy policy](../PRIVACY.md).
 - **Your chat text** goes to your own iCloud account if iCloud sync is on.
 - **Saved history** is not included in device backups.
 - **Bluetooth** is used only during pairing.
@@ -168,6 +205,12 @@ Pairing protects your credentials from people passively listening, but it cannot
 | A long token is hard to paste on a small screen | Use the USB method in [BUILDING.md](BUILDING.md#put-a-token-on-the-device-over-usb) |
 | **Connected to Muse VM** does not appear | Check the gadget's Internet connection, then look in **Diagnostics**. The app keeps retrying, waiting up to a minute between attempts |
 | The app says Muse revoked the pairing | Use **Remove Muse Pairing**, then set the gadget up again |
+| Pairing again does not work after removing the pairing or a reset | Remove the old device in Muse under Settings > Devices, then start pairing again |
+| The setup guide opened by accident | Tap **Back** at the top (2.0). It is shown while a pairing is saved |
+| There is no phone button beside the microphone | Turn on **Live Conversation with Muse (Beta)** and wait for the connection to Muse |
+| "Muse missed that, please say it again" in a conversation | Repeat the sentence. Muse did not take that one |
+| A video call shows no picture or stutters | It needs about 1 Mbit/s. Turn off **Video with Muse's Avatar (Beta)** to talk by voice only |
+| "No microphone access" when starting a conversation | Allow the microphone under **Permissions** |
 | A command fails with `foreground_required` | Open the app on the gadget and keep it on screen |
 | A command fails with `permission_required` | Allow that permission under **Permissions** |
 | Vibration does nothing | Check Settings > Accessibility > Touch > Vibration on the device. iPads have no motor |

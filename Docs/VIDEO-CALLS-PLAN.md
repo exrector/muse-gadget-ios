@@ -1,6 +1,6 @@
 # Video calls with Muse: findings and porting plan
 
-Status: research, 2026-11-11. Nothing here is built yet.
+Status: built and in the 2.0 beta, 2026-11-12. All five steps of the plan below are done and checked on an iPad (6th generation) and an iPhone 6s; the measurements are under [Results](#results). The research notes are kept as written, so the sections before Results describe the starting point.
 
 ## Why
 

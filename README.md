@@ -14,11 +14,21 @@
 
 > **Make Old Devices Smart Again.**
 
-**[Get it on the App Store](https://apps.apple.com/us/app/pal-again/id6830354776)** · **[Join the TestFlight beta](https://testflight.apple.com/join/jWYJWgHz)** (new installs need iOS 16 or newer, unfortunately)
+**[Get it on the App Store](https://apps.apple.com/us/app/pal-again/id6830354776)** · **[Join the TestFlight beta](https://testflight.apple.com/join/jWYJWgHz)** · **[Try the 2.0 beta with live voice and video](https://testflight.apple.com/join/C3nYXZ7W)** (new TestFlight installs need iOS 16 or newer, unfortunately)
 
 The old device becomes a screen, microphone, speaker, camera and sensor companion for Muse, with a chat you can type or talk into. Tested on an iPhone 6s from 2015 with iOS 15 and an iPad (6th generation) from 2018 with iPadOS 17.
 
 > This is an independent open-source community project. Muse and related marks belong to their respective owners. Muse Gadget SDK tokens are governed separately by the [Muse Gadget SDK Token Terms](https://gadgets.muse.ai/sdk-terms).
+
+## Version 2.0 beta: talk with Muse live
+
+This branch, `feature/2.0-video`, is version 2.0. It adds a live conversation with Muse on top of everything in 1.x:
+
+- **Voice.** A phone button beside the microphone starts a hands-free conversation, and Muse answers in its own voice.
+- **Video.** With **Video with Muse's Avatar** on, the conversation is a video call: Muse shows its face and its lips move with its voice, as in the Muse app.
+- **Reset App** in Settings returns the gadget to its first-launch state, and the setup guide can be closed without finishing it.
+
+Both kinds of call were checked on an iPhone 6s with iOS 15.8.8 and an iPad (6th generation) with iPadOS 17.7.11. Version 2.0 is tested through its own [TestFlight link](https://testflight.apple.com/join/C3nYXZ7W); a build appears there after Apple's beta review, and installing it replaces Pal Again 1.x on that device. The App Store still carries 1.x. See the [user guide](Docs/USER-GUIDE.md#live-conversation-with-muse), the [changelog](CHANGELOG.md) and [how the calls work](Docs/VIDEO-CALLS-PLAN.md).
 
 ## How it works
 
@@ -34,6 +44,7 @@ Where it differs from the Linux SDK: iOS has no shell, so instead of `system.run
 ## What it does
 
 - **Chat with Muse** from the gadget by text, photo or voice note, with history that stays on the device.
+- **Live conversation with Muse** (2.0 beta): hands-free by voice, or as a video call with Muse's own talking avatar.
 - **A living avatar** with Muse's own face and name, moving as it listens, thinks and speaks. They arrive by themselves after pairing: see the [user guide](Docs/USER-GUIDE.md#muses-avatar-and-name).
 - **Widgets** in every size the device offers, on the home screen and on the lock screen where iOS allows it, with Muse's still picture, name and current card, including a running timer.
 - **Guided setup** in five steps, so nobody needs a terminal to pair a device.
@@ -52,6 +63,8 @@ Where it differs from the Linux SDK: iOS has no shell, so instead of `system.run
 | [Building and installing](Docs/BUILDING.md) | Getting the app onto your device |
 | [Command reference](Docs/COMMANDS.md) | What Muse can call, with parameters and errors |
 | [Protocol status](Docs/PROTOCOL-STATUS.md) | What has been verified, and how |
+| [Voice and video calls](Docs/VIDEO-CALLS-PLAN.md) | The call protocol, how it was ported and what was measured |
+| [Changelog](CHANGELOG.md) | What changed in each version |
 | [Security](SECURITY.md) | Secrets, command boundaries and pairing limits |
 | [Testing](Docs/TESTING.md) | Join the beta and report device-specific results |
 | [Contributing](CONTRIBUTING.md) | Help improve Pal Again |
@@ -72,11 +85,11 @@ The core works on the devices below, but much of it is new and long-running stab
 
 | State | Features |
 |---|---|
-| Verified on a device | Pairing, connecting to Muse, text chat, photos, voice notes, chat history, token rotation, reconnecting, vibration, a second gadget on one token |
+| Verified on a device | Pairing, connecting to Muse, text chat, photos, voice notes, chat history, token rotation, reconnecting, vibration, a second gadget on one token, live voice conversation and video calls (2.0 beta), Reset App |
 | Partly verified | iCloud sync (iPad to iPhone only), Apple Shortcuts (simple shortcuts, without checking a returned result) |
 | Built, not yet verified on a device | Camera, location, motion, speech and flashlight commands, brightness, screen cards, local network commands, hold-to-record |
 | Built, off by default | Encrypted chat sync directly between gadgets over Wi-Fi, for devices on different Apple IDs |
-| Not built yet | Spoken replies, realtime voice, photo sync, an SSH client, WebSocket, MQTT, UDP and SSDP for local devices |
+| Not built yet | Spoken replies to text messages, photo sync, an SSH client, WebSocket, MQTT, UDP and SSDP for local devices |
 
 **The app has to stay on screen.** iOS suspends apps in the background, so the gadget answers only while open, and for about half a minute after you leave it. It reconnects by itself when you come back, and it keeps the screen awake by default. The widget shows the last thing the app gave it and does not keep the app awake.
 
