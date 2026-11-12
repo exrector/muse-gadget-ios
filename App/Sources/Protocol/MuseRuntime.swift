@@ -277,7 +277,7 @@ final class MuseConnectivityLog {
     private var events: [(at: Date, code: String)] = []
 
     func note(_ code: String) {
-        let clean = String(code.unicodeScalars.filter { (0x20...0x7e).contains($0.value) }.map(Character.init).prefix(80))
+        let clean = String(code.unicodeScalars.filter { (0x20...0x7e).contains($0.value) }.map(Character.init).prefix(160))
         lock.lock()
         events.append((Date(), clean))
         if events.count > Self.capacity { events.removeFirst(events.count - Self.capacity) }
@@ -1823,7 +1823,9 @@ final class MuseRuntime: NSObject {
 
     private func fail(_ message: String, reconnect shouldReconnect: Bool, floor: TimeInterval = 0) {
         log(message)
-        connectivity.note("fail: " + (message.split(separator: ":").first.map(String.init) ?? message))
+        // The reason with its error codes, and how long the session lasted after registering.
+        let lasted = registeredAt.map { " after=\(Int(Date().timeIntervalSince($0)))s" } ?? ""
+        connectivity.note("fail: " + message + lasted)
         state = .failed(message)
         if let registeredAt, Date().timeIntervalSince(registeredAt) >= Self.healthySession {
             reconnectFailures = 0
@@ -1881,8 +1883,19 @@ final class MuseRuntime: NSObject {
         DispatchQueue.main.async { self.onLog?(message) }
     }
 
+    /// The error's type, and for a system error its domain and code, never its message.
     private func safeError(_ error: Error) -> String {
-        String(describing: type(of: error))
+        let ns = error as NSError
+        let typeName = String(describing: type(of: error))
+        guard ns.domain != typeName, !ns.domain.isEmpty else { return typeName }
+        var text = "\(typeName) \(ns.domain) \(ns.code)"
+        if let underlying = ns.userInfo[NSUnderlyingErrorKey] as? NSError {
+            text += " < \(underlying.domain) \(underlying.code)"
+        }
+        if let socket = webSocket, socket.closeCode != .invalid {
+            text += " ws_close=\(socket.closeCode.rawValue)"
+        }
+        return text
     }
 }
 
@@ -1906,7 +1919,7 @@ extension MuseRuntime: URLSessionWebSocketDelegate {
     ) {
         queue.async {
             guard webSocketTask === self.webSocket, self.credentials != nil else { return }
-            self.fail("Muse VM closed the connection", reconnect: true)
+            self.fail("Muse VM closed the connection: ws_close=\(closeCode.rawValue) reason_bytes=\(reason?.count ?? 0)", reconnect: true)
         }
     }
 }
