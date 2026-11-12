@@ -3577,17 +3577,23 @@ private struct MuseVoiceCallView: View {
 
     private func roundButton(_ icon: String, label: String, color: Color, enabled: Bool = true,
                              action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        // Over the picture a plain button is white with a dark icon, so it shows on a dark avatar,
+        // on Muse's white video and in dark mode alike.
+        let plain = color == MuseTheme.elevated
+        let background = inSquare && plain ? Color.white.opacity(0.92) : color
+        let foreground: Color = plain ? (inSquare ? .black : .primary) : .white
+        return Button(action: action) {
             Image(systemName: icon)
                 .font(.title2)
-                .foregroundColor(color == MuseTheme.elevated ? .primary : .white)
+                .foregroundColor(foreground)
                 .frame(width: inSquare ? 46 : (inline || phoneSideways ? 56 : 68),
                        height: inSquare ? 46 : (inline || phoneSideways ? 56 : 68))
-                .background(color)
+                .background(background)
                 .clipShape(Circle())
+                .shadow(color: inSquare ? Color.black.opacity(0.35) : .clear, radius: 3, y: 1)
         }
         .disabled(!enabled)
-        .opacity(enabled ? 1 : 0.35)
+        .opacity(enabled ? 1 : (inSquare ? 0.5 : 0.35))
         .accessibilityLabel(PalL10n.text(label))
     }
 }
