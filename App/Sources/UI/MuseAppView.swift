@@ -248,7 +248,6 @@ final class MuseAppModel: ObservableObject {
     private var liveCallItemIDs: Set<UUID> = []
     private var liveCallStartedAt: Date?
     private func addLiveCallLine(fromUser: Bool, text: String) {
-        environment.diagnostics.record("call_line", detail: (fromUser ? "user" : "muse") + (isVoiceCallOpen ? "" : ":closed"))
         guard isVoiceCallOpen else { return }
         if liveCallStartedAt == nil { liveCallStartedAt = Date() }
         let item = MuseChatItem(author: fromUser ? .user : .muse, text: text, sessionID: activeChatSessionID)
