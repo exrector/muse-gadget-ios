@@ -237,8 +237,23 @@ final class MuseAppModel: ObservableObject {
     lazy var voiceCall: MuseVoiceCall = {
         let call = MuseVoiceCall(runtime: environment.runtime)
         call.onTrace = { [weak self] step in self?.environment.diagnostics.record("call", detail: step) }
+        call.onTranscript = { [weak self] fromUser, text in
+            DispatchQueue.main.async { self?.addLiveCallLine(fromUser: fromUser, text: text) }
+        }
         return call
     }()
+
+    /// A voice call's sentences shown in the chat as they are said. They are stand-ins: when the
+    /// call ends and the chat's history has Muse's own record of it, they make way for that.
+    private var liveCallItemIDs: Set<UUID> = []
+    private var liveCallStartedAt: Date?
+    private func addLiveCallLine(fromUser: Bool, text: String) {
+        guard isVoiceCallOpen else { return }
+        if liveCallStartedAt == nil { liveCallStartedAt = Date() }
+        let item = MuseChatItem(author: fromUser ? .user : .muse, text: text, sessionID: activeChatSessionID)
+        liveCallItemIDs.insert(item.id)
+        chatItems.append(item)
+    }
     @Published var pendingVoiceNote: MusePendingVoiceNote?
     @Published var voiceHint: String?
     @Published var isCloudSyncEnabled: Bool {
@@ -1303,6 +1318,12 @@ final class MuseAppModel: ObservableObject {
             self.isRefreshingChats = false
             guard case .success(let data) = result else { return }
             let server = MuseServerHistory.parse(data)
+            if !self.liveCallItemIDs.isEmpty, !self.isVoiceCallOpen, let start = self.liveCallStartedAt,
+               server.contains(where: { $0.createdAt >= start.addingTimeInterval(-5) }) {
+                self.chatItems.removeAll { self.liveCallItemIDs.contains($0.id) }
+                self.liveCallItemIDs.removeAll()
+                self.liveCallStartedAt = nil
+            }
             guard !server.isEmpty else { return }
             let merged = MuseChatMerge.mergeServer(
                 local: self.chatItems,
@@ -2365,28 +2386,15 @@ private struct MuseChatView: View {
             case .phone:
                 chat(onPhone: true, phoneLandscape: geometry.size.width > geometry.size.height)
             case .iPadUpright:
-                // The call covers the avatar band and grows over the chat's top; the band and its
-                // animations stay as they are underneath, so nothing stops or restarts.
+                // A call takes the avatar's square only, so Muse's card, picture and caption
+                // beside it stay in view.
                 VStack(spacing: 0) {
                     MuseAvatarTopBand(model: model)
                     chat(onPhone: false)
                 }
-                .overlay(alignment: .top) {
-                    if model.isVoiceCallOpen {
-                        MuseVoiceCallView(model: model, call: model.voiceCall, inline: true, beside: true)
-                            .frame(height: geometry.size.height * 0.45)
-                            .overlay(alignment: .bottom) { Divider() }
-                    }
-                }
             case .iPadSideways:
                 HStack(spacing: 0) {
-                    // The call covers the avatar panel, which keeps running underneath.
                     MuseAvatarSidePanel(model: model)
-                        .overlay {
-                            if model.isVoiceCallOpen {
-                                MuseVoiceCallView(model: model, call: model.voiceCall, inline: true)
-                            }
-                        }
                         .frame(width: geometry.size.width * 0.38)
                     Divider()
                     chat(onPhone: false)
@@ -2402,9 +2410,7 @@ private struct MuseChatView: View {
     }
 
     private func chat(onPhone: Bool, phoneLandscape: Bool = false) -> some View {
-        // On an iPad a call covers the panel where Muse's card, picture and caption go, so while
-        // it is open they show above the chat, as on a phone.
-        let screenInChat = onPhone || (model.isVoiceCallOpen && model.callIsInline)
+        let screenInChat = onPhone
         return VStack(spacing: 0) {
             if onPhone {
                 MuseChatHeader(model: model, card: phoneLandscape ? model.card : nil)
@@ -2846,7 +2852,13 @@ private struct MuseAvatarSidePanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // A call shows in the avatar's square, over the avatar, which keeps running underneath.
             MuseAvatarFace(model: model, markSize: 120)
+                .overlay {
+                    if model.isVoiceCallOpen {
+                        MuseVoiceCallView(model: model, call: model.voiceCall, inline: true, inSquare: true)
+                    }
+                }
                 .aspectRatio(1, contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                 .frame(maxWidth: .infinity)
@@ -2879,17 +2891,24 @@ private struct MuseAvatarTopBand: View {
     @ObservedObject var model: MuseAppModel
 
     var body: some View {
+        // During a call the square grows to hold the call's buttons over the picture.
+        let side: CGFloat = model.isVoiceCallOpen ? 300 : 133
         HStack(alignment: .top, spacing: 16) {
             MuseAvatarFace(model: model, markSize: 72)
-                .frame(width: 133, height: 133)
+                .overlay {
+                    if model.isVoiceCallOpen {
+                        MuseVoiceCallView(model: model, call: model.voiceCall, inline: true, inSquare: true)
+                    }
+                }
+                .frame(width: side, height: side)
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             MusePortraitIdentityControls(model: model)
             MuseScreenItems(model: model, usesCompactCard: true, fillsCompactCard: true)
-                .frame(maxWidth: .infinity, minHeight: 133, maxHeight: 133, alignment: .topLeading)
+                .frame(maxWidth: .infinity, minHeight: 133, maxHeight: side, alignment: .topLeading)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: 165, alignment: .top)
+        .frame(height: side + 32, alignment: .top)
         .background(MuseTheme.bar)
         .overlay(alignment: .bottom) { Divider() }
     }
@@ -3323,6 +3342,8 @@ private struct MuseVoiceCallView: View {
     var inline = false
     /// In the wide band of an upright iPad, status and buttons go beside the picture.
     var beside = false
+    /// On an iPad the call fills the avatar's square, with its status and buttons over the picture.
+    var inSquare = false
     @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     /// An iPhone on its side: too little height for anything under the picture but one line.
@@ -3373,7 +3394,32 @@ private struct MuseVoiceCallView: View {
 
     var body: some View {
         Group {
-            if phoneSideways {
+            if inSquare {
+                ZStack(alignment: .bottom) {
+                    squareFace
+                    VStack(spacing: 8) {
+                        Label(status, systemImage: statusIcon)
+                            .font(.subheadline.weight(.semibold))
+                            .lineLimit(1)
+                        if !call.reply.isEmpty {
+                            Text(call.reply)
+                                .font(.footnote)
+                                .lineLimit(2)
+                                .truncationMode(.head)
+                        }
+                        HStack(spacing: 14) { controlButtons }
+                    }
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 10)
+                    .padding(.top, 18)
+                    .padding(.bottom, 10)
+                    .frame(maxWidth: .infinity)
+                    .background(
+                        LinearGradient(colors: [.clear, Color.black.opacity(0.55)], startPoint: .top, endPoint: .bottom)
+                    )
+                }
+            } else if phoneSideways {
                 HStack(spacing: 12) {
                     VStack(spacing: 6) {
                         face.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -3420,6 +3466,23 @@ private struct MuseVoiceCallView: View {
         .environment(\.colorScheme, call.hasVideo ? .light : colorScheme)
         // A swipe must not leave the microphone open behind a closed card.
         .interactiveDismissDisabled(call.phase.isActive)
+    }
+
+    /// The whole square: Muse's video filling it, or the avatar moving with the call's voice.
+    @ViewBuilder private var squareFace: some View {
+        if call.hasVideo {
+            Color.white.overlay(MuseVideoSurface(renderer: call.video, fills: true))
+        } else {
+            ZStack {
+                MuseTheme.elevated
+                if let data = model.agentAvatar, let image = UIImage(data: data) {
+                    Image(uiImage: image).resizable().scaledToFill()
+                }
+                if !model.avatarFiles.isEmpty {
+                    MuseAvatarPlayer(files: model.avatarFiles, name: avatarAnimation, version: model.avatarVersion)
+                }
+            }
+        }
     }
 
     @ViewBuilder private var face: some View {
@@ -3517,7 +3580,8 @@ private struct MuseVoiceCallView: View {
             Image(systemName: icon)
                 .font(.title2)
                 .foregroundColor(color == MuseTheme.elevated ? .primary : .white)
-                .frame(width: inline || phoneSideways ? 56 : 68, height: inline || phoneSideways ? 56 : 68)
+                .frame(width: inSquare ? 46 : (inline || phoneSideways ? 56 : 68),
+                       height: inSquare ? 46 : (inline || phoneSideways ? 56 : 68))
                 .background(color)
                 .clipShape(Circle())
         }

@@ -35,6 +35,9 @@ final class MuseVoiceCall: ObservableObject {
     @Published private(set) var heard = ""
     /// What Muse is saying, from its transcript events.
     @Published private(set) var reply = ""
+    /// Each finished sentence of a voice call, yours (`true`) or Muse's, for the chat to show at
+    /// once: Muse posts the call to the chat only after it ends (muse-gadget-sdk#330).
+    var onTranscript: ((_ fromUser: Bool, _ text: String) -> Void)?
     /// True while Muse is answering, for the talking animation: from the first sound of a reply
     /// until Muse's server says that reply's audio is done and the player has played it all.
     /// A stall in delivery mid-sentence does not end it, so the animation does not restart.
@@ -555,7 +558,13 @@ final class MuseVoiceCall: ObservableObject {
         case "input_audio_buffer.speech_stopped", "input_audio_buffer.committed":
             isUserSpeaking = false
         case "conversation.item.input_audio_transcription.completed":
-            if let text = event["transcript"] as? String, !text.isEmpty { heard = text }
+            if let text = event["transcript"] as? String, !text.isEmpty {
+                heard = text
+                onTranscript?(true, text)
+            }
+        case "response.audio_transcript.done", "response.output_audio_transcript.done":
+            let text = ((event["transcript"] as? String) ?? reply).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !fenced, !text.isEmpty { onTranscript?(false, text) }
         case "hatch.voice.turn_started":
             isMuseReady = true
             missedSentence = false

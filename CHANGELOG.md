@@ -25,7 +25,8 @@ Tested through its own [TestFlight link](https://testflight.apple.com/join/C3nYX
 
 ### Changed
 
-- On an iPad a call covers the avatar panel beside the chat. An iPhone shows it as a card, with its own layout when the phone is on its side.
+- On an iPad a call takes the avatar's square, with its status, Muse's latest words and the buttons over the picture, so Muse's card, picture and caption stay in view. An iPhone shows the call as a card, with its own layout when the phone is on its side.
+- A voice call's sentences appear in the chat as they are said. When the call ends they make way for Muse's own record of it from the chat's history.
 - The confirmations for removing the pairing and for the reset say to remove the device in the Muse app too (Settings > Devices). Pairing again fails otherwise.
 - The connection to Muse uses the `hatch-web` app identity only while live conversation is on. With it off, the connection is as in 1.x.
 
