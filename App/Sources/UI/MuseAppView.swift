@@ -3495,7 +3495,8 @@ private struct MuseVoiceCallView: View {
             // The whole upright frame, not cropped to the square: an avatar that fills its frame,
             // such as a figure in a sweater, lost its head when the square was filled. The space
             // beside it is white, as Muse's video is.
-            Color.white.overlay(MuseVideoSurface(renderer: call.video, fills: false))
+            Color.white.overlay(MuseVideoSurface(renderer: call.video, fills: false,
+                                                 subject: call.videoSubject, videoSize: call.videoSize))
         } else {
             ZStack {
                 MuseTheme.elevated
@@ -3626,6 +3627,10 @@ private struct MuseVideoSurface: UIViewRepresentable {
     let renderer: MuseVideoRenderer
     /// Fill the window and crop what does not fit, instead of fitting the whole picture.
     var fills = false
+    /// The avatar's box in the picture: when known with the picture's size, the avatar itself is
+    /// framed to the window, whatever the shape of the avatar or of the window.
+    var subject: CGRect? = nil
+    var videoSize: CGSize? = nil
 
     func makeUIView(context: Context) -> MuseVideoLayerView {
         let view = MuseVideoLayerView()
@@ -3633,13 +3638,17 @@ private struct MuseVideoSurface: UIViewRepresentable {
         view.backgroundColor = .clear
         view.clipsToBounds = true
         view.renderer = renderer
-        renderer.layer.videoGravity = fills ? .resizeAspectFill : .resizeAspect
+        updateUIView(view, context: context)
         return view
     }
 
     func updateUIView(_ view: MuseVideoLayerView, context: Context) {
         if view.renderer !== renderer { view.renderer = renderer }
-        renderer.layer.videoGravity = fills ? .resizeAspectFill : .resizeAspect
+        view.videoSize = videoSize
+        view.subject = subject
+        if subject == nil || videoSize == nil {
+            renderer.layer.videoGravity = fills ? .resizeAspectFill : .resizeAspect
+        }
     }
 }
 

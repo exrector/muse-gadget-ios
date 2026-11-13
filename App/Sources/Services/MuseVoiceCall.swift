@@ -86,6 +86,9 @@ final class MuseVoiceCall: ObservableObject {
     @Published private(set) var hasVideo = false
     /// Width over height of Muse's video, so its window has no bars.
     @Published private(set) var videoAspect: CGFloat = 9.0 / 16.0
+    @Published private(set) var videoSize: CGSize?
+    /// Where Muse's avatar is in its picture, normalized, once a keyframe has been looked at.
+    @Published private(set) var videoSubject: CGRect?
     static let videoCallsKey = "videoCallsWithAvatar"
     static let greetingKey = "museGreetsFirst"
     /// "Muse Greets First", on unless turned off, for both kinds of call.
@@ -352,7 +355,9 @@ final class MuseVoiceCall: ObservableObject {
                 DispatchQueue.main.async { self?.show(nals, timestamp: timestamp) }
             }
             self.video.onNeedsKeyframe = { [weak media] in media?.requestKeyframe() }
+            self.video.onSubject = { [weak self] box in self?.videoSubject = box }
             self.video.onSize = { [weak self] size in
+                self?.videoSize = size
                 self?.videoAspect = size.width / size.height
                 self?.trace("video_size=\(Int(size.width))x\(Int(size.height))")
             }

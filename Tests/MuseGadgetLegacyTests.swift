@@ -1618,6 +1618,48 @@ final class MuseGadgetLegacyTests: XCTestCase {
         XCTAssertNotNil(spec)
     }
 
+    func testSubjectBoundsFindsTheAvatarOnWhite() {
+        let width = 40, height = 80
+        var luma = [UInt8](repeating: 250, count: width * height)
+        for y in 20..<60 { for x in 8..<32 { luma[y * width + x] = 40 } }
+        let box = luma.withUnsafeBufferPointer {
+            MuseSubjectFraming.bounds(luma: $0.baseAddress!, width: width, height: height, rowBytes: width, step: 1)
+        }
+        XCTAssertEqual(box, CGRect(x: 8.0 / 40, y: 20.0 / 80, width: 24.0 / 40, height: 40.0 / 80))
+        let blank = [UInt8](repeating: 255, count: width * height).withUnsafeBufferPointer {
+            MuseSubjectFraming.bounds(luma: $0.baseAddress!, width: width, height: height, rowBytes: width)
+        }
+        XCTAssertNil(blank)
+    }
+
+    func testFramingFitsAnyAvatarWholeAndCentredInTheWindow() {
+        let video = CGSize(width: 448, height: 768)
+        let square = CGSize(width: 300, height: 300)
+        let shapes: [CGRect] = [
+            CGRect(x: 0.15, y: 0.02, width: 0.7, height: 0.96),   // tall: a figure filling the frame
+            CGRect(x: 0.05, y: 0.35, width: 0.9, height: 0.3),    // wide
+            CGRect(x: 0.3, y: 0.3, width: 0.4, height: 0.2),      // a small head in the middle
+            CGRect(x: 0.0, y: 0.5, width: 0.4, height: 0.5)       // off to a corner
+        ]
+        for subject in shapes {
+            let frame = MuseSubjectFraming.layerFrame(bounds: square, video: video, subject: subject)
+            let shown = CGRect(x: frame.minX + subject.minX * frame.width, y: frame.minY + subject.minY * frame.height,
+                               width: subject.width * frame.width, height: subject.height * frame.height)
+            XCTAssertGreaterThanOrEqual(shown.minX, -0.5, "\(subject)")
+            XCTAssertGreaterThanOrEqual(shown.minY, -0.5, "\(subject)")
+            XCTAssertLessThanOrEqual(shown.maxX, square.width + 0.5, "\(subject)")
+            XCTAssertLessThanOrEqual(shown.maxY, square.height + 0.5, "\(subject)")
+            XCTAssertEqual(shown.midX, square.width / 2, accuracy: 0.5)
+            XCTAssertEqual(shown.midY, square.height / 2, accuracy: 0.5)
+            XCTAssertEqual(frame.width / frame.height, video.width / video.height, accuracy: 0.001)
+            // The avatar uses the window: its longer side reaches the margin, unless capped.
+            let filled = max(shown.width / square.width, shown.height / square.height)
+            let scale = frame.width / video.width
+            let capped = 1.5 * max(square.width / video.width, square.height / video.height)
+            XCTAssertTrue(abs(filled - 0.88) < 0.01 || scale >= capped - 0.001, "\(subject) \(filled)")
+        }
+    }
+
     private func acknowledgedTimeline() -> MuseChatTimeline {
         let timeline = MuseChatTimeline()
         timeline.expectRequest()
