@@ -3420,7 +3420,10 @@ private struct MuseVoiceCallView: View {
         GeometryReader { geometry in
             let wide = geometry.size.width > geometry.size.height * 1.15
             ZStack {
+                // Pinned to the window, so a picture of another shape stays centred and inside it.
                 squareFace
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .clipped()
                 if wide {
                     HStack(spacing: 0) {
                         VStack(alignment: .leading, spacing: 6) {
@@ -3494,8 +3497,9 @@ private struct MuseVoiceCallView: View {
         } else {
             ZStack {
                 MuseTheme.elevated
+                // Whole and centred in a window of any shape, like the avatar's moving video over it.
                 if let data = model.agentAvatar, let image = UIImage(data: data) {
-                    Image(uiImage: image).resizable().scaledToFill()
+                    Image(uiImage: image).resizable().scaledToFit()
                 }
                 if !model.avatarFiles.isEmpty {
                     MuseAvatarPlayer(files: model.avatarFiles, name: avatarAnimation, version: model.avatarVersion)
