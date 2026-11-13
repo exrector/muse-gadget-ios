@@ -43,11 +43,11 @@ The chat is the main screen. Messages you send here go into your main Muse chat,
   - **Tap:** tap to start, tap again to send.
   - **Hold:** hold while you speak, release to send.
 
-### Live conversation with Muse
+### Live calls with Muse
 
 > **Calls depend on your Muse account.** Meta turns voice and video calls on or off for each account on its side, and can change that at any time. **If the Muse app on your phone has no call button, calls will not work on the gadget either**, and the gadget reports that Muse did not accept the call (HTTP 404). Chat, photos, voice notes and commands keep working. Pal Again cannot change this; calls return by themselves when Meta turns them back on. The same is reported for the SDK's own clients in [muse-gadget-sdk#310](https://github.com/facebookincubator/muse-gadget-sdk/issues/310).
 
-New in 2.0, and marked Beta. Turn on **Live Conversation with Muse (Beta)** in Settings. A phone button appears beside the microphone once Muse is connected.
+New in 2.0, and marked Beta. Turn on **Live Voice Calls with Muse (Beta)** in Settings. A phone button appears beside the microphone once Muse is connected.
 
 1. Tap the phone button. The gadget connects in a few seconds, and Muse says hello if **Muse Greets First** is on.
 2. Speak. You do not need to hold anything. Muse answers in its own voice through the loudspeaker.
@@ -59,7 +59,7 @@ During the conversation:
 - **Interrupt** stops Muse's current answer. The microphone is closed while Muse speaks, so interrupting is done with this button and not by talking over it.
 - The window shows what is happening: connecting, listening, thinking or speaking.
 
-With **Video with Muse's Avatar (Beta)** on, which is the default, the conversation is a video call: Muse shows its face and its lips move with its voice, as in the Muse app. It uses about 1 Mbit/s. With it off the conversation is voice only, and the avatar plays its talking animation while Muse's voice is heard.
+With **Video Calls with Muse's Avatar (Beta)** on, which is the default, the conversation is a video call: Muse shows its face and its lips move with its voice, as in the Muse app. It uses about 1 Mbit/s. With it off the conversation is voice only, and the avatar plays its talking animation while Muse's voice is heard.
 
 On an iPad the call takes the avatar's square, with its buttons over the picture; Muse's card, picture and caption stay in view beside it. **In a call without video your sentences and Muse's appear in the chat as they are said. In a video call the chat fills in only after you hang up**, because Muse's video calls carry no text until the SDK adds it. On an iPhone it opens as a card, and you can turn the phone on its side for a larger picture.
 
@@ -161,8 +161,8 @@ The gear button opens **Settings**: under the avatar on an iPad, and in the head
 | **Keep Screen Awake** | Keeps the screen on while paired |
 | **Help and Guide** | Explains pairing, chats, attachments, voice recording and permissions inside the app |
 | **Diagnostics** | Technical log, including the result of each command |
-| **Live Conversation with Muse (Beta)** | Adds a phone button beside the microphone: you talk and Muse answers in its own voice, hands-free. Turning it on or off reconnects to Muse. Voice notes keep working as before |
-| **Video with Muse's Avatar (Beta)** | Shown when live conversation is on. The conversation becomes a video call: Muse shows its face and its lips move as it speaks, as in the Muse app. It uses about 1 Mbit/s. Turn it off to talk by voice only |
+| **Live Voice Calls with Muse (Beta)** | Adds a phone button beside the microphone: you talk and Muse answers in its own voice, hands-free. Turning it on or off reconnects to Muse. Voice notes keep working as before |
+| **Video Calls with Muse's Avatar (Beta)** | Shown when live conversation is on. The conversation becomes a video call: Muse shows its face and its lips move as it speaks, as in the Muse app. It uses about 1 Mbit/s. Turn it off to talk by voice only |
 | **Muse Greets First** | Shown when live conversation is on. Muse says hello at the start of a conversation, with or without video, so you hear that you are connected |
 | **Short Replies to Voice** | Muse answers voice notes briefly, in plain sentences. Turn it off for full replies |
 | **Share Diagnostics** | Optionally sends Apple MetricKit crash and hang reports plus safe app-flow steps. It never sends chat text, tokens, the gadget name, files, photos or audio |
@@ -215,9 +215,9 @@ Pairing protects your credentials from people passively listening, but it cannot
 | The app says Muse revoked the pairing | Use **Remove Muse Pairing**, then set the gadget up again |
 | Pairing again does not work after removing the pairing or a reset | Remove the old device in Muse under Settings > Devices, then start pairing again |
 | The setup guide opened by accident | Tap **Back** at the top (2.0). It is shown while a pairing is saved |
-| There is no phone button beside the microphone | Turn on **Live Conversation with Muse (Beta)** and wait for the connection to Muse |
+| There is no phone button beside the microphone | Turn on **Live Voice Calls with Muse (Beta)** and wait for the connection to Muse |
 | "Muse missed that, please say it again" in a conversation | Repeat the sentence. Muse did not take that one |
-| A video call shows no picture or stutters | It needs about 1 Mbit/s. Turn off **Video with Muse's Avatar (Beta)** to talk by voice only |
+| A video call shows no picture or stutters | It needs about 1 Mbit/s. Turn off **Video Calls with Muse's Avatar (Beta)** to talk by voice only |
 | "No microphone access" when starting a conversation | Allow the microphone under **Permissions** |
 | A command fails with `foreground_required` | Open the app on the gadget and keep it on screen |
 | A command fails with `permission_required` | Allow that permission under **Permissions** |

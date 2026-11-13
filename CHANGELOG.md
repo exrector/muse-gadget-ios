@@ -8,8 +8,8 @@ Tested through its own [TestFlight link](https://testflight.apple.com/join/C3nYX
 
 ### Added
 
-- **Live Conversation with Muse (Beta).** A phone button beside the microphone opens a hands-free conversation: you speak and Muse answers in its own voice. It can be muted, interrupted and ended, and ends by itself after 45 seconds of silence or 15 minutes.
-- **Video with Muse's Avatar (Beta)**, on by default while live conversation is on. The conversation becomes a video call through Meta's media server for Muse, about 1 Mbit/s, and Muse's face talks in sync with its voice.
+- **Live Voice Calls with Muse (Beta).** A phone button beside the microphone opens a hands-free conversation: you speak and Muse answers in its own voice. It can be muted, interrupted and ended, and ends by itself after 45 seconds of silence or 15 minutes.
+- **Video Calls with Muse's Avatar (Beta)**, on by default while live conversation is on. The conversation becomes a video call through Meta's media server for Muse, about 1 Mbit/s, and Muse's face talks in sync with its voice.
 - **Muse Greets First**, on by default: Muse says hello once the conversation is connected.
 - **Short Replies to Voice**, on by default: Muse answers voice notes briefly, in plain sentences.
 - **Reset App** in Settings removes the SDK token, the pairing, the chat, the avatar, files, access granted to Muse, settings and the device identity, and opens the first setup step. iOS permissions stay, because only iOS Settings can change them.

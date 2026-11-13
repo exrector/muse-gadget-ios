@@ -25,14 +25,14 @@ The old device becomes a screen, microphone, speaker, camera and sensor companio
 This branch, `feature/2.0-video`, is version 2.0. It adds a live conversation with Muse on top of everything in 1.x:
 
 - **Voice.** A phone button beside the microphone starts a hands-free conversation, and Muse answers in its own voice.
-- **Video.** With **Video with Muse's Avatar** on, the conversation is a video call: Muse shows its face and its lips move with its voice, as in the Muse app.
+- **Video.** With **Video Calls with Muse's Avatar** on, the conversation is a video call: Muse shows its face and its lips move with its voice, as in the Muse app.
 - **Reset App** in Settings returns the gadget to its first-launch state, and the setup guide can be closed without finishing it.
 
 > **Calls depend on your Muse account.** Meta turns voice and video calls on or off for each account on its side, and can change that at any time. **If the Muse app on your phone has no call button, calls will not work on the gadget either**, and the gadget reports that Muse did not accept the call (HTTP 404). Chat, photos, voice notes and commands keep working. Pal Again cannot change this; calls return by themselves when Meta turns them back on. The same is reported for the SDK's own clients in [muse-gadget-sdk#310](https://github.com/facebookincubator/muse-gadget-sdk/issues/310).
 
-> **In a video call the chat fills in only after you hang up.** A video call goes through Meta's media server, which sends Muse's voice and picture but no text, so the conversation appears in the chat once Muse records it at the end of the call. **With Video with Muse's Avatar off, a voice call shows every sentence live**, both on the avatar and in the chat. This is a limit of Muse's video calls today, not of Pal Again, and it will change only when Muse's server and the [Muse Gadget SDK](https://github.com/facebookincubator/muse-gadget-sdk) add text to video calls.
+> **In a video call the chat fills in only after you hang up.** A video call goes through Meta's media server, which sends Muse's voice and picture but no text, so the conversation appears in the chat once Muse records it at the end of the call. **With Video Calls with Muse's Avatar off, a voice call shows every sentence live**, both on the avatar and in the chat. This is a limit of Muse's video calls today, not of Pal Again, and it will change only when Muse's server and the [Muse Gadget SDK](https://github.com/facebookincubator/muse-gadget-sdk) add text to video calls.
 
-Both kinds of call were checked on an iPhone 6s with iOS 15.8.8 and an iPad (6th generation) with iPadOS 17.7.11. Version 2.0 is tested through its own [TestFlight link](https://testflight.apple.com/join/C3nYXZ7W); a build appears there after Apple's beta review, and installing it replaces Pal Again 1.x on that device. The App Store still carries 1.x. See the [user guide](Docs/USER-GUIDE.md#live-conversation-with-muse), the [changelog](CHANGELOG.md) and [how the calls work](Docs/VIDEO-CALLS-PLAN.md).
+Both kinds of call were checked on an iPhone 6s with iOS 15.8.8 and an iPad (6th generation) with iPadOS 17.7.11. Version 2.0 is tested through its own [TestFlight link](https://testflight.apple.com/join/C3nYXZ7W); a build appears there after Apple's beta review, and installing it replaces Pal Again 1.x on that device. The App Store still carries 1.x. See the [user guide](Docs/USER-GUIDE.md#live-calls-with-muse), the [changelog](CHANGELOG.md) and [how the calls work](Docs/VIDEO-CALLS-PLAN.md).
 
 ## How it works
 

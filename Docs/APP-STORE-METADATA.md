@@ -75,7 +75,7 @@ Pal Again is an independent community project. Muse and related marks belong to 
 When 2.0 goes to the App Store, add to the description, after WHAT IT DOES, in capitals as the description's other headings, since the App Store shows no bold:
 
 ```
-LIVE CONVERSATION WITH MUSE (BETA)
+LIVE VOICE AND VIDEO CALLS WITH MUSE (BETA)
 
 • Talk with Muse hands-free, by voice or as a video call with Muse's own talking avatar
 • In a voice call your words and Muse's appear in the chat as you talk; in a video call the chat fills in after you hang up

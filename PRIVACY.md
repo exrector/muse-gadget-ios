@@ -29,7 +29,7 @@ Pal Again sends data when you use a feature, or when your paired Muse sends a co
 - camera captures and short voice recordings requested by Muse;
 - device information requested by supported commands, such as location, motion, battery state or local-network results.
 
-This information is sent to Muse services through the authenticated gadget connection. A live conversation with the "Video with Muse's Avatar" setting on is a video call: its encrypted audio and video go directly between the device and Meta's media server for Muse (SRTP), as in the Muse Gadget SDK; the microphone sends only while the conversation window is open. Muse's handling of information is governed by its own privacy policy and terms.
+This information is sent to Muse services through the authenticated gadget connection. A live conversation with the "Video Calls with Muse's Avatar" setting on is a video call: its encrypted audio and video go directly between the device and Meta's media server for Muse (SRTP), as in the Muse Gadget SDK; the microphone sends only while the conversation window is open. Muse's handling of information is governed by its own privacy policy and terms.
 
 ## Permissions
 
@@ -55,6 +55,6 @@ Pal Again — независимый клиент с открытым исход
 
 Диагностика хранится до 30 дней в размещённой в ЕС базе Cloudflare D1 и используется только для исправления ошибок. Исходные IP-адреса не сохраняются; их односторонний хеш живёт не более 48 часов исключительно для защиты приёмника отчётов от злоупотреблений.
 
-SDK Token и данные пары хранятся в iOS Keychain. История чата и настройки остаются на устройстве; при включённой синхронизации текст чата хранится в вашем личном iCloud. Фото, голос, сообщения и запрошенные данные устройства передаются Muse только при использовании соответствующей функции. В живом разговоре ваш голос уходит Muse, пока открыто окно разговора; с настройкой «Видео с аватаром Muse» это видеозвонок, и зашифрованные звук и видео идут напрямую между устройством и медиасервером Meta для Muse, как в Muse Gadget SDK. Разрешения можно отозвать в настройках iOS, а историю, синхронизацию и пару — удалить в настройках Pal Again.
+SDK Token и данные пары хранятся в iOS Keychain. История чата и настройки остаются на устройстве; при включённой синхронизации текст чата хранится в вашем личном iCloud. Фото, голос, сообщения и запрошенные данные устройства передаются Muse только при использовании соответствующей функции. В живом разговоре ваш голос уходит Muse, пока открыто окно разговора; с настройкой «Видеозвонки с аватаром Muse» это видеозвонок, и зашифрованные звук и видео идут напрямую между устройством и медиасервером Meta для Muse, как в Muse Gadget SDK. Разрешения можно отозвать в настройках iOS, а историю, синхронизацию и пару — удалить в настройках Pal Again.
 
 Вопросы и запросы можно отправить на support@exrector.com или оставить в [Issues репозитория](https://github.com/exrector/muse-gadget-ios/issues), не публикуя токены, данные пары, личные сообщения, фотографии и другие секреты.

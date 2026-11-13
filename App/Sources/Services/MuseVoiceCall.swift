@@ -94,7 +94,7 @@ final class MuseVoiceCall: ObservableObject {
     /// "Muse Greets First", on unless turned off, for both kinds of call.
     static var greets: Bool { UserDefaults.standard.object(forKey: greetingKey) as? Bool ?? true }
     private static let mediaTimeout: TimeInterval = 10
-    /// The "Video with Muse's avatar (Beta)" setting, on unless turned off: a call over the
+    /// The "Video Calls with Muse's Avatar (Beta)" setting, on unless turned off: a call over the
     /// video-call media path, with Muse's own video. Off keeps the realtime voice call.
     static var usesMedia: Bool {
         #if DEBUG
