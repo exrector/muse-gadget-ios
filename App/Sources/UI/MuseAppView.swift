@@ -3415,31 +3415,53 @@ private struct MuseVoiceCallView: View {
 
     var body: some View {
         // One look everywhere, as in the iPad's square: Muse's picture fills the whole window and
-        // the status, Muse's latest words and the buttons lie over it at the bottom.
-        ZStack(alignment: .bottom) {
-            squareFace
-            VStack(spacing: 8) {
-                if !inSquare { extras.foregroundColor(.white) }
-                Label(status, systemImage: statusIcon)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                if !call.reply.isEmpty {
-                    Text(call.reply)
-                        .font(.footnote)
-                        .lineLimit(2)
-                        .truncationMode(.head)
+        // the status, Muse's latest words and the buttons lie over it. A window wider than tall,
+        // such as a phone on its side, has the buttons in a column on the right.
+        GeometryReader { geometry in
+            let wide = geometry.size.width > geometry.size.height * 1.15
+            ZStack {
+                squareFace
+                if wide {
+                    HStack(spacing: 0) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Spacer(minLength: 0)
+                            statusText
+                        }
+                        .padding(.leading, 12)
+                        .padding(.bottom, 10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            LinearGradient(colors: [.clear, Color.black.opacity(0.55)], startPoint: .center, endPoint: .bottom)
+                        )
+                        VStack(spacing: 12) { controlButtons }
+                            .padding(.horizontal, 12)
+                            .frame(maxHeight: .infinity)
+                            .background(
+                                LinearGradient(colors: [.clear, Color.black.opacity(0.55)], startPoint: .leading, endPoint: .trailing)
+                            )
+                    }
+                    .foregroundColor(.white)
+                } else {
+                    VStack(spacing: 8) {
+                        Spacer(minLength: 0)
+                        if !inSquare { extras.foregroundColor(.white) }
+                        statusText
+                        HStack(spacing: 14) { controlButtons }
+                    }
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, inline ? 10 : 22)
+                    .frame(maxWidth: .infinity)
+                    .background(
+                        VStack(spacing: 0) {
+                            Spacer(minLength: 0)
+                            LinearGradient(colors: [.clear, Color.black.opacity(0.6)], startPoint: .top, endPoint: .bottom)
+                                .frame(height: min(geometry.size.height, 220))
+                        }
+                    )
                 }
-                HStack(spacing: 14) { controlButtons }
             }
-            .foregroundColor(.white)
-            .multilineTextAlignment(.center)
-            .padding(.horizontal, 10)
-            .padding(.top, 24)
-            .padding(.bottom, inline ? 10 : 22)
-            .frame(maxWidth: .infinity)
-            .background(
-                LinearGradient(colors: [.clear, Color.black.opacity(0.6)], startPoint: .top, endPoint: .bottom)
-            )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Group {
@@ -3449,6 +3471,22 @@ private struct MuseVoiceCallView: View {
         .environment(\.colorScheme, call.hasVideo ? .light : colorScheme)
         // A swipe must not leave the microphone open behind a closed card.
         .interactiveDismissDisabled(call.phase.isActive)
+    }
+
+    /// The status and Muse's latest words, white over the picture.
+    private var statusText: some View {
+        VStack(spacing: 4) {
+            Label(status, systemImage: statusIcon)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+            if !call.reply.isEmpty {
+                Text(call.reply)
+                    .font(.footnote)
+                    .lineLimit(2)
+                    .truncationMode(.head)
+            }
+        }
+        .shadow(color: Color.black.opacity(0.4), radius: 2)
     }
 
     /// The whole square: Muse's video filling it, or the avatar moving with the call's voice.
