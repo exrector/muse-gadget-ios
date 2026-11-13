@@ -45,6 +45,8 @@ The chat is the main screen. Messages you send here go into your main Muse chat,
 
 ### Live conversation with Muse
 
+> **Calls depend on your Muse account.** Meta turns voice and video calls on or off for each account on its side, and can change that at any time. **If the Muse app on your phone has no call button, calls will not work on the gadget either**, and the gadget reports that Muse did not accept the call (HTTP 404). Chat, photos, voice notes and commands keep working. Pal Again cannot change this; calls return by themselves when Meta turns them back on. The same is reported for the SDK's own clients in [muse-gadget-sdk#310](https://github.com/facebookincubator/muse-gadget-sdk/issues/310).
+
 New in 2.0, and marked Beta. Turn on **Live Conversation with Muse (Beta)** in Settings. A phone button appears beside the microphone once Muse is connected.
 
 1. Tap the phone button. The gadget connects in a few seconds, and Muse says hello if **Muse Greets First** is on.

@@ -70,6 +70,22 @@ Found a bug? Use Send a Report in Settings, or write to support@exrector.com.
 
 Pal Again is an independent community project. Muse and related marks belong to their respective owners.
 
+## Version 2.0 additions
+
+When 2.0 goes to the App Store, add to the description, after WHAT IT DOES, in capitals as the description's other headings, since the App Store shows no bold:
+
+```
+LIVE CONVERSATION WITH MUSE (BETA)
+
+• Talk with Muse hands-free, by voice or as a video call with Muse's own talking avatar
+• In a voice call your words and Muse's appear in the chat as you talk; in a video call the chat fills in after you hang up
+
+IMPORTANT: CALLS DEPEND ON YOUR MUSE ACCOUNT
+Meta turns voice and video calls on or off for each Muse account. If the Muse app on your phone has no call button, calls will not work in Pal Again either. Chat, photos, voice notes and commands work regardless.
+```
+
+The 2.0 "What's New" text starts with the same warning: "Calls depend on your Muse account: if the Muse app has no call button, calls will not work here either."
+
 ## App Review notes
 
 Pal Again is an iOS and iPadOS implementation of the open-source Muse Gadget SDK:

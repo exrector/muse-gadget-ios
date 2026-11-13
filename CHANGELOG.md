@@ -41,6 +41,8 @@ Tested through its own [TestFlight link](https://testflight.apple.com/join/C3nYX
 
 ### Known limits
 
+- **Calls depend on the Muse account.** Meta turns calls on or off per account; when the Muse app has no call button, the gadget's calls are refused with HTTP 404 (muse-gadget-sdk#310). Seen on 2026-11-13: calls that worked for two days stopped in the Muse app and on the gadget at once.
+
 - Calls are half duplex: the microphone is closed while Muse speaks. **Interrupt** stops the answer.
 - Streaming dictation is refused by the server and is not offered.
 - Text replies are not read aloud.
