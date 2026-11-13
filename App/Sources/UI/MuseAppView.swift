@@ -3430,15 +3430,9 @@ private struct MuseVoiceCallView: View {
                         .padding(.leading, 12)
                         .padding(.bottom, 10)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            LinearGradient(colors: [.clear, Color.black.opacity(0.55)], startPoint: .center, endPoint: .bottom)
-                        )
                         VStack(spacing: 12) { controlButtons }
                             .padding(.horizontal, 12)
                             .frame(maxHeight: .infinity)
-                            .background(
-                                LinearGradient(colors: [.clear, Color.black.opacity(0.55)], startPoint: .leading, endPoint: .trailing)
-                            )
                     }
                     .foregroundColor(.white)
                 } else {
