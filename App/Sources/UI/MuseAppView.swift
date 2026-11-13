@@ -3492,7 +3492,10 @@ private struct MuseVoiceCallView: View {
     /// The whole square: Muse's video filling it, or the avatar moving with the call's voice.
     @ViewBuilder private var squareFace: some View {
         if call.hasVideo {
-            Color.white.overlay(MuseVideoSurface(renderer: call.video, fills: true))
+            // The whole upright frame, not cropped to the square: an avatar that fills its frame,
+            // such as a figure in a sweater, lost its head when the square was filled. The space
+            // beside it is white, as Muse's video is.
+            Color.white.overlay(MuseVideoSurface(renderer: call.video, fills: false))
         } else {
             ZStack {
                 MuseTheme.elevated
