@@ -120,7 +120,7 @@ enum MuseSubjectFraming {
     /// The video layer's frame inside `bounds` that shows the avatar (`subject`, normalized within a
     /// `video`-sized picture) whole and centred, with `margin` of the window on each side. A small
     /// avatar is enlarged at most to fill the window with the picture, so it never turns into a blur.
-    static func layerFrame(bounds: CGSize, video: CGSize, subject: CGRect, margin: CGFloat = 0.06) -> CGRect {
+    static func layerFrame(bounds: CGSize, video: CGSize, subject: CGRect, margin: CGFloat = 0.03) -> CGRect {
         guard bounds.width > 0, bounds.height > 0, video.width > 0, video.height > 0,
               subject.width > 0, subject.height > 0 else { return CGRect(origin: .zero, size: bounds) }
         let room = 1 - 2 * margin

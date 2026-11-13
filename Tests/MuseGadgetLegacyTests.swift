@@ -1656,7 +1656,7 @@ final class MuseGadgetLegacyTests: XCTestCase {
             let filled = max(shown.width / square.width, shown.height / square.height)
             let scale = frame.width / video.width
             let capped = 1.5 * max(square.width / video.width, square.height / video.height)
-            XCTAssertTrue(abs(filled - 0.88) < 0.01 || scale >= capped - 0.001, "\(subject) \(filled)")
+            XCTAssertTrue(abs(filled - 0.94) < 0.01 || scale >= capped - 0.001, "\(subject) \(filled)")
         }
     }
 

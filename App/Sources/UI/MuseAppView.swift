@@ -3414,70 +3414,32 @@ private struct MuseVoiceCallView: View {
     }
 
     var body: some View {
-        Group {
-            if inSquare {
-                ZStack(alignment: .bottom) {
-                    squareFace
-                    VStack(spacing: 8) {
-                        Label(status, systemImage: statusIcon)
-                            .font(.subheadline.weight(.semibold))
-                            .lineLimit(1)
-                        if !call.reply.isEmpty {
-                            Text(call.reply)
-                                .font(.footnote)
-                                .lineLimit(2)
-                                .truncationMode(.head)
-                        }
-                        HStack(spacing: 14) { controlButtons }
-                    }
-                    .foregroundColor(.white)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 10)
-                    .padding(.top, 18)
-                    .padding(.bottom, 10)
-                    .frame(maxWidth: .infinity)
-                    .background(
-                        LinearGradient(colors: [.clear, Color.black.opacity(0.55)], startPoint: .top, endPoint: .bottom)
-                    )
+        // One look everywhere, as in the iPad's square: Muse's picture fills the whole window and
+        // the status, Muse's latest words and the buttons lie over it at the bottom.
+        ZStack(alignment: .bottom) {
+            squareFace
+            VStack(spacing: 8) {
+                if !inSquare { extras.foregroundColor(.white) }
+                Label(status, systemImage: statusIcon)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                if !call.reply.isEmpty {
+                    Text(call.reply)
+                        .font(.footnote)
+                        .lineLimit(2)
+                        .truncationMode(.head)
                 }
-            } else if phoneSideways {
-                HStack(spacing: 12) {
-                    VStack(spacing: 6) {
-                        face.frame(maxWidth: .infinity, maxHeight: .infinity)
-                        Text(runningLine)
-                            .font(.subheadline)
-                            .lineLimit(1)
-                            .truncationMode(.head)
-                            .frame(maxWidth: .infinity)
-                    }
-                    VStack(spacing: 12) { controlButtons }
-                }
-                .padding(8)
-            } else if beside {
-                // A wide band (an iPad held upright): the picture as tall as the band, with the
-                // status and buttons beside it, so neither leaves the other empty space.
-                HStack(spacing: 16) {
-                    face.frame(maxWidth: .infinity, maxHeight: .infinity)
-                    VStack(spacing: 14) {
-                        info
-                        extras
-                        controls
-                    }
-                    .frame(width: 300)
-                }
-                .padding(12)
-            } else {
-                // A tall panel (an iPad lying sideways) or a phone's card: the picture takes all
-                // the height the compact status and buttons below it leave.
-                VStack(spacing: 12) {
-                    face.frame(maxWidth: .infinity, maxHeight: .infinity).layoutPriority(1)
-                    info
-                    extras
-                    controls
-                }
-                .padding(12)
-                .padding(.bottom, inline ? 0 : 12)
+                HStack(spacing: 14) { controlButtons }
             }
+            .foregroundColor(.white)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 10)
+            .padding(.top, 24)
+            .padding(.bottom, inline ? 10 : 22)
+            .frame(maxWidth: .infinity)
+            .background(
+                LinearGradient(colors: [.clear, Color.black.opacity(0.6)], startPoint: .top, endPoint: .bottom)
+            )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Group {
@@ -3605,8 +3567,8 @@ private struct MuseVoiceCallView: View {
         // Over the picture a plain button is white with a dark icon, so it shows on a dark avatar,
         // on Muse's white video and in dark mode alike.
         let plain = color == MuseTheme.elevated
-        let background = inSquare && plain ? Color.white.opacity(0.92) : color
-        let foreground: Color = plain ? (inSquare ? .black : .primary) : .white
+        let background = plain ? Color.white.opacity(0.92) : color
+        let foreground: Color = plain ? .black : .white
         return Button(action: action) {
             Image(systemName: icon)
                 .font(.title2)
@@ -3615,10 +3577,10 @@ private struct MuseVoiceCallView: View {
                        height: inSquare ? 46 : (inline || phoneSideways ? 56 : 68))
                 .background(background)
                 .clipShape(Circle())
-                .shadow(color: inSquare ? Color.black.opacity(0.35) : .clear, radius: 3, y: 1)
+                .shadow(color: Color.black.opacity(0.35), radius: 3, y: 1)
         }
         .disabled(!enabled)
-        .opacity(enabled ? 1 : (inSquare ? 0.5 : 0.35))
+        .opacity(enabled ? 1 : 0.5)
         .accessibilityLabel(PalL10n.text(label))
     }
 }
