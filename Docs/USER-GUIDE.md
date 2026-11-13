@@ -31,7 +31,7 @@ When Muse asks for a Wi-Fi network and shows only **Other**, enter the exact nam
 
 The chat opens when pairing finishes, in a chat of the gadget's own named after it, such as "iPad DB2F" (2.0), so its conversation, calls and Muse's replies stay out of your main chat. Right after pairing the gadget sends one message there, "This is the chat of the gadget … (Pal Again)", which creates the chat in Muse and gives it a name that says what it is. Wait for **Connected to Muse VM** at the top before you try anything.
 
-If you opened the guide again from Settings and a pairing is already saved, **Back** at the top returns to the chat without changing anything (2.0).
+The gear at the top of every setup step opens Settings, including **Reset App** (2.0). If you opened the guide again from Settings and a pairing is already saved, **Back** at the top returns to the chat without changing anything (2.0).
 
 ## Chat
 

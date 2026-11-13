@@ -777,6 +777,7 @@ final class MuseAppModel: ObservableObject {
     }
 
     func beginTokenReplacement() {
+        isSettingsOpen = false
         tokenDraft = ""
         isEditingToken = true
         isPaired = false
@@ -1522,6 +1523,7 @@ final class MuseAppModel: ObservableObject {
     }
 
     func forgetPairing() {
+        isSettingsOpen = false
         environment.runtime.stop()
         environment.pairing.forgetPairing()
         isPaired = false
@@ -1530,6 +1532,7 @@ final class MuseAppModel: ObservableObject {
     }
 
     func restartGuide() {
+        isSettingsOpen = false
         isPaired = false
         setupStep = 0
     }
@@ -1756,6 +1759,13 @@ private struct MuseOnboarding: View {
     @ObservedObject var model: MuseAppModel
 
     var body: some View {
+        ZStack {
+            guide
+            if model.isSettingsOpen { MuseSettingsCover(model: model) }
+        }
+    }
+
+    private var guide: some View {
         VStack(spacing: 0) {
             onboardingHeader
             ScrollView(showsIndicators: false) {
@@ -1797,6 +1807,9 @@ private struct MuseOnboarding: View {
                 Text("\(model.setupStep + 1) / 5")
                     .font(.caption.weight(.semibold))
                     .foregroundColor(MuseTheme.secondary)
+                // Settings on every step, so Reset App and the rest are always reachable.
+                MuseSettingsButton(model: model, showsTitle: false)
+                    .foregroundColor(MuseTheme.accent)
             }
 
             GeometryReader { proxy in
@@ -2229,6 +2242,27 @@ struct MusePendingVoiceNote {
     let seconds: Int
 }
 
+/// Settings over whatever is on screen, closed with the cross. The setup guide opens them too, so
+/// Settings, including Reset App, are always within reach.
+private struct MuseSettingsCover: View {
+    @ObservedObject var model: MuseAppModel
+
+    var body: some View {
+        NavigationView { MuseSettingsView(model: model, diagnostics: model.environment.diagnostics) }
+            .navigationViewStyle(.stack)
+            .background(Color(UIColor.systemBackground))
+            .overlay(alignment: .topTrailing) {
+                Button { model.isSettingsOpen = false } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title)
+                        .foregroundColor(MuseTheme.secondary)
+                        .padding(16)
+                }
+                .accessibilityLabel(PalL10n.text("Закрыть"))
+            }
+    }
+}
+
 private struct MuseMainTabs: View {
     @ObservedObject var model: MuseAppModel
 
@@ -2238,20 +2272,7 @@ private struct MuseMainTabs: View {
         ZStack {
             NavigationView { MuseChatView(model: model) }
                 .navigationViewStyle(.stack)
-            if model.isSettingsOpen {
-                NavigationView { MuseSettingsView(model: model, diagnostics: model.environment.diagnostics) }
-                    .navigationViewStyle(.stack)
-                    .background(Color(UIColor.systemBackground))
-                    .overlay(alignment: .topTrailing) {
-                        Button { model.isSettingsOpen = false } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.title)
-                                .foregroundColor(MuseTheme.secondary)
-                                .padding(16)
-                        }
-                        .accessibilityLabel(PalL10n.text("Закрыть"))
-                    }
-            }
+            if model.isSettingsOpen { MuseSettingsCover(model: model) }
         }
         .accentColor(MuseTheme.mint)
         .overlay(alignment: .top) {
